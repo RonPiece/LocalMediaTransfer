@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="LocalMediaTransfer.GUI.Features.Security.SecurityPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+    SizeChanged="Page_SizeChanged">
+
+    <ScrollViewer x:Name="PageScrollViewer"
+                  HorizontalScrollBarVisibility="Disabled"
+                  HorizontalContentAlignment="Stretch">
+        <Grid x:Name="RootLayout"
+              Padding="16"
+              ActualThemeChanged="RootLayout_ActualThemeChanged"
+              MinWidth="{Binding ElementName=PageScrollViewer, Path=ViewportWidth}"
+              HorizontalAlignment="Stretch"
+              RowSpacing="16">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <StackPanel Grid.Row="0" Spacing="4">
+                <TextBlock Text="Security" Style="{StaticResource TitleTextBlockStyle}" />
+                <TextBlock Text="Manage session tokens, trusted devices, and connection history"
+                           Style="{StaticResource SubtitleTextBlockStyle}"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            </StackPanel>
+
+            <Grid x:Name="SecurityCardsGrid"
+                  Grid.Row="1"
+                  RowSpacing="16"
+                  ColumnSpacing="16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition x:Name="SecurityCardsColumn2" Width="0" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <Border x:Name="TokenCard"
+                        Grid.Column="0"
+                        VerticalAlignment="Top"
+                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        CornerRadius="8"
+                        Padding="20">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="Session Token" FontWeight="SemiBold" />
+                        <TextBlock Text="QR and manual connections use this token. Approved devices use their separate trusted-device credential until revoked."
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                   TextWrapping="WrapWholeWords" />
+
+                        <TextBox x:Name="TokenDisplay"
+                                 Text="{Binding Token, Mode=OneWay}"
+                                 IsReadOnly="True"
+                                 FontFamily="Consolas"
+                                 TextWrapping="Wrap" />
+
+                        <StackPanel x:Name="TokenActionsPanel" Orientation="Vertical" Spacing="8">
+                            <Button x:Name="RegenerateTokenButton"
+                                    Content="Regenerate"
+                                    HorizontalAlignment="Stretch"
+                                    Click="RegenerateToken_Click" />
+                        </StackPanel>
+
+                        <InfoBar x:Name="TokenInfoBar"
+                                 IsOpen="False"
+                                 Severity="Success"
+                                 Title="Token regenerated"
+                                 Message="QR and manual clients need the new token. Approved devices remain authorized until revoked below." />
+                    </StackPanel>
+                </Border>
+
+                <Border x:Name="HistoryCard"
+                        Grid.Row="1"
+                        Grid.Column="0"
+                        VerticalAlignment="Top"
+                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        CornerRadius="8"
+                        Padding="20">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="Connection History" FontWeight="SemiBold" />
+                        <ListView x:Name="ConnectionHistory"
+                                  Height="128"
+                                  AutomationProperties.Name="Connection history"
+                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                  ScrollViewer.HorizontalScrollMode="Disabled"
+                                  ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                  ScrollViewer.VerticalScrollMode="Enabled">
+                            <ListView.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Padding="8" ColumnSpacing="12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+
+                                        <FontIcon Grid.Column="0"
+                                                  Glyph="{Binding Icon}"
+                                                  Foreground="{Binding IconColor}" />
+                                        <StackPanel Grid.Column="1" Spacing="2">
+                                            <TextBlock Text="{Binding DeviceInfo}" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Text="{Binding IpAddress}"
+                                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                       FontSize="12" />
+                                        </StackPanel>
+                                        <TextBlock Grid.Column="2"
+                                                   Text="{Binding Time}"
+                                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <Border Grid.Row="2"
+                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    CornerRadius="8" Padding="20">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="HTTPS server identity" FontWeight="SemiBold" />
+                    <TextBlock Text="Native iOS and Windows apps pin this certificate fingerprint. Resetting it revokes every trusted device and requires pairing again."
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                    <TextBlock Text="SHA-256 fingerprint" FontSize="12" />
+                    <TextBox x:Name="TlsFingerprintDisplay" Text="{Binding TlsFingerprint, Mode=OneWay}" IsReadOnly="True" FontFamily="Consolas" TextWrapping="Wrap" />
+                    <TextBlock x:Name="TlsPortsDisplay" Text="{Binding TlsPorts}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <TextBlock x:Name="TlsExpiryDisplay" Text="{Binding TlsExpiry}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <StackPanel x:Name="IdentityActionsPanel" Orientation="Vertical" Spacing="8">
+                        <Button Content="Copy fingerprint" Click="CopyFingerprint_Click" />
+                        <Button x:Name="ResetIdentityButton" Content="Reset server identity" Click="ResetTlsIdentity_Click" />
+                    </StackPanel>
+                    <InfoBar x:Name="InsecureHttpInfo" IsOpen="{Binding InsecureHttpWarningVisible, Mode=OneWay}" Severity="Warning"
+                             Title="Insecure HTTP fallback enabled"
+                             Message="HTTPS remains available, but HTTP traffic is not encrypted." />
+                </StackPanel>
+            </Border>
+
+            <Border Grid.Row="3"
+                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    CornerRadius="8" Padding="20">
+                <StackPanel Spacing="12">
+                    <Grid ColumnSpacing="12">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                        <StackPanel>
+                            <TextBlock Text="Trusted devices" FontWeight="SemiBold" />
+                            <TextBlock Text="Approved iPhones can reconnect. Trusted Windows computers still require approval for every transfer."
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <Button Grid.Column="1" Content="Refresh" Click="RefreshDevices_Click" />
+                    </Grid>
+                    <ListView x:Name="TrustedDevicesList" MinHeight="80">
+                        <ListView.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Padding="8" ColumnSpacing="12">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding DeviceName}" FontWeight="SemiBold" />
+                                        <TextBlock Text="{Binding LastIp}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        <TextBlock Text="{Binding DeviceTypeText}" FontSize="12" TextWrapping="Wrap"
+                                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        <TextBlock Text="{Binding LastSeenText}" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                    </StackPanel>
+                                    <Button Grid.Column="1" Content="Revoke" Tag="{Binding DeviceId}" Click="RevokeDevice_Click" />
+                                </Grid>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+                    <ToggleSwitch x:Name="AutoApproveKnownToggle"
+                                  Header="Automatically reconnect approved iPhones"
+                                  OffContent="Ask every time" OnContent="Reconnect automatically"
+                                  Toggled="AutoApproveKnown_Toggled" />
+                </StackPanel>
+            </Border>
+        </Grid>
+    </ScrollViewer>
+</Page>

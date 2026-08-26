@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <x:String x:Key="HttpFallbackShortText">Only turn this on for Expo Go or older clients that cannot use pinned HTTPS. Files and access tokens are not encrypted on HTTP.</x:String>
+    <x:String x:Key="NearbyDiscoveryShortText">Lets the installed iOS app find this desktop on the same Wi-Fi network. Turn it on here and on the iPhone. Discovery does not send passwords; first connection still requires QR pairing and Windows approval.</x:String>
+</ResourceDictionary>

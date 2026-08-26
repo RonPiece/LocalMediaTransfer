@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\..\src\LocalMediaTransfer.GUI\Services\Environment\ApplicationEnvironment.cs" Link="Services\ApplicationEnvironment.cs" />
+    <Compile Include="..\..\src\LocalMediaTransfer.GUI\Services\Server\ServerManager.cs" Link="Services\ServerManager.cs" />
+    <Compile Include="..\..\src\LocalMediaTransfer.GUI\Services\Server\ServerProcessAbstractions.cs" Link="Services\ServerProcessAbstractions.cs" />
+    <Compile Include="..\..\src\LocalMediaTransfer.GUI\Services\Server\ServerPathResolver.cs" Link="Services\ServerPathResolver.cs" />
+    <Compile Include="..\..\src\LocalMediaTransfer.GUI\Services\Server\ServerTlsMetadataService.cs" Link="Services\ServerTlsMetadataService.cs" />
+    <Compile Include="..\..\src\LocalMediaTransfer.GUI\Services\Server\ServerLaunchOptionsBuilder.cs" Link="Services\ServerLaunchOptionsBuilder.cs" />
+    <Compile Include="..\..\src\LocalMediaTransfer.GUI\Services\Server\ServerControlCredentialStore.cs" Link="Services\ServerControlCredentialStore.cs" />
+    <Compile Include="..\..\src\LocalMediaTransfer.GUI\Services\Server\ServerOwnershipClient.cs" Link="Services\ServerOwnershipClient.cs" />
+    <Compile Include="..\..\src\LocalMediaTransfer.GUI\Services\Server\ServerOwnershipProtocol.cs" Link="Services\ServerOwnershipProtocol.cs" />
+    <Compile Include="..\..\src\LocalMediaTransfer.GUI\Services\Server\ServerProcessMonitor.cs" Link="Services\ServerProcessMonitor.cs" />
+    <Compile Include="..\..\src\LocalMediaTransfer.GUI\Services\Pipe\PipeClient.cs" Link="Services\PipeClient.cs" />
+    <Compile Include="..\..\src\LocalMediaTransfer.GUI\Services\Pipe\PipeContracts.cs" Link="Services\PipeContracts.cs" />
+    <Compile Include="..\..\src\LocalMediaTransfer.GUI\Services\Pipe\PipeConnectionLoop.cs" Link="Services\PipeConnectionLoop.cs" />
+    <Compile Include="..\..\src\LocalMediaTransfer.GUI\Services\Pipe\PipeMessageReader.cs" Link="Services\PipeMessageReader.cs" />
+    <Compile Include="..\..\src\LocalMediaTransfer.GUI\Services\Pipe\PipeCommandSender.cs" Link="Services\PipeCommandSender.cs" />
+    <Compile Include="..\..\src\LocalMediaTransfer.GUI\Services\Pipe\PipeMessageParser.cs" Link="Services\PipeMessageParser.cs" />
+    <Compile Include="..\..\src\LocalMediaTransfer.GUI\Services\Pipe\PipeSessionAuthenticator.cs" Link="Services\PipeSessionAuthenticator.cs" />
+    <Compile Include="..\..\src\LocalMediaTransfer.GUI\Services\Pipe\PipeValueValidator.cs" Link="Services\PipeValueValidator.cs" />
+    <Compile Include="..\..\src\LocalMediaTransfer.GUI\App\NetworkLogService.cs" Link="App\NetworkLogService.cs" />
+    <Compile Include="..\..\src\LocalMediaTransfer.GUI\App\ResponsiveLayoutDecisions.cs" Link="App\ResponsiveLayoutDecisions.cs" />
+    <Compile Include="..\..\src\LocalMediaTransfer.GUI\App\SecretRedactor.cs" Link="App\SecretRedactor.cs" />
+    <Compile Include="..\..\src\LocalMediaTransfer.GUI\App\ShellLauncherService.cs" Link="App\ShellLauncherService.cs" />
+    <Compile Include="..\..\src\LocalMediaTransfer.GUI\App\SecurityStateReconciler.cs" Link="App\SecurityStateReconciler.cs" />
+    <Compile Include="..\..\src\LocalMediaTransfer.GUI\Models\LogEntry.cs" Link="Models\LogEntry.cs" />
+    <Compile Include="..\..\src\LocalMediaTransfer.GUI\Models\TransferHistoryItem.cs" Link="Models\TransferHistoryItem.cs" />
+    <Compile Include="..\..\src\LocalMediaTransfer.GUI\Features\Dashboard\DashboardPresentation.cs" Link="Features\DashboardPresentation.cs" />
+    <Compile Include="..\..\src\LocalMediaTransfer.GUI\Features\Dashboard\BrowserTransferSession.cs" Link="Features\BrowserTransferSession.cs" />
+    <Compile Include="..\..\src\LocalMediaTransfer.GUI\Features\Send\SendStateMachine.cs" Link="Features\SendStateMachine.cs" />
+    <Compile Include="..\..\src\LocalMediaTransfer.GUI\Features\Settings\SettingsText.cs" Link="Features\SettingsText.cs" />
+    <Compile Include="..\..\src\LocalMediaTransfer.GUI\Features\Settings\SettingsToggleDecisions.cs" Link="Features\SettingsToggleDecisions.cs" />
+  </ItemGroup>
+</Project>

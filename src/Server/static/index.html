@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>File Transfer Hub</title>
+    <meta name="description"
+        content="Local Network Media Transfer - Upload photos, videos, and files from your phone to your PC wirelessly." />
+
+    <link href="/static/style.css?v=20260811.1" rel="stylesheet" />
+</head>
+
+<body>
+    <main class="container" id="appContainer">
+        <section class="main-card fade-in" id="mainCard">
+            <!-- Header -->
+            <header class="header-section" id="headerSection">
+                <div class="language-switcher" id="languageSwitcher" aria-label="Language" data-i18n-aria-label="language.menuAria">
+                    <button type="button" class="language-menu-button" id="languageMenuButton"
+                        aria-expanded="false" aria-controls="languageOptions" data-i18n-aria-label="language.menuAria">
+                        <img id="languageCurrentFlag" src="/static/i18n/flags-icons/gb-eng.svg" alt="" aria-hidden="true" />
+                        <span id="languageCurrentCode">EN</span>
+                        <span class="language-menu-chevron" data-lmt-icon="chevron"></span>
+                    </button>
+                    <div class="language-options" id="languageOptions">
+                    <button type="button" class="language-button" data-lang="en" aria-label="English">
+                        <img src="/static/i18n/flags-icons/gb-eng.svg" alt="" aria-hidden="true" />
+                        <span>EN</span>
+                    </button>
+                    <button type="button" class="language-button" data-lang="he" aria-label="עברית">
+                        <img src="/static/i18n/flags-icons/il.svg" alt="" aria-hidden="true" />
+                        <span>HE</span>
+                    </button>
+                    <button type="button" class="language-button" data-lang="ru" aria-label="Русский">
+                        <img src="/static/i18n/flags-icons/ru.svg" alt="" aria-hidden="true" />
+                        <span>RU</span>
+                    </button>
+                    </div>
+                </div>
+                <img id="headerIcon" class="header-logo" src="/static/assets/app-icon.png" alt="" aria-hidden="true" />
+                <h1 id="headerTitle" class="header-title" data-i18n="app.title">File Transfer Hub</h1>
+                <p id="headerSubtitle" class="header-subtitle" data-i18n="app.subtitle">Upload photos, videos, and archives with ease</p>
+            </header>
+
+            <!-- Upload area -->
+            <section class="upload-section" id="uploadSection">
+                <form id="uploadForm" novalidate>
+                    <div id="uploadZone" class="upload-zone" aria-labelledby="uploadHeading uploadSub">
+                        <div id="uploadIcon" class="upload-icon" data-lmt-icon="fileUpload"></div>
+                        <h5 id="uploadHeading" class="upload-heading" data-i18n="upload.heading">Drag &amp; Drop Files Here</h5>
+                        <p id="uploadSub" class="upload-sub" data-i18n="upload.sub">or click to browse</p>
+
+                        <!-- Extended file type support including development files -->
+                        <input type="file" id="fileInput" accept="image/*,video/*,audio/*,
+                            application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,
+                            application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,
+                            application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,
+                            .pages,.numbers,.key,
+                            .pdf,.txt,.rtf,
+                            .zip,.rar,.7z,.tar,.gz,
+                            .json,.xml,.csv,.html,.css,.js,.py,.md,.yml,.yaml,.toml,.ini,.conf,
+                            .log,.sql,.sh,.bat,.ps1" multiple class="d-none" aria-hidden="true" />
+
+                        <button type="button" id="chooseBtn" class="btn-outline-modern btn-modern"
+                            aria-label="Choose files" data-i18n-aria-label="upload.chooseAria">
+                            <span class="btn-icon" data-lmt-icon="folder"></span><span class="btn-text" data-i18n="upload.choose">Choose Files</span>
+                        </button>
+                    </div>
+
+                    <div class="actions-row" id="actionsRow">
+                        <button type="button" id="uploadBtn" class="btn-primary-modern btn-modern"
+                            aria-label="Upload files" data-i18n-aria-label="upload.startAria">
+                            <span class="btn-icon" data-lmt-icon="upload"></span><span class="btn-text" data-i18n="upload.start">Upload Files</span>
+                        </button>
+                        <button type="button" id="resetBtn" class="btn-secondary-modern btn-modern" aria-label="Reset" data-i18n-aria-label="upload.resetAria">
+                            <span class="btn-icon" data-lmt-icon="reset"></span><span class="btn-text" data-i18n="upload.reset">Reset</span>
+                        </button>
+                    </div>
+                </form>
+
+                <div id="totalTimer" class="total-timer" aria-live="polite"></div>
+
+                <div class="stats-row" id="statsRow" style="display:none;">
+                    <div class="stats-card small-card slide-in-left" id="cardSuccess">
+                        <span class="stats-icon stats-success" id="statsIconSuccess" data-lmt-icon="check"></span>
+                        <div class="stats-number" id="successCount">0</div>
+                        <div class="stats-label" data-i18n="stats.successful">Successful</div>
+                    </div>
+                    <div class="stats-card small-card fade-in" id="cardError">
+                        <span class="stats-icon stats-error" id="statsIconError" data-lmt-icon="failed"></span>
+                        <div class="stats-number" id="errorCount">0</div>
+                        <div class="stats-label" data-i18n="stats.failed">Failed</div>
+                    </div>
+                    <div class="stats-card small-card slide-in-right" id="cardTotal">
+                        <span class="stats-icon stats-total" id="statsIconTotal" data-lmt-icon="database"></span>
+                        <div class="stats-number" id="totalSize">0 MB</div>
+                        <div class="stats-label" data-i18n="stats.totalSize">Total Size</div>
+                    </div>
+                    <div class="stats-card small-card fade-in" id="cardSelected">
+                        <span class="stats-icon stats-selected" id="statsIconSelected" data-lmt-icon="list"></span>
+                        <div class="stats-number" id="selectedCount">0</div>
+                        <div class="stats-label" data-i18n="stats.selectedFiles">Selected Files</div>
+                    </div>
+                </div>
+
+                <!-- Current upload speed (real-time) -->
+                <div id="currentSpeed" class="speed-display" aria-live="polite" data-i18n="speed.currentZero">Current upload: 0 B/s</div>
+
+                <!-- Aggregate Progress Bar -->
+                <div id="aggregateProgress" class="progress-modern" style="display: none; margin: 0 2rem 1rem 2rem;">
+                    <div id="aggregateProgressBar" class="progress-bar-modern" role="progressbar"
+                        aria-label="Overall upload progress" data-i18n-aria-label="progress.overallAria"
+                        aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div>
+                </div>
+
+                <div id="progress" aria-live="polite"></div>
+                <div id="results" aria-live="polite"></div>
+            </section>
+        </section>
+
+        <!-- iOS tips (shown by JS when needed) -->
+        <section class="tips-container">
+            <div class="tips-panel" id="iosTipAccordion" aria-hidden="true" style="display:none;">
+                <div class="tips-item" id="iosTipItem">
+                    <button class="tips-button" type="button" id="iosTipButton"
+                        aria-expanded="false" aria-controls="iosTipCollapse">
+                        <span class="tips-icon" id="iosTipIcon" data-lmt-icon="mobile"></span>
+                        <strong id="iosTipTitle" data-i18n="tips.title">iPhone Upload Tips &amp; Optimization</strong>
+                        <span class="tips-chevron" data-lmt-icon="chevron"></span>
+                    </button>
+                    <div id="iosTipCollapse" class="tips-collapse" aria-labelledby="iosTipButton">
+                        <div class="tips-body" id="ios-upload-tip-text"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+        <div class="footer-content">
+            <div class="footer-copyright">
+                <span data-i18n="footer.copyright">&copy; 2025 Ron Blanki. All rights reserved.</span>
+            </div>
+            <div class="footer-links">
+                <a href="https://www.linkedin.com/in/ron-blanki-5622a5242/" target="_blank" rel="noopener noreferrer"
+                    class="footer-link">
+                    <span class="footer-icon" data-lmt-icon="linkedin"></span>
+                    LinkedIn
+                </a>
+                <a href="https://github.com/RonPiece" target="_blank" rel="noopener noreferrer" class="footer-link">
+                    <span class="footer-icon" data-lmt-icon="github"></span>
+                    GitHub
+                </a>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Scripts -->
+    <script src="/static/js/app.js?v=20260813.2"></script>
+</body>
+
+</html>

@@ -1,0 +1,193 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="LocalMediaTransfer.GUI.Features.Network.NetworkPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+    SizeChanged="Page_SizeChanged">
+
+    <ScrollViewer x:Name="PageScrollViewer"
+                  HorizontalScrollBarVisibility="Disabled"
+                  HorizontalContentAlignment="Stretch">
+        <Grid x:Name="RootLayout"
+              Padding="16"
+              MinWidth="{Binding ElementName=PageScrollViewer, Path=ViewportWidth}"
+              HorizontalAlignment="Stretch"
+              RowSpacing="16">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <StackPanel Grid.Row="0" Spacing="4">
+                <TextBlock Text="Network" Style="{StaticResource TitleTextBlockStyle}" />
+                <TextBlock Text="View network status and server addresses"
+                           Style="{StaticResource SubtitleTextBlockStyle}"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            </StackPanel>
+
+            <Grid x:Name="TopCardsGrid"
+                  Grid.Row="1"
+                  RowSpacing="16"
+                  ColumnSpacing="16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition x:Name="TopCardsColumn2" Width="0" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <Border x:Name="ConnectionCard"
+                        Grid.Column="0"
+                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        CornerRadius="8"
+                        Padding="20">
+                    <Grid x:Name="ConnectionInfoGrid">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition x:Name="ConnectionInfoColumn2" Width="0" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <StackPanel Grid.Row="0" Grid.Column="0" Spacing="6">
+                            <TextBlock Text="Connection Type" FontWeight="SemiBold" />
+                            <TextBlock x:Name="ConnectionType"
+                                       Text="{Binding ConnectionType}"
+                                       FontSize="28"
+                                       FontWeight="Bold"
+                                       Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                                       TextTrimming="CharacterEllipsis" />
+                            <TextBlock x:Name="ConnectionDesc"
+                                       Text="{Binding ConnectionDescription}"
+                                       TextWrapping="WrapWholeWords"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        </StackPanel>
+
+                        <FontIcon x:Name="ConnectionGlyph"
+                                  Grid.Row="1"
+                                  Grid.Column="0"
+                                  Glyph="{Binding ConnectionGlyph}"
+                                  FontSize="42"
+                                  Margin="0,12,0,0"
+                                  VerticalAlignment="Center"
+                                  Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                    </Grid>
+                </Border>
+
+                <Border x:Name="AddressesCard"
+                        Grid.Row="1"
+                        Grid.Column="0"
+                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        CornerRadius="8"
+                        Padding="20">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="Network Addresses" FontWeight="SemiBold" />
+
+                        <Grid ColumnSpacing="12" RowSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Grid.Row="0"
+                                       Grid.Column="0"
+                                       Text="IPv4:"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            <TextBlock x:Name="IPv4Address" Grid.Row="0" Grid.Column="1" Text="{Binding Ipv4Address}" />
+
+                            <TextBlock Grid.Row="1"
+                                       Grid.Column="0"
+                                       Text="Server Port:"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            <TextBlock x:Name="ServerPort" Grid.Row="1" Grid.Column="1" Text="{Binding ServerPort}" />
+
+                            <TextBlock Grid.Row="2"
+                                       Grid.Column="0"
+                                       Text="Full URL:"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                       VerticalAlignment="Center" />
+                            <Grid Grid.Row="2" Grid.Column="1" ColumnSpacing="8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock x:Name="FullUrl"
+                                           Grid.Column="0"
+                                           Text="{Binding FullUrl}"
+                                           TextWrapping="WrapWholeWords"
+                                           VerticalAlignment="Center" />
+                                <Button x:Name="CopyNetworkUrlBtn"
+                                        Grid.Column="1"
+                                        ToolTipService.ToolTip="Copy URL"
+                                        Click="CopyNetworkUrl_Click">
+                                    <SymbolIcon Symbol="Copy" />
+                                </Button>
+                            </Grid>
+                        </Grid>
+
+                        <Grid x:Name="NetworkButtonsPanel" RowSpacing="8" ColumnSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition x:Name="NetworkButtonsColumn2" Width="0" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <Button x:Name="RestartServerBtn"
+                                    Grid.Row="0"
+                                    Grid.Column="0"
+                                    Content="Restart Server"
+                                    HorizontalAlignment="Stretch"
+                                    Click="RestartServer_Click" />
+                            <Button x:Name="StopServerBtn"
+                                    Grid.Row="1"
+                                    Grid.Column="0"
+                                    Content="Stop Server"
+                                    ToolTipService.ToolTip="Stops the server started by this app."
+                                    HorizontalAlignment="Stretch"
+                                    Click="StopServer_Click" />
+                        </Grid>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <Border x:Name="ConnectionLogCard"
+                    Grid.Row="2"
+                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    CornerRadius="8"
+                    Padding="20">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="Connection Log" FontWeight="SemiBold" />
+                    <ListView x:Name="ConnectionLog" MinHeight="180">
+                        <ListView.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Padding="4" ColumnSpacing="10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0"
+                                               Text="{Binding Time}"
+                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                    <TextBlock Grid.Column="1" Text="{Binding Message}" TextWrapping="WrapWholeWords" />
+                                </Grid>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+                </StackPanel>
+            </Border>
+        </Grid>
+    </ScrollViewer>
+</Page>

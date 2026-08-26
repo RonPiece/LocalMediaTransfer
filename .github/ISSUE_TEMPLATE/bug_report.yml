@@ -1,0 +1,52 @@
+name: Bug report
+description: Report a reproducible product or developer-workflow problem.
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: Do not include private tokens, personal files, or sensitive paths.
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: Installer version or Git commit
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Windows GUI
+        - Tray or process lifecycle
+        - Browser upload frontend
+        - C++ server
+        - Duplicate detection
+        - Installer
+        - Tests or build
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior and logs
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Windows version, browser/device, network type, and hardware when relevant.

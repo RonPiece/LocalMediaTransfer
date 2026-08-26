@@ -1,0 +1,116 @@
+name: Windows CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: windows-2022
+    timeout-minutes: 90
+    env:
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}\.vcpkg-cache
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: src/LocalMediaTransfer.iOS/package-lock.json
+
+      - name: Install iOS JavaScript dependencies
+        working-directory: src/LocalMediaTransfer.iOS
+        run: npm ci
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      - name: Cache vcpkg binaries
+        uses: actions/cache@v5
+        with:
+          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
+          key: vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            vcpkg-${{ runner.os }}-
+
+      - name: Validate repository
+        shell: powershell
+        run: .\scripts\verify.ps1 -Target validate
+
+      - name: Restore native dependencies
+        shell: powershell
+        run: .\scripts\bootstrap-dependencies.ps1 -PreferVisualStudioTools -RestoreTimeoutSeconds 2400
+
+      - name: Build C++ server Debug
+        shell: powershell
+        run: .\scripts\verify.ps1 -Target server-debug
+
+      - name: Build C++ server Release
+        shell: powershell
+        run: .\scripts\verify.ps1 -Target server-release
+
+      - name: Run isolated server tests
+        shell: powershell
+        run: .\scripts\verify.ps1 -Target server-tests
+
+      - name: Run frontend tests
+        shell: powershell
+        run: .\scripts\verify.ps1 -Target frontend-tests
+
+      - name: Run iOS Jest, TypeScript, and ESLint
+        shell: powershell
+        run: .\scripts\verify.ps1 -Target ios-tests
+
+      - name: Run C# ownership and pipe tests
+        shell: powershell
+        run: .\scripts\verify.ps1 -Target csharp-tests
+
+      - name: Build WinUI GUI Debug x64
+        shell: powershell
+        run: .\scripts\verify.ps1 -Target gui
+
+      - name: Build WinUI test environment Debug x64
+        shell: powershell
+        run: .\scripts\verify.ps1 -Target gui-test
+
+      - name: Validate release installer layout
+        shell: powershell
+        run: >
+          .\tools\LocalMediaTransfer.InnoSetup\build.ps1
+          -StageOnly
+          -Version "0.0.0-ci"
+
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: windows-ci-diagnostics
+          if-no-files-found: ignore
+          path: |
+            src/Server/logs/**
+            tests/test_results_*.log
+            tests/test_results_*.json
+            tools/LocalMediaTransfer.InnoSetup/staging/**

@@ -1,0 +1,4 @@
+interface:
+  display_name: "LMT Reliability Tests"
+  short_description: "Run isolated server, frontend, C# ownership, and IPC tests"
+  default_prompt: "Use $lmt-reliability-tests to diagnose and verify repository reliability."
