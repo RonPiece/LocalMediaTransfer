@@ -1,0 +1,4 @@
+interface:
+  display_name: "LMT Windows Build"
+  short_description: "Build and diagnose the Windows C++, .NET, and WinUI toolchain"
+  default_prompt: "Use $lmt-windows-build to build and verify this repository."

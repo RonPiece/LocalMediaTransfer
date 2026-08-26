@@ -1,0 +1,3 @@
+# Inno Setup installer output
+*.exe
+*.msi

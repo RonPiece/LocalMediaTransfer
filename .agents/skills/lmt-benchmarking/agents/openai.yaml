@@ -1,0 +1,4 @@
+interface:
+  display_name: "LMT Benchmarking"
+  short_description: "Measure throughput without contaminating benchmark results"
+  default_prompt: "Use $lmt-benchmarking to run or analyze Local Media Transfer benchmarks."

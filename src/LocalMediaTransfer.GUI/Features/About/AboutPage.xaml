@@ -1,0 +1,221 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="LocalMediaTransfer.GUI.Features.About.AboutPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+    SizeChanged="Page_SizeChanged">
+
+    <ScrollViewer x:Name="PageScrollViewer"
+                  HorizontalScrollBarVisibility="Disabled"
+                  HorizontalContentAlignment="Stretch">
+        <Grid x:Name="RootLayout"
+              Padding="16"
+              MinWidth="{Binding ElementName=PageScrollViewer, Path=ViewportWidth}"
+              HorizontalAlignment="Stretch"
+              RowSpacing="16">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <StackPanel Grid.Row="0" Spacing="4">
+                <TextBlock Text="About" Style="{StaticResource TitleTextBlockStyle}" />
+                <TextBlock Text="Application information, support, and open-source resources"
+                           Style="{StaticResource SubtitleTextBlockStyle}"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            </StackPanel>
+
+            <Border x:Name="AppInfoCard"
+                    Grid.Row="1"
+                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    CornerRadius="8"
+                    Padding="24">
+                <StackPanel Spacing="8">
+                    <TextBlock x:Name="AppNameText"
+                               Text="Local Media Transfer"
+                               FontSize="24"
+                               FontWeight="Bold"
+                               TextWrapping="WrapWholeWords" />
+                    <Image Source="/Assets/Icons/AppIcon_master_1024.png"
+                           Width="96"
+                           Height="96"
+                           Margin="0,4"
+                           HorizontalAlignment="Left"
+                           Stretch="Uniform"
+                           AutomationProperties.Name="Local Media Transfer logo" />
+                    <TextBlock x:Name="VersionText"
+                               Text="Version 2.0.0"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <TextBlock TextWrapping="WrapWholeWords"
+                               Text="Transfer photos, videos, and other files directly between devices on your local network. Send from the iPhone app or a web browser to this Windows computer without a cloud account." />
+                </StackPanel>
+            </Border>
+
+            <Grid x:Name="AboutCardsGrid"
+                  Grid.Row="2"
+                  RowSpacing="16"
+                  ColumnSpacing="16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition x:Name="AboutCardsColumn2" Width="0" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <Border x:Name="CapabilitiesCard"
+                        Grid.Row="0"
+                        Grid.Column="0"
+                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        CornerRadius="8"
+                        Padding="24">
+                    <StackPanel Spacing="10">
+                        <TextBlock Text="What it provides" FontWeight="SemiBold" Margin="0,0,0,4" />
+
+                        <Grid ColumnSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <FontIcon Grid.Column="0"
+                                      Glyph="&#xE10B;"
+                                      FontSize="14"
+                                      Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                            <TextBlock Grid.Column="1" Text="Direct transfers over your private local network" TextWrapping="WrapWholeWords" />
+                        </Grid>
+
+                        <Grid ColumnSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <FontIcon Grid.Column="0"
+                                      Glyph="&#xE10B;"
+                                      FontSize="14"
+                                      Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                            <TextBlock Grid.Column="1" Text="iPhone app and browser-based sending options" TextWrapping="WrapWholeWords" />
+                        </Grid>
+
+                        <Grid ColumnSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <FontIcon Grid.Column="0"
+                                      Glyph="&#xE10B;"
+                                      FontSize="14"
+                                      Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                            <TextBlock Grid.Column="1" Text="Authenticated pairing and encrypted native-app transfers" TextWrapping="WrapWholeWords" />
+                        </Grid>
+
+                        <Grid ColumnSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <FontIcon Grid.Column="0"
+                                      Glyph="&#xE10B;"
+                                      FontSize="14"
+                                      Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                            <TextBlock Grid.Column="1" Text="Verified duplicate detection and clear filename collision handling" TextWrapping="WrapWholeWords" />
+                        </Grid>
+
+                        <Grid ColumnSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <FontIcon Grid.Column="0"
+                                      Glyph="&#xE10B;"
+                                      FontSize="14"
+                                      Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                            <TextBlock Grid.Column="1" Text="No user account, advertising, cloud storage, or external analytics" TextWrapping="WrapWholeWords" />
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <Border x:Name="ProjectResourcesCard"
+                        Grid.Row="1"
+                        Grid.Column="0"
+                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        CornerRadius="8"
+                        Padding="24">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="Project and support" FontWeight="SemiBold" Margin="0,0,0,4" />
+                        <HyperlinkButton Content="Source code"
+                                         HorizontalAlignment="Left"
+                                         NavigateUri="https://github.com/RonPiece/LocalMediaTransfer" />
+                        <HyperlinkButton Content="Documentation"
+                                         HorizontalAlignment="Left"
+                                         NavigateUri="https://github.com/RonPiece/LocalMediaTransfer#readme" />
+                        <HyperlinkButton Content="Report a bug or request a feature"
+                                         HorizontalAlignment="Left"
+                                         NavigateUri="https://github.com/RonPiece/LocalMediaTransfer/issues" />
+                        <HyperlinkButton Content="Contributing guide"
+                                         HorizontalAlignment="Left"
+                                         NavigateUri="https://github.com/RonPiece/LocalMediaTransfer/blob/main/CONTRIBUTING.md" />
+                        <HyperlinkButton Content="Security policy"
+                                         HorizontalAlignment="Left"
+                                         NavigateUri="https://github.com/RonPiece/LocalMediaTransfer/security/policy" />
+                    </StackPanel>
+                </Border>
+
+                <Border x:Name="OpenSourceCard"
+                           Grid.Row="2"
+                           Grid.Column="0"
+                           Grid.ColumnSpan="1"
+                           Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                           CornerRadius="8"
+                           Padding="24">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="Open source, privacy, and legal" FontWeight="SemiBold" />
+                        <TextBlock Text="Local Media Transfer is licensed under the Apache License 2.0. Third-party components remain subject to their own licenses. The project does not include cloud telemetry, advertising, external analytics, or user accounts."
+                                   TextWrapping="WrapWholeWords" />
+                        <Grid RowSpacing="4" ColumnSpacing="8">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <HyperlinkButton Grid.Row="0"
+                                             Grid.Column="0"
+                                             Content="License"
+                                             HorizontalAlignment="Left"
+                                             NavigateUri="https://github.com/RonPiece/LocalMediaTransfer/blob/main/LICENSE" />
+                            <HyperlinkButton x:Name="PrivacyLink"
+                                             Grid.Row="1"
+                                             Grid.Column="0"
+                                             Content="Privacy"
+                                             HorizontalAlignment="Left"
+                                             NavigateUri="https://github.com/RonPiece/LocalMediaTransfer/blob/main/PRIVACY.md" />
+                            <HyperlinkButton x:Name="SecurityLink"
+                                             Grid.Row="2"
+                                             Grid.Column="0"
+                                             Content="Security"
+                                             HorizontalAlignment="Left"
+                                             NavigateUri="https://github.com/RonPiece/LocalMediaTransfer/blob/main/SECURITY.md" />
+                            <HyperlinkButton x:Name="NoticesLink"
+                                             Grid.Row="3"
+                                             Grid.Column="0"
+                                             Content="Third-party notices"
+                                             HorizontalAlignment="Left"
+                                             NavigateUri="https://github.com/RonPiece/LocalMediaTransfer/blob/main/THIRD_PARTY_NOTICES.md" />
+                        </Grid>
+                        <TextBlock x:Name="CopyrightText"
+                                   Text="Copyright &#x00A9; 2026 Ron Blanki and contributors."
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Grid>
+    </ScrollViewer>
+</Page>

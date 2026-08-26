@@ -1,0 +1,141 @@
+name: Build unsigned iOS IPA
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: iOS application environment
+        required: true
+        default: production
+        type: choice
+        options:
+          - test
+          - production
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      EXPO_PUBLIC_LMT_ENVIRONMENT: ${{ inputs.environment }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: src/LocalMediaTransfer.iOS/package-lock.json
+
+      - name: Install JavaScript dependencies
+        working-directory: src/LocalMediaTransfer.iOS
+        run: npm ci
+
+      - name: Run Jest tests
+        working-directory: src/LocalMediaTransfer.iOS
+        run: npm test -- --runInBand
+
+      - name: Check TypeScript
+        working-directory: src/LocalMediaTransfer.iOS
+        run: npx tsc --noEmit
+
+      - name: Run ESLint
+        working-directory: src/LocalMediaTransfer.iOS
+        run: npm run lint
+
+      - name: Generate native iOS project
+        working-directory: src/LocalMediaTransfer.iOS
+        run: npx expo prebuild --platform ios --clean --no-install
+
+      - name: Install CocoaPods dependencies
+        working-directory: src/LocalMediaTransfer.iOS/ios
+        run: |
+          pod install --repo-update
+          grep -q "LocalMediaTransferNative" Podfile.lock
+          grep -q "ExpoFont" Podfile.lock
+
+      - name: Build unsigned device application
+        working-directory: src/LocalMediaTransfer.iOS
+        shell: bash
+        run: |
+          set -euo pipefail
+          workspace="$(find ios -maxdepth 1 -name '*.xcworkspace' -print -quit)"
+          if [[ -z "$workspace" ]]; then
+            echo "No generated Xcode workspace found" >&2
+            exit 1
+          fi
+          # Expo names the application workspace and shared application scheme
+          # identically. Do not select the first listed scheme: CocoaPods
+          # schemes such as EXConstants may appear first and build successfully
+          # without producing the application bundle.
+          scheme="$(basename "$workspace" .xcworkspace)"
+          if [[ -z "$scheme" ]]; then
+            echo "No Xcode scheme found" >&2
+            exit 1
+          fi
+          echo "Building application scheme: $scheme"
+          xcodebuild \
+            -workspace "$workspace" \
+            -scheme "$scheme" \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            clean build
+
+      - name: Package unsigned IPA for Sideloadly
+        working-directory: src/LocalMediaTransfer.iOS
+        shell: bash
+        run: |
+          set -euo pipefail
+          app="$(find build/Build/Products/Release-iphoneos -maxdepth 1 -name '*.app' -print -quit)"
+          if [[ -z "$app" ]]; then
+            echo "Unsigned application bundle was not produced" >&2
+            exit 1
+          fi
+          if [[ ! -f "$app/main.jsbundle" ]]; then
+            echo "Application bundle is missing main.jsbundle" >&2
+            find "$app" -maxdepth 2 -type f -print
+            exit 1
+          fi
+          executable="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Info.plist")"
+          strings_output="$RUNNER_TEMP/local-media-transfer-app-strings.txt"
+          strings "$app/$executable" > "$strings_output"
+          if ! grep -q "LocalMediaTransferNative" "$strings_output"; then
+            echo "Application binary is missing the native discovery/uploader module" >&2
+            exit 1
+          fi
+          echo "Packaging application: $app"
+          echo "Embedded JavaScript bundle: $(du -h "$app/main.jsbundle" | cut -f1)"
+          expected_bundle_id="com.ronthedev.localmediatransfer"
+          expected_display_name="Local Media Transfer"
+          artifact_basename="LocalMediaTransfer-production-unsigned"
+          if [[ "$EXPO_PUBLIC_LMT_ENVIRONMENT" == "test" ]]; then
+            expected_bundle_id="com.ronthedev.localmediatransfer.test"
+            expected_display_name="Local Media Transfer TEST"
+            artifact_basename="LocalMediaTransfer-test-unsigned"
+          fi
+          actual_bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Info.plist")"
+          actual_display_name="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$app/Info.plist")"
+          [[ "$actual_bundle_id" == "$expected_bundle_id" ]]
+          [[ "$actual_display_name" == "$expected_display_name" ]]
+          rm -rf Payload LocalMediaTransfer-*-unsigned.ipa
+          mkdir Payload
+          cp -R "$app" Payload/
+          ditto -c -k --sequesterRsrc --keepParent Payload "${artifact_basename}.ipa"
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: LocalMediaTransfer-${{ inputs.environment }}-unsigned-ipa
+          path: src/LocalMediaTransfer.iOS/LocalMediaTransfer-${{ inputs.environment }}-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 14

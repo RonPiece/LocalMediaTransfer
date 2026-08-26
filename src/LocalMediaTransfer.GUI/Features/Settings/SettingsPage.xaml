@@ -1,0 +1,243 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="LocalMediaTransfer.GUI.Features.Settings.SettingsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+    SizeChanged="Page_SizeChanged">
+
+    <ScrollViewer x:Name="PageScrollViewer"
+                  HorizontalScrollBarVisibility="Disabled"
+                  HorizontalContentAlignment="Stretch">
+        <Grid x:Name="RootLayout"
+              Padding="16"
+              MinWidth="{Binding ElementName=PageScrollViewer, Path=ViewportWidth}"
+              HorizontalAlignment="Stretch"
+              RowSpacing="16">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <StackPanel Grid.Row="0" Spacing="4">
+                <TextBlock Text="Settings" Style="{StaticResource TitleTextBlockStyle}" />
+                <TextBlock Text="Configure server behavior and app preferences"
+                           Style="{StaticResource SubtitleTextBlockStyle}"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            </StackPanel>
+
+            <Grid x:Name="SettingsCardsGrid"
+                  Grid.Row="1"
+                  RowSpacing="16"
+                  ColumnSpacing="16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition x:Name="SettingsCardsColumn2" Width="0" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <StackPanel Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" Spacing="2">
+                    <TextBlock Text="Storage" Style="{StaticResource LmtSectionTitleTextStyle}" />
+                    <TextBlock Text="Choose where files are saved and how duplicate names are handled."
+                               Style="{StaticResource LmtSectionSubtitleTextStyle}" />
+                </StackPanel>
+
+                <Border x:Name="UploadCard"
+                        Grid.Row="1"
+                        Grid.Column="0"
+                        Style="{StaticResource LmtCardBorderStyle}">
+                    <StackPanel Spacing="12">
+                        <StackPanel>
+                            <TextBlock Text="Save uploaded files to" Style="{StaticResource LmtCardTitleTextStyle}" />
+                            <TextBlock x:Name="UploadPathDescription"
+                                       Text="Where uploaded files will be saved"
+                                       Style="{StaticResource LmtCardDescriptionTextStyle}"
+                                       Margin="0,4,0,0" />
+                        </StackPanel>
+
+                        <Grid x:Name="UploadPathGrid" RowSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition x:Name="UploadPathColumn2" Width="0" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <TextBox x:Name="UploadPath"
+                                     Grid.Row="0"
+                                     Grid.Column="0"
+                                     Grid.ColumnSpan="2"
+                                     IsReadOnly="True"
+                                     PlaceholderText="Select a folder..." />
+                            <Button x:Name="BrowseUploadButton"
+                                    Grid.Row="1"
+                                    Grid.Column="0"
+                                    Content="Browse"
+                                    HorizontalAlignment="Left"
+                                    Click="BrowseFolder_Click" />
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <Border x:Name="FilenameConflictCard"
+                        Grid.Row="2"
+                        Grid.Column="0"
+                        Style="{StaticResource LmtCardBorderStyle}">
+                    <StackPanel>
+                        <TextBlock Text="Files with the same name" Style="{StaticResource LmtCardTitleTextStyle}" />
+                        <TextBlock Text="For different content with the same filename. Exact-duplicate behavior is chosen on the sending device."
+                                   Style="{StaticResource LmtCardDescriptionTextStyle}" />
+                        <ComboBox x:Name="FilenameConflictSelector"
+                                  SelectedIndex="0"
+                                  MinWidth="200"
+                                  MaxWidth="360"
+                                  HorizontalAlignment="Left"
+                                  SelectionChanged="FilenameConflictSelector_SelectionChanged">
+                            <ComboBoxItem Content="Keep both files" />
+                            <ComboBoxItem Content="Reject the new file" />
+                        </ComboBox>
+                    </StackPanel>
+                </Border>
+
+                <StackPanel Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="2" Spacing="2" Margin="0,8,0,0">
+                    <TextBlock Text="App behavior" Style="{StaticResource LmtSectionTitleTextStyle}" />
+                    <TextBlock Text="Control how the desktop app opens, closes, and looks."
+                               Style="{StaticResource LmtSectionSubtitleTextStyle}" />
+                </StackPanel>
+
+                <Border x:Name="ThemeCard"
+                        Grid.Row="4"
+                        Grid.Column="0"
+                        Style="{StaticResource LmtCardBorderStyle}">
+                    <StackPanel>
+                        <TextBlock Text="Theme" Style="{StaticResource LmtCardTitleTextStyle}" />
+                        <TextBlock Text="Choose your preferred color theme"
+                                   Style="{StaticResource LmtCardDescriptionTextStyle}" />
+                        <ComboBox x:Name="ThemeSelector"
+                                  SelectedIndex="0"
+                                  MinWidth="200"
+                                  MaxWidth="360"
+                                  HorizontalAlignment="Left">
+                            <ComboBoxItem Content="System Default" />
+                            <ComboBoxItem Content="Light" />
+                            <ComboBoxItem Content="Dark" />
+                        </ComboBox>
+                    </StackPanel>
+                </Border>
+
+                <Border x:Name="AutoStartCard"
+                        Grid.Row="5"
+                        Grid.Column="0"
+                        Style="{StaticResource LmtCardBorderStyle}">
+                    <Grid x:Name="AutoStartGrid" RowSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition x:Name="AutoStartColumn2" Width="0" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <StackPanel Grid.Row="0" Grid.Column="0">
+                            <TextBlock Text="Start with Windows" Style="{StaticResource LmtCardTitleTextStyle}" />
+                            <TextBlock Text="Automatically start the server when Windows starts"
+                                       Style="{StaticResource LmtSectionSubtitleTextStyle}" />
+                        </StackPanel>
+                        <ToggleSwitch x:Name="AutoStartToggle"
+                                      Grid.Row="1"
+                                      Grid.Column="0"
+                                      Margin="0,4,0,0" />
+                    </Grid>
+                </Border>
+
+                <Border x:Name="MinimizeCard"
+                        Grid.Row="6"
+                        Grid.Column="0"
+                        Style="{StaticResource LmtCardBorderStyle}">
+                    <StackPanel>
+                        <TextBlock Text="Close Behavior" Style="{StaticResource LmtCardTitleTextStyle}" />
+                        <TextBlock Text="Choose what happens when you press the X button"
+                                   Style="{StaticResource LmtCardDescriptionTextStyle}" />
+                        <ComboBox x:Name="CloseBehaviorSelector"
+                                  SelectedIndex="0"
+                                  MinWidth="200"
+                                  MaxWidth="360"
+                                  HorizontalAlignment="Left"
+                                  SelectionChanged="CloseBehaviorSelector_SelectionChanged">
+                            <ComboBoxItem Content="Minimize to system tray" />
+                            <ComboBoxItem Content="Exit application completely" />
+                        </ComboBox>
+                    </StackPanel>
+                </Border>
+
+                <StackPanel x:Name="PrivacySection" Grid.Row="7" Grid.Column="0" Grid.ColumnSpan="2" Spacing="2" Margin="0,8,0,0">
+                    <TextBlock Text="Privacy and connection safety" Style="{StaticResource LmtSectionTitleTextStyle}" />
+                    <TextBlock Text="These features affect how other devices find or connect to this desktop."
+                               Style="{StaticResource LmtSectionSubtitleTextStyle}" />
+                </StackPanel>
+
+                <Border x:Name="DiscoveryCard" Grid.Row="8"
+                        Grid.Column="0"
+                        Grid.ColumnSpan="2"
+                        Style="{StaticResource LmtCardBorderStyle}">
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel>
+                            <TextBlock Text="Nearby desktop discovery" Style="{StaticResource LmtCardTitleTextStyle}" />
+                            <TextBlock Text="{StaticResource NearbyDiscoveryShortText}"
+                                       Style="{StaticResource LmtCardDescriptionTextStyle}"
+                                       Margin="0,4,0,0" />
+                        </StackPanel>
+                        <ToggleSwitch x:Name="NearbyDiscoveryToggle"
+                                      Grid.Column="1"
+                                      Header="Off by default"
+                                      OffContent="Disabled"
+                                      OnContent="Enabled"
+                                      VerticalAlignment="Center"
+                                      Toggled="NearbyDiscoveryToggle_Toggled" />
+                    </Grid>
+                </Border>
+
+                <Border x:Name="HttpCard" Grid.Row="9"
+                        Grid.Column="0"
+                        Grid.ColumnSpan="2"
+                        Style="{StaticResource LmtCardBorderStyle}">
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel>
+                            <TextBlock Text="Use unencrypted HTTP" Style="{StaticResource LmtCardTitleTextStyle}" />
+                            <TextBlock Text="{StaticResource HttpFallbackShortText}"
+                                       Style="{StaticResource LmtCardDescriptionTextStyle}"
+                                       Margin="0,4,0,0" />
+                        </StackPanel>
+                        <ToggleSwitch x:Name="InsecureHttpToggle"
+                                      Grid.Column="1"
+                                      Header="Off by default"
+                                      OffContent="Disabled"
+                                      OnContent="Enabled"
+                                      VerticalAlignment="Center"
+                                      Toggled="InsecureHttpToggle_Toggled" />
+                    </Grid>
+                </Border>
+            </Grid>
+        </Grid>
+    </ScrollViewer>
+</Page>

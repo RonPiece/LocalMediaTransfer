@@ -1,0 +1,6 @@
+{
+    "cmake.sourceDirectory": "${workspaceFolder}/src/Server",
+    "cmake.useVsDeveloperEnvironment": "always",
+    "cmake.useCMakePresets": "always",
+    "python.terminal.activateEnvironment": false
+}

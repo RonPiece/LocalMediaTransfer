@@ -1,0 +1,197 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="LocalMediaTransfer.GUI.Features.Activity.ActivityPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:lvc="using:LiveChartsCore.SkiaSharpView.WinUI"
+    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+    SizeChanged="Page_SizeChanged">
+
+    <Page.Resources>
+        <DataTemplate x:Key="WideTransferItemTemplate">
+            <Border BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
+                    BorderThickness="1" CornerRadius="8" Margin="4" Padding="12">
+                <Grid ColumnSpacing="20">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="110" />
+                        <ColumnDefinition Width="170" />
+                        <ColumnDefinition Width="150" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0" Spacing="3">
+                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{Binding Outcome}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{Binding ContentBreakdown}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                    <TextBlock Grid.Column="1" Text="{Binding UploadedSize}" VerticalAlignment="Center" />
+                    <StackPanel Grid.Column="2" Spacing="3" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding AverageSpeed}" />
+                        <TextBlock Text="{Binding PeakSpeed}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    </StackPanel>
+                    <TextBlock Grid.Column="3" Text="{Binding Time}" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                </Grid>
+            </Border>
+        </DataTemplate>
+
+        <DataTemplate x:Key="NarrowTransferItemTemplate">
+            <Border BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
+                    BorderThickness="1" CornerRadius="8" Margin="4" Padding="12">
+                <StackPanel Spacing="4">
+                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Text="{Binding Outcome}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Text="{Binding ContentBreakdown}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                    <TextBlock><Run Text="Uploaded: " /><Run Text="{Binding UploadedSize}" /></TextBlock>
+                    <TextBlock Text="{Binding AverageSpeed}" />
+                    <TextBlock Text="{Binding PeakSpeed}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <TextBlock Text="{Binding Time}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+    </Page.Resources>
+
+    <ScrollViewer x:Name="PageScrollViewer"
+                  HorizontalScrollBarVisibility="Disabled"
+                  HorizontalContentAlignment="Stretch">
+        <Grid x:Name="RootLayout"
+              Padding="16,16,16,24"
+              MinWidth="{Binding ElementName=PageScrollViewer, Path=ViewportWidth}"
+              RowSpacing="16">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <StackPanel Grid.Row="0" Spacing="4">
+                <TextBlock Text="Activity" Style="{StaticResource TitleTextBlockStyle}" />
+                <TextBlock Text="Live receiver performance and completed transfer sessions"
+                           Style="{StaticResource SubtitleTextBlockStyle}"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            </StackPanel>
+
+            <Grid x:Name="MetricsGrid" Grid.Row="1" ColumnSpacing="14" RowSpacing="14">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition x:Name="MetricsColumn1" Width="*" />
+                    <ColumnDefinition x:Name="MetricsColumn2" Width="0" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <Border x:Name="SpeedCard" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        BorderBrush="{StaticResource MetricSpeedBrush}" BorderThickness="4,0,0,0"
+                        CornerRadius="8" Padding="18" MinHeight="108">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="Current receive speed" Foreground="{StaticResource MetricSpeedBrush}" />
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="{Binding CurrentSpeed}" FontSize="32" FontWeight="Bold"
+                                       Foreground="{StaticResource MetricSpeedBrush}"
+                                       AutomationProperties.Name="Current receive speed" />
+                            <TextBlock Text="{Binding CurrentSpeedUnit}" Margin="6,0,0,6" VerticalAlignment="Bottom"
+                                       Foreground="{StaticResource MetricSpeedBrush}" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <Border x:Name="FilesCard" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        BorderBrush="{StaticResource MetricFilesBrush}" BorderThickness="4,0,0,0"
+                        CornerRadius="8" Padding="18" MinHeight="108">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="Files received" Foreground="{StaticResource MetricFilesBrush}" />
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="{Binding FileCount}" FontSize="32" FontWeight="Bold"
+                                       Foreground="{StaticResource MetricFilesBrush}"
+                                       AutomationProperties.Name="Files received" />
+                            <TextBlock Text=" files" Margin="6,0,0,6" VerticalAlignment="Bottom"
+                                       Foreground="{StaticResource MetricFilesBrush}" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <Border x:Name="DurationCard" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        BorderBrush="{StaticResource MetricDurationBrush}" BorderThickness="4,0,0,0"
+                        CornerRadius="8" Padding="18" MinHeight="108">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="Receiver session duration" Foreground="{StaticResource MetricDurationBrush}" />
+                        <TextBlock Text="{Binding SessionDuration}" FontSize="32" FontWeight="Bold"
+                                   Foreground="{StaticResource MetricDurationBrush}"
+                                   AutomationProperties.Name="Receiver session duration" />
+                    </StackPanel>
+                </Border>
+
+                <Border x:Name="TotalCard" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        BorderBrush="{StaticResource MetricTotalBrush}" BorderThickness="4,0,0,0"
+                        CornerRadius="8" Padding="18" MinHeight="108">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="Total received" Foreground="{StaticResource MetricTotalBrush}" />
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="{Binding TotalSizeGb}" FontSize="32" FontWeight="Bold"
+                                       Foreground="{StaticResource MetricTotalBrush}"
+                                       AutomationProperties.Name="Total received in gigabytes" />
+                            <TextBlock Text=" GB" Margin="6,0,0,6" VerticalAlignment="Bottom"
+                                       Foreground="{StaticResource MetricTotalBrush}" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <Border Grid.Row="2" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    CornerRadius="8" Padding="18" MinHeight="250">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="Receive speed" FontWeight="SemiBold" />
+                    <TextBlock Text="Rolling current media throughput · latest 30 samples · MB/s"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <lvc:CartesianChart x:Name="SpeedChart"
+                                        MinHeight="180" Height="210"
+                                        AutomationProperties.Name="Receive speed over the latest 30 samples" />
+                </StackPanel>
+            </Border>
+
+            <Border Grid.Row="3" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    CornerRadius="8" Padding="18">
+                <StackPanel Spacing="12">
+                    <Grid x:Name="RecentTitleGrid" ColumnSpacing="12" RowSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition x:Name="RecentTitleColumn2" Width="0" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <StackPanel>
+                            <TextBlock Text="Recent transfers" FontWeight="SemiBold" />
+                            <TextBlock Text="Saved session records only. Clearing history never deletes received files."
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                       TextWrapping="Wrap" Margin="0,4,0,0" />
+                        </StackPanel>
+                        <Button x:Name="ClearHistoryButton" Grid.Row="1" Grid.Column="0"
+                                Content="Clear history" HorizontalAlignment="Stretch"
+                                Click="ClearHistory_Click" />
+                    </Grid>
+                    <Grid x:Name="RecentTransfersHeader" Margin="12,14,12,2"
+                          ColumnSpacing="20" Visibility="Collapsed">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="110" />
+                            <ColumnDefinition Width="170" />
+                            <ColumnDefinition Width="150" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Transfer" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        <TextBlock Grid.Column="1" Text="Received" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        <TextBlock Grid.Column="2" Text="Speed" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        <TextBlock Grid.Column="3" Text="Completed" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    </Grid>
+                    <ListView x:Name="RecentTransfersList" MinHeight="180" SelectionMode="None"
+                              HorizontalContentAlignment="Stretch"
+                              AutomationProperties.Name="Recent transfer sessions"
+                              ItemTemplate="{StaticResource NarrowTransferItemTemplate}" />
+                </StackPanel>
+            </Border>
+        </Grid>
+    </ScrollViewer>
+</Page>
