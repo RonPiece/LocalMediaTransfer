@@ -81,6 +81,10 @@ if(WIN32)
     target_compile_options(${PROJECT_NAME} PRIVATE
         "/DFMT_ASSERT(x,...)=((void)0)"
     )
+    if(MSVC)
+        # HttpServer.cpp exceeds the default COFF section limit in Debug builds.
+        target_compile_options(${PROJECT_NAME} PRIVATE "/bigobj")
+    endif()
     target_link_libraries(${PROJECT_NAME} PRIVATE ws2_32 iphlpapi crypt32 advapi32)
 endif()
 
