@@ -29,10 +29,9 @@ updates:
       - dependency-name: "jest-expo"
       - dependency-name: "nativewind"
       - dependency-name: "tailwindcss"
-      - dependency-name: "jest"
-        update-types:
-          - version-update:semver-major
-      - dependency-name: "@types/jest"
+      # Major JavaScript/tooling updates are reviewed as intentional migrations;
+      # Dependabot continues to propose compatible minor and patch maintenance.
+      - dependency-name: "*"
         update-types:
           - version-update:semver-major
 

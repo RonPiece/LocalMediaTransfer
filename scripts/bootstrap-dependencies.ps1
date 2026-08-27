@@ -154,31 +154,29 @@ function Get-VcpkgToolPath {
     return $tool.FullName
 }
 
-function Initialize-VcpkgSystemTools {
-    $system7Zip = Get-CommandDirectory -CommandName "7z.exe"
-    $provisioned7Zip = Get-VcpkgToolPath -Pattern "7zip-*-windows"
-    if (-not [string]::IsNullOrWhiteSpace($system7Zip) -or
-        -not [string]::IsNullOrWhiteSpace($provisioned7Zip)) {
-        return
-    }
+function Get-VcpkgRequiredToolDirectory {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ToolName
+    )
 
-    # VCPKG_FORCE_SYSTEM_BINARIES prevents vcpkg from provisioning tools. A
-    # clean GitHub runner does not necessarily have 7-Zip on PATH, so fetch the
-    # exact version selected by this vcpkg checkout before enabling that mode.
-    Write-Host "Provisioning the vcpkg-pinned 7-Zip tool..."
+    # Ask the selected vcpkg checkout to resolve the version it requires. Do
+    # this before forcing system binaries: a runner may have an older tool on
+    # PATH (for example CMake 3.x when the pinned baseline requires CMake 4.x).
+    Write-Host "Resolving the vcpkg-required $ToolName tool..."
     $oldForceSystemBinaries = $env:VCPKG_FORCE_SYSTEM_BINARIES
     try {
         Remove-Item Env:\VCPKG_FORCE_SYSTEM_BINARIES -ErrorAction SilentlyContinue
         # Keep vcpkg's default stdout status stream. Windows PowerShell 5.1
         # converts redirected native stderr into terminating ErrorRecords when
         # ErrorActionPreference is Stop.
-        $fetchOutput = & $vcpkgExe fetch 7zip
+        $fetchOutput = @(& $vcpkgExe fetch $ToolName)
         $fetchExitCode = $LASTEXITCODE
         foreach ($line in $fetchOutput) {
             Write-Host $line
         }
         if ($fetchExitCode -ne 0) {
-            throw "Unable to provision vcpkg's pinned 7-Zip tool."
+            throw "Unable to resolve vcpkg's required $ToolName tool."
         }
     }
     finally {
@@ -190,10 +188,18 @@ function Initialize-VcpkgSystemTools {
         }
     }
 
-    $provisioned7Zip = Get-VcpkgToolPath -Pattern "7zip-*-windows"
-    if ([string]::IsNullOrWhiteSpace($provisioned7Zip)) {
-        throw "vcpkg fetched 7-Zip but its tool directory was not found."
+    $toolExecutable = $fetchOutput | ForEach-Object {
+        $candidate = [string]$_
+        if (-not [string]::IsNullOrWhiteSpace($candidate) -and
+            (Test-Path -LiteralPath $candidate -PathType Leaf)) {
+            (Resolve-Path -LiteralPath $candidate).Path
+        }
+    } | Select-Object -Last 1
+    if ([string]::IsNullOrWhiteSpace($toolExecutable)) {
+        throw "vcpkg resolved $ToolName but did not report its executable path."
     }
+
+    return (Split-Path -Parent $toolExecutable)
 }
 
 function Test-Rc1107Failure {
@@ -290,11 +296,17 @@ function Invoke-VcpkgInstall {
 
     $oldPath = $env:PATH
     $oldForceSystemBinaries = $env:VCPKG_FORCE_SYSTEM_BINARIES
+    $oldKeepEnvVars = $env:VCPKG_KEEP_ENV_VARS
     try {
         if ($PreferVisualStudioTools) {
-            Initialize-VcpkgSystemTools
-
             $toolPaths = @()
+            # The pinned CMake may be newer than both the hosted runner and
+            # Visual Studio. Resolve it first so it wins PATH lookup. Resolve
+            # 7-Zip explicitly as well because clean runners do not guarantee
+            # that 7z.exe is available on PATH.
+            $toolPaths += Get-VcpkgRequiredToolDirectory -ToolName "cmake"
+            $toolPaths += Get-VcpkgRequiredToolDirectory -ToolName "7zip"
+
             $vsCMakePath = Get-VisualStudioCMakePath
             if (-not [string]::IsNullOrWhiteSpace($vsCMakePath)) {
                 $toolPaths += $vsCMakePath
@@ -314,8 +326,7 @@ function Invoke-VcpkgInstall {
 
             foreach ($pattern in @(
                 "ninja-*-windows",
-                "powershell-core-*-windows",
-                "7zip-*-windows"
+                "powershell-core-*-windows"
             )) {
                 $toolPath = Get-VcpkgToolPath -Pattern $pattern
                 if (-not [string]::IsNullOrWhiteSpace($toolPath)) {
@@ -334,6 +345,13 @@ function Invoke-VcpkgInstall {
             }
 
             $env:VCPKG_FORCE_SYSTEM_BINARIES = "1"
+            $keepEnvVars = @($oldKeepEnvVars -split ';' | Where-Object {
+                -not [string]::IsNullOrWhiteSpace($_)
+            })
+            if ($keepEnvVars -notcontains "PATH") {
+                $keepEnvVars += "PATH"
+            }
+            $env:VCPKG_KEEP_ENV_VARS = $keepEnvVars -join ';'
             Write-Host "Using Visual Studio/system tools for MSVC resource compiler compatibility..."
         }
 
@@ -410,6 +428,12 @@ function Invoke-VcpkgInstall {
         }
         else {
             $env:VCPKG_FORCE_SYSTEM_BINARIES = $oldForceSystemBinaries
+        }
+        if ($null -eq $oldKeepEnvVars) {
+            Remove-Item Env:\VCPKG_KEEP_ENV_VARS -ErrorAction SilentlyContinue
+        }
+        else {
+            $env:VCPKG_KEEP_ENV_VARS = $oldKeepEnvVars
         }
     }
 }
