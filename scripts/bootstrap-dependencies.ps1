@@ -154,6 +154,48 @@ function Get-VcpkgToolPath {
     return $tool.FullName
 }
 
+function Initialize-VcpkgSystemTools {
+    $system7Zip = Get-CommandDirectory -CommandName "7z.exe"
+    $provisioned7Zip = Get-VcpkgToolPath -Pattern "7zip-*-windows"
+    if (-not [string]::IsNullOrWhiteSpace($system7Zip) -or
+        -not [string]::IsNullOrWhiteSpace($provisioned7Zip)) {
+        return
+    }
+
+    # VCPKG_FORCE_SYSTEM_BINARIES prevents vcpkg from provisioning tools. A
+    # clean GitHub runner does not necessarily have 7-Zip on PATH, so fetch the
+    # exact version selected by this vcpkg checkout before enabling that mode.
+    Write-Host "Provisioning the vcpkg-pinned 7-Zip tool..."
+    $oldForceSystemBinaries = $env:VCPKG_FORCE_SYSTEM_BINARIES
+    try {
+        Remove-Item Env:\VCPKG_FORCE_SYSTEM_BINARIES -ErrorAction SilentlyContinue
+        # Keep vcpkg's default stdout status stream. Windows PowerShell 5.1
+        # converts redirected native stderr into terminating ErrorRecords when
+        # ErrorActionPreference is Stop.
+        $fetchOutput = & $vcpkgExe fetch 7zip
+        $fetchExitCode = $LASTEXITCODE
+        foreach ($line in $fetchOutput) {
+            Write-Host $line
+        }
+        if ($fetchExitCode -ne 0) {
+            throw "Unable to provision vcpkg's pinned 7-Zip tool."
+        }
+    }
+    finally {
+        if ($null -eq $oldForceSystemBinaries) {
+            Remove-Item Env:\VCPKG_FORCE_SYSTEM_BINARIES -ErrorAction SilentlyContinue
+        }
+        else {
+            $env:VCPKG_FORCE_SYSTEM_BINARIES = $oldForceSystemBinaries
+        }
+    }
+
+    $provisioned7Zip = Get-VcpkgToolPath -Pattern "7zip-*-windows"
+    if ([string]::IsNullOrWhiteSpace($provisioned7Zip)) {
+        throw "vcpkg fetched 7-Zip but its tool directory was not found."
+    }
+}
+
 function Test-Rc1107Failure {
     $buildtrees = Join-Path $VcpkgRoot "buildtrees"
     if (-not (Test-Path -LiteralPath $buildtrees)) {
@@ -250,6 +292,8 @@ function Invoke-VcpkgInstall {
     $oldForceSystemBinaries = $env:VCPKG_FORCE_SYSTEM_BINARIES
     try {
         if ($PreferVisualStudioTools) {
+            Initialize-VcpkgSystemTools
+
             $toolPaths = @()
             $vsCMakePath = Get-VisualStudioCMakePath
             if (-not [string]::IsNullOrWhiteSpace($vsCMakePath)) {
