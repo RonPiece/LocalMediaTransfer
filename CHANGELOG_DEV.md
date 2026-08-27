@@ -1,5 +1,33 @@
 # Development Session Changelog
 
+## Windows CI failure audit - 2026-08-27
+
+### Current outcome
+
+- All 12 public `Windows CI` runs currently fail at the same
+  `Build C++ server Debug` step. The initial `main` push and every Dependabot
+  pull request share this failure, so the red Dependabot checks are not evidence
+  of 11 independent dependency regressions.
+- GitHub reports the preceding native-dependency restore as successful in every
+  run. Three supplied hosted-runner logs confirm the same compiler failure in
+  `HttpServer.cpp`: MSVC `C1128`, the default COFF section limit was exceeded in
+  Debug and the translation unit must be compiled with `/bigobj`.
+- `src/Server/CMakeLists.txt` now adds `/bigobj` for MSVC builds. Local Debug
+  and Release clean rebuilds pass, and the isolated server integration suite
+  passes all 53 HTTP checks plus the ownership, TLS, discovery, persistence,
+  filename-policy, and benchmark-mode checks.
+- The later installer CI gate had an invalid prerelease override,
+  `0.0.0-ci`, despite the installer's numeric `MAJOR.MINOR.PATCH` contract. The
+  workflow now omits that override and stages with the canonical `VERSION`.
+  Exact installer staging passed with version `2.0.0` after rebuilding the
+  Release server and publishing the WinUI GUI.
+- A clean local reproduction also found a separate bootstrap defect:
+  `-PreferVisualStudioTools` sets `VCPKG_FORCE_SYSTEM_BINARIES=1`, and a machine
+  without system 7-Zip cannot restore dependencies. In this case vcpkg prints a
+  fatal tool-fetch error but returns zero, the bootstrap reports success, and
+  the following CMake configure fails. The supplied GitHub logs show successful
+  dependency installation and therefore rule this out as the hosted failure.
+
 ## Publication and release organization - 2026-08-26
 
 ### Current outcome
