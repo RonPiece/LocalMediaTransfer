@@ -133,7 +133,7 @@ jobs:
           ditto -c -k --sequesterRsrc --keepParent Payload "${artifact_basename}.ipa"
 
       - name: Upload IPA artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: LocalMediaTransfer-${{ inputs.environment }}-unsigned-ipa
           path: src/LocalMediaTransfer.iOS/LocalMediaTransfer-${{ inputs.environment }}-unsigned.ipa
