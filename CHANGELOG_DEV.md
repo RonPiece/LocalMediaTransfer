@@ -4,18 +4,26 @@
 
 ### Current outcome
 
-- All 12 public `Windows CI` runs currently fail at the same
-  `Build C++ server Debug` step. The initial `main` push and every Dependabot
-  pull request share this failure, so the red Dependabot checks are not evidence
-  of 11 independent dependency regressions.
-- GitHub reports the preceding native-dependency restore as successful in every
-  run. Three supplied hosted-runner logs confirm the same compiler failure in
-  `HttpServer.cpp`: MSVC `C1128`, the default COFF section limit was exceeded in
-  Debug and the translation unit must be compiled with `/bigobj`.
-- `src/Server/CMakeLists.txt` now adds `/bigobj` for MSVC builds. Local Debug
-  and Release clean rebuilds pass, and the isolated server integration suite
-  passes all 53 HTTP checks plus the ownership, TLS, discovery, persistence,
-  filename-policy, and benchmark-mode checks.
+- The first 12 public `Windows CI` runs failed at `Build C++ server Debug` with
+  MSVC `C1128` in `HttpServer.cpp`. The initial `main` push and every Dependabot
+  pull request shared that failure, so those red checks were not 11 independent
+  dependency regressions. Three supplied logs confirmed that dependency restore
+  and CMake configuration had succeeded before the compiler hit the default COFF
+  section limit.
+- `src/Server/CMakeLists.txt` now adds `/bigobj` for MSVC. The following hosted
+  run confirmed the correction: both Debug and Release C++ builds passed. That
+  run then exposed a separate timing race in the isolated server harness while
+  checking the final `pairing_window_closed` diagnostic event.
+- The diagnostic check was added in `3fed4ee` after the older green June run at
+  `7aa031b`; it sent `end_native_pairing` and read the log immediately. It was
+  therefore never an old fixed case. The harness now correlates unique request
+  IDs with the server's existing `command_result` replies, fails on negative or
+  missing acknowledgements, serializes pipe writes, and uses acknowledged
+  commands for every state-changing test action instead of fixed 100 ms sleeps.
+- Ten consecutive isolated harness repetitions passed after the synchronization
+  change. The complete local dispatcher also passed clean Debug and Release C++
+  builds, all 53 HTTP/server checks, 45 frontend tests, 237 iOS Jest tests,
+  TypeScript, ESLint, 56 C#/Windows tests, and both WinUI build variants.
 - The later installer CI gate had an invalid prerelease override,
   `0.0.0-ci`, despite the installer's numeric `MAJOR.MINOR.PATCH` contract. The
   workflow now omits that override and stages with the canonical `VERSION`.

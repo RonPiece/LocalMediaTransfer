@@ -604,9 +604,8 @@ internal static class TestHarness
             RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
         string bootstrap = Convert.ToHexString(
             RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
-        await pipe.SendCommandAsync("set_browser_bootstrap", replacedBootstrap);
-        await pipe.SendCommandAsync("set_browser_bootstrap", bootstrap);
-        await Task.Delay(100);
+        await pipe.SendAcknowledgedCommandAsync("set_browser_bootstrap", replacedBootstrap);
+        await pipe.SendAcknowledgedCommandAsync("set_browser_bootstrap", bootstrap);
 
         using var http = new HttpClient
         {
@@ -1518,7 +1517,7 @@ internal static class TestHarness
                 ex.SocketErrorCode == SocketError.ConnectionRefused) { }
         }
 
-        await pipe.SendCommandAsync("set_discovery_enabled", "true");
+        await pipe.SendAcknowledgedCommandAsync("set_discovery_enabled", "true");
         await Task.Delay(250);
         JsonDocument? discoveryResponse = null;
         for (int attempt = 0; attempt < 5 && discoveryResponse == null; attempt++)
@@ -1583,8 +1582,7 @@ internal static class TestHarness
             throw new InvalidOperationException("Replacement pairing request was not pending.");
         credential = replacementCredential;
 
-        await pipe.SendCommandAsync("approve_device", deviceId);
-        await Task.Delay(100);
+        await pipe.SendAcknowledgedCommandAsync("approve_device", deviceId);
         using HttpResponseMessage status = await http.PostAsJsonAsync("/pair/status", new { deviceId, credential }, JsonOptions);
         status.EnsureSuccessStatusCode();
         using JsonDocument statusBody = JsonDocument.Parse(await status.Content.ReadAsStringAsync());
@@ -1646,8 +1644,7 @@ internal static class TestHarness
         AssertEqual("pairing_window_closed", closedBody.RootElement.GetProperty("error").GetString(),
             "Closed pairing window returned an unstable error code.");
 
-        await pipe.SendCommandAsync("begin_native_pairing", "120");
-        await Task.Delay(100);
+        await pipe.SendAcknowledgedCommandAsync("begin_native_pairing", "120");
         using HttpResponseMessage pending = await http.PostAsJsonAsync(
             "/native/v1/pairing/requests", pairingBody, JsonOptions);
         pending.EnsureSuccessStatusCode();
@@ -1657,8 +1654,7 @@ internal static class TestHarness
         using HttpResponseMessage confirmed = await http.PostAsJsonAsync(
             $"/native/v1/pairing/requests/{requestId}/confirm", new { proof }, JsonOptions);
         confirmed.EnsureSuccessStatusCode();
-        await pipe.SendCommandAsync("approve_native_pairing", requestId);
-        await Task.Delay(100);
+        await pipe.SendAcknowledgedCommandAsync("approve_native_pairing", requestId);
         using HttpResponseMessage approved = await http.PostAsJsonAsync(
             $"/native/v1/pairing/requests/{requestId}/status",
             new { clientId, credential }, JsonOptions);
@@ -1705,8 +1701,7 @@ internal static class TestHarness
         string transferId = transferPendingBody.RootElement.GetProperty("transferId").GetString()!;
         AssertEqual(sessionId[4..], transferId,
             "Receiver transfer ID was not bound to the client session ID.");
-        await pipe.SendCommandAsync("approve_native_transfer", transferRequestId);
-        await Task.Delay(100);
+        await pipe.SendAcknowledgedCommandAsync("approve_native_transfer", transferRequestId);
         using var statusRequest = new HttpRequestMessage(HttpMethod.Post,
             $"/native/v1/transfers/requests/{transferRequestId}/status");
         statusRequest.Headers.Add("X-Device-Credential", credential);
@@ -1742,8 +1737,7 @@ internal static class TestHarness
         catch (HttpRequestException exception) when (
             exception.StatusCode == HttpStatusCode.Forbidden) { }
 
-        await pipe.SendCommandAsync("revoke_device", clientId);
-        await Task.Delay(100);
+        await pipe.SendAcknowledgedCommandAsync("revoke_device", clientId);
         using var revokedRequest = new HttpRequestMessage(HttpMethod.Post,
             "/native/v1/transfers/requests")
         {
@@ -1767,7 +1761,7 @@ internal static class TestHarness
         Assert(ComputeNativeSecurityCode("test", serverId, fingerprint,
             clientId, nonce, requestId).Length == 9,
             "Native pairing security code format is invalid.");
-        await pipe.SendCommandAsync("end_native_pairing", "");
+        await pipe.SendAcknowledgedCommandAsync("end_native_pairing", "");
         VerifyNativeDiagnosticPrivacy(context,
             [credential, nonce, clientId, requestId, transferRequestId, transferId,
                 fileId, fingerprint, "Harness Windows sender", "native-harness.bin"]);
@@ -2532,6 +2526,9 @@ internal sealed class PipeConnection : IAsyncDisposable
     private readonly CancellationTokenSource _cancellation = new();
     private readonly Task _drainTask;
     private readonly ConcurrentQueue<JsonElement> _metrics = new();
+    private readonly ConcurrentDictionary<string,
+        TaskCompletionSource<PipeCommandResult>> _pendingCommands = new();
+    private readonly SemaphoreSlim _writeLock = new(1, 1);
 
     public PipeConnection(NamedPipeClientStream pipe)
     {
@@ -2564,6 +2561,7 @@ internal sealed class PipeConnection : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         _cancellation.Cancel();
+        FailPendingCommands(new ObjectDisposedException(nameof(PipeConnection)));
         try
         {
             await _pipe.DisposeAsync();
@@ -2575,6 +2573,7 @@ internal sealed class PipeConnection : IAsyncDisposable
         }
         finally
         {
+            _writeLock.Dispose();
             _cancellation.Dispose();
         }
     }
@@ -2598,55 +2597,142 @@ internal sealed class PipeConnection : IAsyncDisposable
         throw new TimeoutException("Expected named-pipe metrics update was not received.");
     }
 
-    public async Task SendCommandAsync(string type, string data)
+    public async Task SendAcknowledgedCommandAsync(
+        string type,
+        string data,
+        TimeSpan? timeout = null)
     {
-        byte[] command = JsonSerializer.SerializeToUtf8Bytes(new { type, data });
-        await _pipe.WriteAsync(command);
-        await _pipe.FlushAsync();
+        string requestId = Convert.ToHexString(
+            RandomNumberGenerator.GetBytes(16)).ToLowerInvariant();
+        var completion = new TaskCompletionSource<PipeCommandResult>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        if (!_pendingCommands.TryAdd(requestId, completion))
+        {
+            throw new InvalidOperationException(
+                "Could not allocate a named-pipe command identifier.");
+        }
+
+        try
+        {
+            byte[] command = JsonSerializer.SerializeToUtf8Bytes(
+                new { type, data, requestId });
+            await _writeLock.WaitAsync(_cancellation.Token);
+            try
+            {
+                await _pipe.WriteAsync(command, _cancellation.Token);
+                await _pipe.FlushAsync(_cancellation.Token);
+            }
+            finally
+            {
+                _writeLock.Release();
+            }
+
+            PipeCommandResult result;
+            try
+            {
+                result = await completion.Task.WaitAsync(
+                    timeout ?? TimeSpan.FromSeconds(5));
+            }
+            catch (TimeoutException exception)
+            {
+                throw new TimeoutException(
+                    $"The server did not acknowledge named-pipe command '{type}' in time.",
+                    exception);
+            }
+
+            if (!result.Success)
+            {
+                throw new InvalidOperationException(
+                    $"Named-pipe command '{type}' failed: {result.Error}");
+            }
+        }
+        finally
+        {
+            _pendingCommands.TryRemove(requestId, out _);
+        }
     }
 
     private async Task DrainAsync(CancellationToken cancellationToken)
     {
         byte[] buffer = new byte[4096];
-        while (!cancellationToken.IsCancellationRequested && _pipe.IsConnected)
+        try
         {
-            int read = await _pipe.ReadAsync(buffer, cancellationToken);
-            if (read == 0)
+            while (!cancellationToken.IsCancellationRequested && _pipe.IsConnected)
             {
-                return;
-            }
-
-            int messageLength = read;
-            while (!_pipe.IsMessageComplete)
-            {
-                if (messageLength == buffer.Length)
-                {
-                    Array.Resize(ref buffer, buffer.Length * 2);
-                }
-                read = await _pipe.ReadAsync(
-                    buffer.AsMemory(messageLength),
-                    cancellationToken);
+                int read = await _pipe.ReadAsync(buffer, cancellationToken);
                 if (read == 0)
                 {
                     return;
                 }
-                messageLength += read;
-            }
 
-            try
-            {
-                using JsonDocument message = JsonDocument.Parse(buffer.AsMemory(0, messageLength));
-                if (message.RootElement.GetProperty("type").GetString() == "metrics")
+                int messageLength = read;
+                while (!_pipe.IsMessageComplete)
                 {
-                    _metrics.Enqueue(message.RootElement.GetProperty("data").Clone());
+                    if (messageLength == buffer.Length)
+                    {
+                        Array.Resize(ref buffer, buffer.Length * 2);
+                    }
+                    read = await _pipe.ReadAsync(
+                        buffer.AsMemory(messageLength),
+                        cancellationToken);
+                    if (read == 0)
+                    {
+                        return;
+                    }
+                    messageLength += read;
+                }
+
+                try
+                {
+                    using JsonDocument message = JsonDocument.Parse(
+                        buffer.AsMemory(0, messageLength));
+                    JsonElement root = message.RootElement;
+                    string? messageType = root.GetProperty("type").GetString();
+                    JsonElement messageData = root.GetProperty("data");
+                    if (messageType == "metrics")
+                    {
+                        _metrics.Enqueue(messageData.Clone());
+                    }
+                    else if (messageType == "command_result")
+                    {
+                        string? requestId = messageData.GetProperty(
+                            "requestId").GetString();
+                        if (!string.IsNullOrEmpty(requestId) &&
+                            _pendingCommands.TryRemove(requestId, out var completion))
+                        {
+                            bool success = messageData.GetProperty("success").GetBoolean();
+                            string error = messageData.TryGetProperty("error", out var errorValue)
+                                ? errorValue.GetString() ?? ""
+                                : "";
+                            completion.TrySetResult(new PipeCommandResult(success, error));
+                        }
+                    }
+                }
+                catch (JsonException)
+                {
+                    // The harness observes supported messages and keeps draining output.
                 }
             }
-            catch (JsonException)
+        }
+        finally
+        {
+            FailPendingCommands(new IOException(
+                "The named-pipe connection closed before the server acknowledged the command."));
+        }
+    }
+
+    private void FailPendingCommands(Exception exception)
+    {
+        foreach (var pending in _pendingCommands)
+        {
+            if (_pendingCommands.TryRemove(pending.Key, out var completion))
             {
-                // The harness only observes valid metrics and continues draining all output.
+                completion.TrySetException(exception);
             }
         }
     }
+
+    private readonly record struct PipeCommandResult(bool Success, string Error);
 
     private static class NativeMethods
     {
