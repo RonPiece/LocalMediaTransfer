@@ -24,6 +24,10 @@
   change. The complete local dispatcher also passed clean Debug and Release C++
   builds, all 53 HTTP/server checks, 45 frontend tests, 237 iOS Jest tests,
   TypeScript, ESLint, 56 C#/Windows tests, and both WinUI build variants.
+- Public Windows CI run `33043898203` at clean commit `7681260` completed
+  successfully. It passed dependency restoration, both C++ configurations, the
+  corrected isolated server suite, frontend and iOS checks, C#/Windows tests,
+  both WinUI configurations, and release-installer staging on `windows-2022`.
 - The later installer CI gate had an invalid prerelease override,
   `0.0.0-ci`, despite the installer's numeric `MAJOR.MINOR.PATCH` contract. The
   workflow now omits that override and stages with the canonical `VERSION`.
