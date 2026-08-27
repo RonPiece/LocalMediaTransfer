@@ -1,5 +1,35 @@
 # Development Session Changelog
 
+## Dependency automation compatibility - 2026-08-27
+
+### Current outcome
+
+- Dependabot may continue updating independent JavaScript packages, but Expo
+  SDK-managed native/runtime dependencies are excluded from independent update
+  pull requests. Expo SDK upgrades are coordinated migrations performed with
+  `npx expo install`; the SDK 54 application remains on React Native 0.81 and
+  React 19.1. Jest and its type package may receive compatible updates, but
+  major-version proposals are excluded while `jest-expo` remains on SDK 54.
+- Expo's compatibility check identified and installed the current SDK 54 patch
+  set: Expo `54.0.37`, `expo-file-system` `19.0.24`, and `jest-expo` `54.0.18`.
+  This keeps the project within SDK 54 while accepting compatible maintenance.
+- A non-forced npm audit repair updated safe transitive versions within the SDK
+  54 graph and reduced the audit result from 20 to 17 findings, including high
+  findings from 12 to 9. The remaining findings are in Expo/Metro/config build
+  dependencies; npm's available automated resolution is the incompatible Expo
+  57 migration, so `npm audit fix --force` is intentionally not used.
+- The Windows verification dispatcher now runs `npx expo install --check`
+  before Jest, TypeScript, and ESLint. This rejects incompatible native package
+  combinations even when JavaScript-only tests happen to pass.
+- Native dependency bootstrap now always obtains the vcpkg executable selected
+  by the pinned registry checkout. It no longer copies Visual Studio's bundled
+  executable, which can be too old to parse a newer baseline's tool metadata.
+  The wrapper also treats error output with a zero process exit code as failure
+  and verifies that every manifest dependency exists before reporting success.
+- The proposed July 2026 vcpkg baseline was restored locally with its matching
+  tool and is now adopted. Both server configurations and the complete local
+  verification dispatcher pass against its dependency graph.
+
 ## Windows CI failure audit - 2026-08-27
 
 ### Current outcome
@@ -33,12 +63,12 @@
   workflow now omits that override and stages with the canonical `VERSION`.
   Exact installer staging passed with version `2.0.0` after rebuilding the
   Release server and publishing the WinUI GUI.
-- A clean local reproduction also found a separate bootstrap defect:
-  `-PreferVisualStudioTools` sets `VCPKG_FORCE_SYSTEM_BINARIES=1`, and a machine
-  without system 7-Zip cannot restore dependencies. In this case vcpkg prints a
-  fatal tool-fetch error but returns zero, the bootstrap reports success, and
-  the following CMake configure fails. The supplied GitHub logs show successful
-  dependency installation and therefore rule this out as the hosted failure.
+- A clean local reproduction also found a separate bootstrap prerequisite:
+  `-PreferVisualStudioTools` sets `VCPKG_FORCE_SYSTEM_BINARIES=1`, and a fresh
+  machine needs system or already-provisioned 7-Zip. The wrapper now detects the
+  observed vcpkg failure text even when vcpkg incorrectly returns zero, so it no
+  longer reports a false restore success. Hosted dependency restoration and the
+  tested July 2026 baseline both had the required tool available.
 
 ## Publication and release organization - 2026-08-26
 
