@@ -94,6 +94,9 @@ function Invoke-Target {
             $iosDirectory = Join-Path $repoRoot "src\LocalMediaTransfer.iOS"
             Push-Location $iosDirectory
             try {
+                Invoke-Checked "Expo SDK dependency compatibility" {
+                    npx expo install --check
+                }
                 Invoke-Checked "iOS Jest tests" {
                     npm test -- --runInBand
                 }

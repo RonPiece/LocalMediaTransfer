@@ -2,7 +2,7 @@
   "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
   "name": "local-media-transfer",
   "version-string": "2.0.0",
-  "builtin-baseline": "66c0373dc7fca549e5803087b9487edfe3aca0a1",
+  "builtin-baseline": "9e593bb18ea69cc5095e012465dcd675a822ed0d",
   "dependencies": [
     "crow",
     "nlohmann-json",
