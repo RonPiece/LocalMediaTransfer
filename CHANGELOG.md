@@ -1,7 +1,8 @@
 # Changelog
 
 This file lists user-visible changes in released versions of Local Media
-Transfer. Internal engineering history remains in `CHANGELOG_DEV.md`.
+Transfer. Private engineering notes are intentionally excluded from the public
+repository.
 
 ## [Unreleased]
 

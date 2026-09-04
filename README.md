@@ -145,7 +145,6 @@ Start with the component guide for the area you are changing:
 - [User-facing changelog](CHANGELOG.md)
 - [Release process](docs/RELEASING.md)
 - [Publication checklist](docs/PUBLICATION_CHECKLIST.md)
-- [Reconciled development history](CHANGELOG_DEV.md)
 
 Useful root-level verification command:
 

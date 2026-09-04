@@ -47,7 +47,8 @@ Include exact verification commands and factual results. Classify failures as
 source, environment, permissions, or stale build state. Explicitly distinguish
 Jest/TypeScript checks, macOS Swift compilation, and physical-device evidence.
 
-`CHANGELOG_DEV.md` remains the reconciled current status. These notes are the
+A local, ignored `CHANGELOG_DEV.md` may be used as the reconciled current
+status. It must remain untracked and unpublished. These dated notes are the
 chronological engineering record.
 
 ## Privacy rules

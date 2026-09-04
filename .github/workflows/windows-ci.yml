@@ -98,10 +98,7 @@ jobs:
 
       - name: Validate release installer layout
         shell: powershell
-        run: >
-          .\tools\LocalMediaTransfer.InnoSetup\build.ps1
-          -StageOnly
-          -Version "0.0.0-ci"
+        run: .\tools\LocalMediaTransfer.InnoSetup\build.ps1 -StageOnly
 
       - name: Upload diagnostics on failure
         if: failure()

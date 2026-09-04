@@ -11,6 +11,29 @@ updates:
         update-types:
           - minor
           - patch
+    # Expo SDK and React Native packages must be upgraded as one tested SDK
+    # migration with `npx expo install`, never as independent Dependabot PRs.
+    # Security alerts remain visible and are handled through that migration.
+    ignore:
+      - dependency-name: "expo"
+      - dependency-name: "expo-*"
+      - dependency-name: "@expo/*"
+      - dependency-name: "react"
+      - dependency-name: "react-native"
+      - dependency-name: "react-native-*"
+      - dependency-name: "@react-native*/*"
+      - dependency-name: "@types/react"
+      - dependency-name: "react-test-renderer"
+      - dependency-name: "babel-preset-expo"
+      - dependency-name: "eslint-config-expo"
+      - dependency-name: "jest-expo"
+      - dependency-name: "nativewind"
+      - dependency-name: "tailwindcss"
+      # Major JavaScript/tooling updates are reviewed as intentional migrations;
+      # Dependabot continues to propose compatible minor and patch maintenance.
+      - dependency-name: "*"
+        update-types:
+          - version-update:semver-major
 
   - package-ecosystem: nuget
     directory: /src/LocalMediaTransfer.GUI

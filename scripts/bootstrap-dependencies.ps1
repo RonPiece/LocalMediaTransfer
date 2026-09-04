@@ -50,24 +50,19 @@ if ($currentBaseline.Trim() -ne $baseline) {
 }
 
 $vcpkgExe = Join-Path $VcpkgRoot "vcpkg.exe"
-if (-not (Test-Path -LiteralPath $vcpkgExe)) {
-    $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-    if (Test-Path -LiteralPath $vswhere) {
-        $visualStudioPath = & $vswhere -latest -products * `
-            -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
-            -property installationPath
-        $bundledVcpkg = Join-Path $visualStudioPath "VC\vcpkg\vcpkg.exe"
-        if (Test-Path -LiteralPath $bundledVcpkg) {
-            Copy-Item -LiteralPath $bundledVcpkg -Destination $vcpkgExe
-        }
-    }
+$bootstrapVcpkg = Join-Path $VcpkgRoot "bootstrap-vcpkg.bat"
+if (-not (Test-Path -LiteralPath $bootstrapVcpkg)) {
+    throw "The selected vcpkg checkout does not contain bootstrap-vcpkg.bat."
 }
 
-if (-not (Test-Path -LiteralPath $vcpkgExe)) {
-    & (Join-Path $VcpkgRoot "bootstrap-vcpkg.bat") -disableMetrics
-    if ($LASTEXITCODE -ne 0) {
-        throw "vcpkg bootstrap failed."
-    }
+# The vcpkg executable and registry checkout evolve together. A Visual Studio-
+# bundled vcpkg.exe can be older than the selected checkout and may be unable to
+# parse that checkout's tool metadata. Always let the selected checkout install
+# its matching executable instead of copying Visual Studio's global tool.
+Write-Host "Bootstrapping the vcpkg tool for the selected baseline..."
+& $bootstrapVcpkg -disableMetrics
+if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $vcpkgExe)) {
+    throw "vcpkg bootstrap failed."
 }
 
 $env:VCPKG_ROOT = $VcpkgRoot
@@ -157,6 +152,54 @@ function Get-VcpkgToolPath {
     }
 
     return $tool.FullName
+}
+
+function Get-VcpkgRequiredToolDirectory {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ToolName
+    )
+
+    # Ask the selected vcpkg checkout to resolve the version it requires. Do
+    # this before forcing system binaries: a runner may have an older tool on
+    # PATH (for example CMake 3.x when the pinned baseline requires CMake 4.x).
+    Write-Host "Resolving the vcpkg-required $ToolName tool..."
+    $oldForceSystemBinaries = $env:VCPKG_FORCE_SYSTEM_BINARIES
+    try {
+        Remove-Item Env:\VCPKG_FORCE_SYSTEM_BINARIES -ErrorAction SilentlyContinue
+        # Keep vcpkg's default stdout status stream. Windows PowerShell 5.1
+        # converts redirected native stderr into terminating ErrorRecords when
+        # ErrorActionPreference is Stop.
+        $fetchOutput = @(& $vcpkgExe fetch $ToolName)
+        $fetchExitCode = $LASTEXITCODE
+        foreach ($line in $fetchOutput) {
+            Write-Host $line
+        }
+        if ($fetchExitCode -ne 0) {
+            throw "Unable to resolve vcpkg's required $ToolName tool."
+        }
+    }
+    finally {
+        if ($null -eq $oldForceSystemBinaries) {
+            Remove-Item Env:\VCPKG_FORCE_SYSTEM_BINARIES -ErrorAction SilentlyContinue
+        }
+        else {
+            $env:VCPKG_FORCE_SYSTEM_BINARIES = $oldForceSystemBinaries
+        }
+    }
+
+    $toolExecutable = $fetchOutput | ForEach-Object {
+        $candidate = [string]$_
+        if (-not [string]::IsNullOrWhiteSpace($candidate) -and
+            (Test-Path -LiteralPath $candidate -PathType Leaf)) {
+            (Resolve-Path -LiteralPath $candidate).Path
+        }
+    } | Select-Object -Last 1
+    if ([string]::IsNullOrWhiteSpace($toolExecutable)) {
+        throw "vcpkg resolved $ToolName but did not report its executable path."
+    }
+
+    return (Split-Path -Parent $toolExecutable)
 }
 
 function Test-Rc1107Failure {
@@ -253,9 +296,17 @@ function Invoke-VcpkgInstall {
 
     $oldPath = $env:PATH
     $oldForceSystemBinaries = $env:VCPKG_FORCE_SYSTEM_BINARIES
+    $oldKeepEnvVars = $env:VCPKG_KEEP_ENV_VARS
     try {
         if ($PreferVisualStudioTools) {
             $toolPaths = @()
+            # The pinned CMake may be newer than both the hosted runner and
+            # Visual Studio. Resolve it first so it wins PATH lookup. Resolve
+            # 7-Zip explicitly as well because clean runners do not guarantee
+            # that 7z.exe is available on PATH.
+            $toolPaths += Get-VcpkgRequiredToolDirectory -ToolName "cmake"
+            $toolPaths += Get-VcpkgRequiredToolDirectory -ToolName "7zip"
+
             $vsCMakePath = Get-VisualStudioCMakePath
             if (-not [string]::IsNullOrWhiteSpace($vsCMakePath)) {
                 $toolPaths += $vsCMakePath
@@ -275,8 +326,7 @@ function Invoke-VcpkgInstall {
 
             foreach ($pattern in @(
                 "ninja-*-windows",
-                "powershell-core-*-windows",
-                "7zip-*-windows"
+                "powershell-core-*-windows"
             )) {
                 $toolPath = Get-VcpkgToolPath -Pattern $pattern
                 if (-not [string]::IsNullOrWhiteSpace($toolPath)) {
@@ -295,6 +345,13 @@ function Invoke-VcpkgInstall {
             }
 
             $env:VCPKG_FORCE_SYSTEM_BINARIES = "1"
+            $keepEnvVars = @($oldKeepEnvVars -split ';' | Where-Object {
+                -not [string]::IsNullOrWhiteSpace($_)
+            })
+            if ($keepEnvVars -notcontains "PATH") {
+                $keepEnvVars += "PATH"
+            }
+            $env:VCPKG_KEEP_ENV_VARS = $keepEnvVars -join ';'
             Write-Host "Using Visual Studio/system tools for MSVC resource compiler compatibility..."
         }
 
@@ -304,27 +361,65 @@ function Invoke-VcpkgInstall {
             "--x-manifest-root=$repoRoot"
         )
         Write-Host "Running: vcpkg $($vcpkgArgs -join ' ')"
-        $proc = Start-Process -FilePath $vcpkgExe `
-            -ArgumentList $vcpkgArgs `
-            -NoNewWindow -PassThru
-        $exited = $proc.WaitForExit($TimeoutSeconds * 1000)
-        if (-not $exited) {
-            Write-Warning "vcpkg install did not finish within $TimeoutSeconds seconds -- killing."
-            try { $proc.Kill() } catch { }
-            $null = $proc.WaitForExit(5000)
-            return 1
-        }
+        $stdoutLog = [IO.Path]::GetTempFileName()
+        $stderrLog = [IO.Path]::GetTempFileName()
+        try {
+            $proc = Start-Process -FilePath $vcpkgExe `
+                -ArgumentList $vcpkgArgs `
+                -RedirectStandardOutput $stdoutLog `
+                -RedirectStandardError $stderrLog `
+                -NoNewWindow -PassThru
+            $exited = $proc.WaitForExit($TimeoutSeconds * 1000)
+            if (-not $exited) {
+                Write-Warning "vcpkg install did not finish within $TimeoutSeconds seconds -- killing."
+                try { $proc.Kill() } catch { }
+                $null = $proc.WaitForExit(5000)
+            }
 
-        # Complete the process wait before reading ExitCode. On Windows
-        # PowerShell/.NET Framework, the timed overload can report that the
-        # process exited before the Process object has refreshed all exit
-        # information. Microsoft recommends following a successful timed wait
-        # with the parameterless overload.
-        $proc.WaitForExit()
-        $proc.Refresh()
-        $exitCode = [int]$proc.ExitCode
-        Write-Host "vcpkg exited with code $exitCode."
-        return $exitCode
+            # Complete the process wait before reading ExitCode. On Windows
+            # PowerShell/.NET Framework, the timed overload can report that the
+            # process exited before the Process object has refreshed all exit
+            # information. Microsoft recommends following a successful timed
+            # wait with the parameterless overload.
+            if ($exited) {
+                $proc.WaitForExit()
+            }
+            $proc.Refresh()
+
+            $stdout = if (Test-Path -LiteralPath $stdoutLog) {
+                Get-Content -Raw -LiteralPath $stdoutLog
+            }
+            else { "" }
+            $stderr = if (Test-Path -LiteralPath $stderrLog) {
+                Get-Content -Raw -LiteralPath $stderrLog
+            }
+            else { "" }
+            if (-not [string]::IsNullOrWhiteSpace($stdout)) {
+                Write-Host $stdout.TrimEnd()
+            }
+            if (-not [string]::IsNullOrWhiteSpace($stderr)) {
+                Write-Host $stderr.TrimEnd()
+            }
+
+            if (-not $exited) {
+                return 1
+            }
+
+            $exitCode = [int]$proc.ExitCode
+            $combinedOutput = $stdout + [Environment]::NewLine + $stderr
+            if ($exitCode -eq 0 -and
+                $combinedOutput -match '(?im)^\s*(?:error|fatal error):') {
+                Write-Warning "vcpkg reported an error despite returning exit code 0."
+                return 1
+            }
+
+            Write-Host "vcpkg exited with code $exitCode."
+            return $exitCode
+        }
+        finally {
+            Remove-Item -LiteralPath $stdoutLog -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath $stderrLog -Force -ErrorAction SilentlyContinue
+        }
     }
     finally {
         $env:PATH = $oldPath
@@ -333,6 +428,12 @@ function Invoke-VcpkgInstall {
         }
         else {
             $env:VCPKG_FORCE_SYSTEM_BINARIES = $oldForceSystemBinaries
+        }
+        if ($null -eq $oldKeepEnvVars) {
+            Remove-Item Env:\VCPKG_KEEP_ENV_VARS -ErrorAction SilentlyContinue
+        }
+        else {
+            $env:VCPKG_KEEP_ENV_VARS = $oldKeepEnvVars
         }
     }
 }
@@ -355,6 +456,10 @@ if ($restoreExitCode -ne 0 -and -not $PreferVisualStudioTools -and
 
 if ($restoreExitCode -ne 0) {
     throw "vcpkg dependency restore failed."
+}
+
+if (-not (Test-ManifestCurrent)) {
+    throw "vcpkg did not install every dependency from vcpkg.json."
 }
 
 Write-Host "Dependencies restored from vcpkg.json." -ForegroundColor Green

@@ -202,8 +202,8 @@ npx expo install --fix
   `Finishing…` after upload bytes are acknowledged but finalization is still
   running.
 
-See the current-status section of [the development changelog](../../CHANGELOG_DEV.md)
-before revisiting an earlier optimization or bug-fix approach.
+Review the local private engineering notes, when available, before revisiting
+an earlier optimization or bug-fix approach.
 
 ## Related docs
 
@@ -212,5 +212,4 @@ before revisiting an earlier optimization or bug-fix approach.
 - [Upload protocol](../../docs/UPLOAD_PROTOCOL.md)
 - [Unsigned IPA + Sideloadly](../../docs/IOS_SIDELOADLY.md)
 - [Transfer metrics](../../docs/TRANSFER_METRICS.md)
-- [Development history](../../CHANGELOG_DEV.md)
 - [Security policy](../../SECURITY.md)

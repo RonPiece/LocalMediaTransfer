@@ -138,8 +138,9 @@ Load `$lmt-reliability-tests` for the suite order and invariants.
   native compiler gate.
 - Before retrying a previously attempted picker, media-loading, duplicate,
   reconnect, or metrics change, read the current-status section at the top of
-  `CHANGELOG_DEV.md`. Update it after material work with current, superseded,
-  partial, and still-unverified outcomes instead of recording every attempt as
+  the local, ignored `CHANGELOG_DEV.md` when it is present. Keep that file
+  untracked. Update it after material work with current, superseded, partial,
+  and still-unverified outcomes instead of recording every attempt as
   successful.
 
 ## Benchmarking
@@ -183,9 +184,10 @@ Load `$lmt-benchmarking` and read `docs\BENCHMARKING.md` before benchmark work.
   fingerprints, media contents, or raw diagnostic dumps.
 - Dated session notes are intentionally ignored by Git and remain only on the
   developer machine. Do not force-add or publish them.
-- Keep `CHANGELOG_DEV.md` as reconciled current truth. Update its current-status
-  section after material changes or verification; use session notes for the
-  chronological engineering record.
+- Keep the local, ignored `CHANGELOG_DEV.md` as reconciled current truth when it
+  is present. Never add or publish it. Update its current-status section after
+  material changes or verification; use session notes for the chronological
+  engineering record.
 - Before ending a task, run `git status --short`, update the session note with
   the final state, and distinguish tests that ran from compiler/device gates
   that remain unverified. Never describe Jest source-contract checks as Swift

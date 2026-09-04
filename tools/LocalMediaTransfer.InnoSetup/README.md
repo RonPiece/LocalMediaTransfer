@@ -36,6 +36,18 @@ Keep the temporary staging folder for inspection:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\LocalMediaTransfer.InnoSetup\build.ps1 -KeepStaging
 ```
 
+Create the complete GitHub Release artifact set:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File `
+  .\tools\LocalMediaTransfer.InnoSetup\build.ps1 `
+  -ReleaseArtifacts
+```
+
+This produces the installer EXE, a portable x64 ZIP, and `SHA256SUMS.txt`.
+Both Windows artifacts include a generated `THIRD_PARTY_LICENSES` bundle from
+the exact vcpkg and NuGet runtime dependency closure used by the build.
+
 Validate the complete install layout without invoking Inno Setup:
 
 ```powershell
@@ -47,6 +59,8 @@ The installer is written to:
 
 ```text
 tools\LocalMediaTransfer.InnoSetup\output\LocalMediaTransfer-Setup-<version>-x64.exe
+tools\LocalMediaTransfer.InnoSetup\output\LocalMediaTransfer-<version>-windows-x64-portable.zip
+tools\LocalMediaTransfer.InnoSetup\output\SHA256SUMS.txt
 ```
 
 ## Installed Layout
