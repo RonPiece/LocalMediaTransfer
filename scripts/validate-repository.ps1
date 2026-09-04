@@ -11,8 +11,17 @@ Push-Location $repoRoot
 try {
     & (Join-Path $repoRoot "scripts\set-version.ps1") -Check
 
+    $trackedFiles = @(git ls-files)
+    if ($LASTEXITCODE -ne 0) {
+        throw "Unable to enumerate tracked files."
+    }
+    if ($trackedFiles -contains "CHANGELOG_DEV.md") {
+        $failures.Add(
+            "Private development changelog must remain local and untracked: CHANGELOG_DEV.md")
+    }
+
     $tracked = @(
-        git ls-files
+        $trackedFiles
         git ls-files --others --exclude-standard
     ) | Sort-Object -Unique
     if ($LASTEXITCODE -ne 0) {

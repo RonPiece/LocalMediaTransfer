@@ -16,9 +16,9 @@ user can see and do on that surface.
 
 When behavior changes, update the shared contract only if the cross-device
 meaning changed. Update the relevant surface document for copy, layout, user
-actions, accessibility, or local recovery behavior. Update tests,
-`CHANGELOG_DEV.md`, and the task's sanitized development-session record at the
-same review boundary.
+actions, accessibility, or local recovery behavior. Update tests, the local
+private engineering notes when present, and the task's sanitized
+development-session record at the same review boundary.
 
 The versioned native Windows security and upload wire contract is specified in
 [Native Windows Transfer Protocol v1](NATIVE_WINDOWS_PROTOCOL.md).

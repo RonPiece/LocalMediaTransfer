@@ -5,6 +5,7 @@
 # Local personal notes
 QUICKSTART_LOCAL.md
 RUN_TERMINAL_DEV_LOCAL.ps1
+CHANGELOG_DEV.md
 
 # Local publication/security audit reports (may contain sensitive findings)
 gitleaks-report.*

@@ -21,13 +21,17 @@
 
 .PARAMETER KeepStaging
     Keep the staging folder after a successful build for inspection.
+
+.PARAMETER ReleaseArtifacts
+    Create a portable ZIP and SHA256SUMS.txt beside the installer.
 #>
 
 param(
     [switch]$SkipBuild,
     [string]$Version,
     [switch]$KeepStaging,
-    [switch]$StageOnly
+    [switch]$StageOnly,
+    [switch]$ReleaseArtifacts
 )
 
 $ErrorActionPreference = "Stop"
@@ -222,6 +226,10 @@ Assert-File -Path $GuiExe -Description "Staged GUI executable"
 Copy-WinUIResources -SourceRoot $GuiReleaseRuntime -DestinationRoot $AppStage
 Assert-File -Path (Join-Path $AppStage "LocalMediaTransfer.GUI.pri") -Description "Staged WinUI PRI resource"
 Assert-File -Path (Join-Path $AppStage "MainWindow.xbf") -Description "Staged MainWindow XAML resource"
+$stagedSymbols = @(Get-ChildItem -LiteralPath $AppStage -Recurse -Filter "*.pdb" -File)
+foreach ($symbol in $stagedSymbols) {
+    Remove-Item -LiteralPath $symbol.FullName -Force
+}
 $RootStatic = Join-Path $AppStage "static"
 if (Test-Path -LiteralPath $RootStatic) {
     Remove-Item -LiteralPath $RootStatic -Recurse -Force
@@ -243,6 +251,20 @@ Copy-Item -Path (Join-Path $ServerBin "*") -Destination $ServerStage -Recurse -F
 Assert-File -Path (Join-Path $ServerStage "LocalMediaTransferServer.exe") -Description "Staged server executable"
 Assert-File -Path (Join-Path $ServerStage "static\index.html") -Description "Staged web UI"
 Write-Host "OK: Server runtime staged" -ForegroundColor Green
+Write-Host ""
+
+$LicenseBundleScript = Join-Path $ScriptDir "New-ThirdPartyLicenseBundle.ps1"
+Assert-File -Path $LicenseBundleScript -Description "Third-party license bundle script"
+& powershell -NoProfile -ExecutionPolicy Bypass -File $LicenseBundleScript `
+    -RepoRoot $RepoRoot `
+    -StageRoot $AppStage
+if ($LASTEXITCODE -ne 0) {
+    throw "Third-party license bundle generation failed with exit code $LASTEXITCODE"
+}
+Assert-File `
+    -Path (Join-Path $AppStage "THIRD_PARTY_LICENSES\MANIFEST.sha256") `
+    -Description "Third-party license manifest"
+Write-Host "OK: Third-party license bundle generated" -ForegroundColor Green
 Write-Host ""
 
 if ($StageOnly) {
@@ -293,6 +315,35 @@ finally {
 $OutputExe = Join-Path $OutputDir "LocalMediaTransfer-Setup-$Version-x64.exe"
 Assert-File -Path $OutputExe -Description "Installer output"
 $SizeMB = [math]::Round(((Get-Item -LiteralPath $OutputExe).Length / 1MB), 2)
+
+if ($ReleaseArtifacts) {
+    $PortableZip = Join-Path $OutputDir "LocalMediaTransfer-$Version-windows-x64-portable.zip"
+    $ChecksumFile = Join-Path $OutputDir "SHA256SUMS.txt"
+    if (Test-Path -LiteralPath $PortableZip) {
+        Remove-Item -LiteralPath $PortableZip -Force
+    }
+    if (Test-Path -LiteralPath $ChecksumFile) {
+        Remove-Item -LiteralPath $ChecksumFile -Force
+    }
+
+    Write-Host "Creating portable ZIP..."
+    Compress-Archive `
+        -Path (Join-Path $AppStage "*") `
+        -DestinationPath $PortableZip `
+        -CompressionLevel Optimal
+    Assert-File -Path $PortableZip -Description "Portable ZIP"
+
+    $ChecksumLines = @($OutputExe, $PortableZip | ForEach-Object {
+        $artifact = Get-Item -LiteralPath $_
+        $hash = (Get-FileHash -LiteralPath $artifact.FullName -Algorithm SHA256).
+            Hash.ToLowerInvariant()
+        "$hash  $($artifact.Name)"
+    })
+    Set-Content -LiteralPath $ChecksumFile -Value $ChecksumLines -Encoding ASCII
+    Assert-File -Path $ChecksumFile -Description "Release checksum manifest"
+    Write-Host "Portable ZIP: $PortableZip"
+    Write-Host "Checksums: $ChecksumFile"
+}
 
 if (-not $KeepStaging) {
     Remove-Item -LiteralPath $StagingRoot -Recurse -Force

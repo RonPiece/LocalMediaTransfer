@@ -15,6 +15,11 @@ public repository.
 - Remove temporary patches, diagnostics, build output, certificates, exported
   reports, and media. `diff.txt` is not a release artifact.
 - Keep dated files under `docs/development-sessions` local and Git-ignored.
+- Keep `CHANGELOG_DEV.md` local and Git-ignored. It may contain sanitized
+  engineering context for the developer, but it is not a public project file.
+- Confirm `git ls-files --error-unmatch CHANGELOG_DEV.md` fails. If the file was
+  ever pushed, removing it in a later commit is insufficient; remove it from
+  every reachable public commit and re-run the history audit.
 - `AGENTS.md` and `.agents/skills` may be public: they contain sanitized build,
   test, reliability, and contribution guidance. Review them like any other
   documentation before publishing.
@@ -60,9 +65,11 @@ privacy or binary-history findings.
   public source repository.
 - Verify the source and license of every vendored font, icon, script, and other
   asset.
-- Before attaching a Windows installer, create a notice bundle from the exact
-  NuGet and vcpkg closure in the staged installer, including required copyright,
-  license, and NOTICE text.
+- Before attaching Windows artifacts, run the installer build with
+  `-ReleaseArtifacts`. It creates `THIRD_PARTY_LICENSES` from the exact NuGet
+  and vcpkg runtime closure plus the vendored browser assets and installer
+  runtime. Review the generated metadata, license, copyright, and NOTICE files;
+  do not rely only on the source-level summary.
 - Before attaching an IPA, create a notice bundle from the exact JavaScript and
   CocoaPods closure. CocoaPods acknowledgement output and package license files
   are useful inputs, but the final bundle still needs review.
@@ -73,9 +80,10 @@ The iOS lockfile's three entries without a modern `license` field are not three
 unknown licenses: their installed package metadata/files identify `exit` as
 MIT, `qrcode-terminal` as Apache-2.0 (with an additional MIT component notice),
 and `requireg` as MIT. The lockfile alone is therefore not the authoritative
-notice source. A binary release remains blocked until the complete bundled
-closure is generated and reviewed; a public source repository does not need to
-wait for an installer or IPA.
+notice source. An iOS binary release remains blocked until its complete bundled
+closure is generated and reviewed. Windows artifacts must likewise use and pass
+review of their generated exact-closure bundle; a public source repository does
+not need to wait for an installer or IPA.
 
 ## GitHub security settings
 

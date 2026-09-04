@@ -26,6 +26,8 @@ These instructions apply to `src/LocalMediaTransfer.iOS`.
   final 100% event.
 - Verify TypeScript and Jest locally. Swift compilation is verified by the
   manual unsigned-IPA workflow on its macOS runner.
-- Read the current-status section of `../../CHANGELOG_DEV.md` before revisiting
-  picker, media-loading, duplicate, reconnect, or ETA fixes. Mark superseded
-  attempts and unverified physical-device work explicitly when updating it.
+- Read the current-status section of the local, ignored
+  `../../CHANGELOG_DEV.md` when it is present before revisiting picker,
+  media-loading, duplicate, reconnect, or ETA fixes. Keep that file untracked;
+  mark superseded attempts and unverified physical-device work explicitly when
+  updating it.

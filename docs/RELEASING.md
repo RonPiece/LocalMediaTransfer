@@ -47,13 +47,20 @@ new version. On release day, use the UTC date in `YYYY-MM-DD` format.
      -Target all
    ```
 
-3. Build and inspect the Windows installer. Its default version is read from
-   `VERSION`:
+3. Build and inspect the Windows release artifacts. Their default version is
+   read from `VERSION`:
 
    ```powershell
-   powershell -NoProfile -ExecutionPolicy Bypass -File `
-     .\tools\LocalMediaTransfer.InnoSetup\build.ps1
+     powershell -NoProfile -ExecutionPolicy Bypass -File `
+     .\tools\LocalMediaTransfer.InnoSetup\build.ps1 `
+     -ReleaseArtifacts
    ```
+
+   This creates the installer EXE, portable x64 ZIP, and `SHA256SUMS.txt` under
+   `tools\LocalMediaTransfer.InnoSetup\output`. Both binaries contain the
+   generated license bundle for the exact native, NuGet, and browser runtime
+   closure. Review that bundle before publishing and independently recompute
+   both SHA-256 hashes before upload.
 
 4. Commit the release preparation, merge it into `main`, and push `main`.
 5. Run the unsigned iOS workflow from the exact pushed commit. Windows cannot
@@ -65,8 +72,9 @@ new version. On release day, use the UTC date in `YYYY-MM-DD` format.
    git push origin v2.0.1
    ```
 
-7. Create the GitHub release from that tag and paste the matching section from
-   `CHANGELOG.md` into the release notes.
+7. Create the GitHub release from that tag, paste the matching section from
+   `CHANGELOG.md` into the release notes, and upload the EXE, portable ZIP, and
+   `SHA256SUMS.txt` generated from the tagged commit.
 
 ## iOS build number
 

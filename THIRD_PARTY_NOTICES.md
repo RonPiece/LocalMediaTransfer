@@ -4,9 +4,10 @@ Local Media Transfer uses the following third-party projects. Their licenses
 remain applicable to their respective components.
 
 This file is a source-level inventory and attribution summary. It is not, by
-itself, a complete license bundle for a Windows installer or iOS IPA. Binary
-releases must include the required full license, copyright, and NOTICE text for
-the exact dependencies bundled in that artifact; see
+itself, a complete license bundle for a Windows installer or iOS IPA. The
+Windows release build generates `THIRD_PARTY_LICENSES` from the exact staged
+runtime closure. Binary releases must include and review the required full
+license, copyright, and NOTICE text for their exact dependencies; see
 `docs/PUBLICATION_CHECKLIST.md`.
 
 ## Native server dependencies

@@ -62,6 +62,31 @@ if not exist "%NINJA_EXE%" (
     exit /b 1
 )
 for %%I in ("%NINJA_EXE%") do set "PATH=%%~dpI;%PATH%"
+
+set "VCPKG_EXE=%VCPKG_ROOT%\vcpkg.exe"
+if not exist "%VCPKG_EXE%" (
+    echo vcpkg executable not found at "%VCPKG_EXE%".
+    echo Run scripts\bootstrap-dependencies.ps1 before building.
+    exit /b 1
+)
+
+rem Vcpkg's pinned registry can require newer helper tools than Visual Studio
+rem ships. Resolve those exact tools before forcing system binaries, otherwise
+rem a standalone server or installer build can fail even after a successful
+rem dependency bootstrap.
+for /f "usebackq delims=" %%i in (`"%VCPKG_EXE%" fetch cmake 2^>nul`) do set "VCPKG_CMAKE_EXE=%%i"
+for /f "usebackq delims=" %%i in (`"%VCPKG_EXE%" fetch 7zip 2^>nul`) do set "VCPKG_7ZIP_EXE=%%i"
+if not exist "%VCPKG_CMAKE_EXE%" (
+    echo Vcpkg-required CMake was not resolved.
+    exit /b 1
+)
+if not exist "%VCPKG_7ZIP_EXE%" (
+    echo Vcpkg-required 7-Zip was not resolved.
+    exit /b 1
+)
+for %%I in ("%VCPKG_CMAKE_EXE%") do set "PATH=%%~dpI;%PATH%"
+for %%I in ("%VCPKG_7ZIP_EXE%") do set "PATH=%%~dpI;%PATH%"
+set "VCPKG_KEEP_ENV_VARS=PATH;%VCPKG_KEEP_ENV_VARS%"
 set "VCPKG_FORCE_SYSTEM_BINARIES=1"
 
 pushd "%SCRIPT_DIR%"
