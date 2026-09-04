@@ -48,6 +48,20 @@ This produces the installer EXE, a portable x64 ZIP, and `SHA256SUMS.txt`.
 Both Windows artifacts include a generated `THIRD_PARTY_LICENSES` bundle from
 the exact vcpkg and NuGet runtime dependency closure used by the build.
 
+For a tagged public release, pushing a `v*` tag runs the manual-capable
+`Build Windows release artifacts` GitHub workflow. It executes this same build
+on `windows-2022`, independently verifies the checksums, portable ZIP, license
+manifests, and PDB exclusion, then uploads the three files as one Actions
+artifact. The workflow can also be dispatched manually to test packaging before
+tagging.
+
+To repeat the independent checks locally after building with `-KeepStaging`:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File `
+  .\tools\LocalMediaTransfer.InnoSetup\verify-release-artifacts.ps1
+```
+
 Validate the complete install layout without invoking Inno Setup:
 
 ```powershell

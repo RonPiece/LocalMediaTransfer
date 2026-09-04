@@ -1,0 +1,73 @@
+name: Build Windows release artifacts
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 90
+    env:
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}\.vcpkg-cache
+
+    steps:
+      - name: Check out exact requested ref
+        uses: actions/checkout@v5
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      - name: Cache vcpkg binaries
+        uses: actions/cache@v5
+        with:
+          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
+          key: vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            vcpkg-${{ runner.os }}-
+
+      - name: Validate repository
+        shell: powershell
+        run: .\scripts\verify.ps1 -Target validate
+
+      - name: Restore native dependencies
+        shell: powershell
+        run: .\scripts\bootstrap-dependencies.ps1 -PreferVisualStudioTools -RestoreTimeoutSeconds 2400
+
+      - name: Build release artifacts
+        shell: powershell
+        run: .\tools\LocalMediaTransfer.InnoSetup\build.ps1 -ReleaseArtifacts -KeepStaging
+
+      - name: Independently verify release artifacts
+        shell: powershell
+        run: .\tools\LocalMediaTransfer.InnoSetup\verify-release-artifacts.ps1
+
+      - name: Upload verified Windows release artifact set
+        uses: actions/upload-artifact@v6
+        with:
+          name: LocalMediaTransfer-${{ github.ref_name }}-windows-x64
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            tools/LocalMediaTransfer.InnoSetup/output/LocalMediaTransfer-Setup-*-x64.exe
+            tools/LocalMediaTransfer.InnoSetup/output/LocalMediaTransfer-*-windows-x64-portable.zip
+            tools/LocalMediaTransfer.InnoSetup/output/SHA256SUMS.txt
