@@ -53,7 +53,8 @@ For a tagged public release, pushing a `v*` tag runs the manual-capable
 on `windows-2022`, independently verifies the checksums, portable ZIP, license
 manifests, and PDB exclusion, then uploads the three files as one Actions
 artifact. The workflow can also be dispatched manually to test packaging before
-tagging.
+tagging. A tag-triggered run attaches the verified files to a private draft
+GitHub Release for final release-note review; it does not publish the release.
 
 To repeat the independent checks locally after building with `-KeepStaging`:
 

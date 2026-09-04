@@ -7,7 +7,7 @@ on:
       - "v*"
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: windows-release-${{ github.ref }}
@@ -71,3 +71,30 @@ jobs:
             tools/LocalMediaTransfer.InnoSetup/output/LocalMediaTransfer-Setup-*-x64.exe
             tools/LocalMediaTransfer.InnoSetup/output/LocalMediaTransfer-*-windows-x64-portable.zip
             tools/LocalMediaTransfer.InnoSetup/output/SHA256SUMS.txt
+
+      - name: Create draft GitHub Release for a version tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = (Get-Content -LiteralPath .\VERSION -Raw).Trim()
+          $expectedTag = "v$version"
+          if ($env:GITHUB_REF_NAME -ne $expectedTag) {
+              throw "Tag $($env:GITHUB_REF_NAME) does not match VERSION $version."
+          }
+
+          $output = ".\tools\LocalMediaTransfer.InnoSetup\output"
+          $assets = @(
+              "$output\LocalMediaTransfer-Setup-$version-x64.exe",
+              "$output\LocalMediaTransfer-$version-windows-x64-portable.zip",
+              "$output\SHA256SUMS.txt"
+          )
+          gh release create $env:GITHUB_REF_NAME @assets `
+              --draft `
+              --verify-tag `
+              --title "Local Media Transfer $version" `
+              --notes "Release notes pending final review."
+          if ($LASTEXITCODE -ne 0) {
+              throw "Could not create the draft GitHub Release."
+          }
