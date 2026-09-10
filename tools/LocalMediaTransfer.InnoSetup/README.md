@@ -3,6 +3,12 @@
 This folder builds the Windows installer for the GUI application. The headless
 server is included as a private runtime component and is launched by the GUI.
 
+Uninstall ships a PowerShell/C# helper under `uninstall-support`. It matches
+each process to the exact installed executable path, requests a window close,
+then uses the retained verified process handle if forced shutdown is needed.
+Other installations and same-name processes are left running. Verify this
+behavior with two installations before distributing a rebuilt installer.
+
 ## Prerequisites
 
 - Visual Studio 2022 with the x64 C++ toolchain.

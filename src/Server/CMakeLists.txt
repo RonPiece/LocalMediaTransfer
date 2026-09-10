@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Find packages
-find_package(OpenSSL REQUIRED)
+find_package(OpenSSL 3.6.4 REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(Crow CONFIG REQUIRED)
@@ -71,16 +71,10 @@ if(WIN32)
         NOMINMAX
         WIN32_LEAN_AND_MEAN
         CROW_ENABLE_SSL
-        # Prevent fmt 12.x abort() crash in Debug builds:
-        # Crow formats content_length (int, can be -1) with unsigned specifiers,
-        # triggering FMT_ASSERT("negative value") which calls abort().
-        # try-catch CANNOT catch abort(). We must disable the assertion at compile time.
         CROW_LOG_LEVEL=3       # Only show WARNINGS and above from Crow
     )
-    # Override FMT_ASSERT to be a no-op so fmt never calls abort()
-    target_compile_options(${PROJECT_NAME} PRIVATE
-        "/DFMT_ASSERT(x,...)=((void)0)"
-    )
+    # fmt assertions remain enabled. Regression tests exercise signed formatting
+    # and the full HTTP suite on the pinned fmt/Crow baseline.
     if(MSVC)
         # HttpServer.cpp exceeds the default COFF section limit in Debug builds.
         target_compile_options(${PROJECT_NAME} PRIVATE "/bigobj")
@@ -124,3 +118,18 @@ endif()
 
 message(STATUS "LocalMediaTransferServer v${PROJECT_VERSION}")
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
+
+# Isolated regression executable; fault hooks never enter the shipped server.
+add_executable(LocalMediaTransfer.StorageTests
+    ../../tests/native/StorageTests.cpp ../../tests/native/SessionTests.cpp
+    src/io/FileWriter.cpp src/io/HashEngine.cpp
+    src/security/NativeSessionStore.cpp src/security/PairingStore.cpp src/ipc/PipeServer.cpp)
+target_include_directories(LocalMediaTransfer.StorageTests PRIVATE include)
+target_compile_definitions(LocalMediaTransfer.StorageTests PRIVATE LMT_STORAGE_TESTING NOMINMAX WIN32_LEAN_AND_MEAN)
+target_link_libraries(LocalMediaTransfer.StorageTests PRIVATE
+    OpenSSL::Crypto spdlog::spdlog unofficial::sqlite3::sqlite3
+    nlohmann_json::nlohmann_json ws2_32 iphlpapi advapi32)
+set_target_properties(LocalMediaTransfer.StorageTests PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+enable_testing()
+add_test(NAME storage-integrity COMMAND LocalMediaTransfer.StorageTests)

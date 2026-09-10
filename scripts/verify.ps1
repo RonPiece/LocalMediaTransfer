@@ -7,6 +7,10 @@ param(
         "gui",
         "gui-test",
         "server-tests",
+        "server-release-tests",
+        "stress-tests",
+        "soak-tests",
+        "storage-tests",
         "frontend-tests",
         "ios-tests",
         "csharp-tests",
@@ -14,7 +18,8 @@ param(
         "all"
     )]
     [string]$Target = "all",
-    [switch]$SkipLargeBoundaryTests
+    [switch]$SkipLargeBoundaryTests,
+    [string]$ServerExecutable
 )
 
 Set-StrictMode -Version Latest
@@ -70,6 +75,7 @@ function Invoke-Target {
             }
         }
         "server-tests" {
+            Invoke-Target -Name "storage-tests"
             Invoke-Checked "Isolated server integration suite" {
                 $arguments = @(
                     "run",
@@ -82,6 +88,34 @@ function Invoke-Target {
                     $arguments += @("--", "--skip-large-boundary-tests")
                 }
                 & dotnet @arguments
+            }
+        }
+        "server-release-tests" {
+            Invoke-Checked "Release native storage regression tests" {
+                & (Join-Path $repoRoot "src\Server\out\build\x64-release\tests\LocalMediaTransfer.StorageTests.exe")
+            }
+            Invoke-Checked "Release server integration suite" {
+                $exe = if ($ServerExecutable) { $ServerExecutable } else { Join-Path $repoRoot "src\Server\out\build\x64-release\bin\LocalMediaTransferServer.exe" }
+                dotnet run --project (Join-Path $repoRoot "tests\LocalMediaTransfer.TestHarness") -c Release -- --server-exe $exe
+            }
+        }
+        { $_ -in @("stress-tests", "soak-tests") } {
+            $benchmarkProfile = $Name.Replace('-tests', '')
+            Invoke-Checked "Build benchmark runner" {
+                dotnet build (Join-Path $repoRoot "tools\LocalMediaTransfer.Benchmarks") -c Release
+            }
+            Invoke-Checked "Isolated Release $Name" {
+                $exe = if ($ServerExecutable) { $ServerExecutable } else { Join-Path $repoRoot "src\Server\out\build\x64-release\bin\LocalMediaTransferServer.exe" }
+                dotnet run --project (Join-Path $repoRoot "tests\LocalMediaTransfer.TestHarness") -c Release -- --server-exe $exe --benchmark-only $benchmarkProfile
+            }
+        }
+        "storage-tests" {
+            Invoke-Checked "Native storage regression tests" {
+                $storageTests = Join-Path $repoRoot "src\Server\out\build\x64-debug\tests\LocalMediaTransfer.StorageTests.exe"
+                if (-not (Test-Path -LiteralPath $storageTests)) {
+                    throw "Build the Debug server first; native storage regression executable is missing."
+                }
+                & $storageTests
             }
         }
         "frontend-tests" {
@@ -138,6 +172,7 @@ try {
             "server-debug",
             "server-release",
             "server-tests",
+            "server-release-tests",
             "frontend-tests",
             "ios-tests",
             "csharp-tests",

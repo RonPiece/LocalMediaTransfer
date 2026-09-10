@@ -83,6 +83,11 @@ function Get-VisualStudioCMakePath {
     $visualStudioPath = & $vswhere -latest -products * `
         -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
         -property installationPath
+    if ([string]::IsNullOrWhiteSpace($visualStudioPath)) {
+        $visualStudioPath = & $vswhere -latest -prerelease -products * `
+            -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+            -property installationPath
+    }
     if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($visualStudioPath)) {
         return $null
     }
@@ -105,6 +110,11 @@ function Get-VisualStudioNinjaPath {
     $visualStudioPath = & $vswhere -latest -products * `
         -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
         -property installationPath
+    if ([string]::IsNullOrWhiteSpace($visualStudioPath)) {
+        $visualStudioPath = & $vswhere -latest -prerelease -products * `
+            -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+            -property installationPath
+    }
     if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($visualStudioPath)) {
         return $null
     }
@@ -438,10 +448,9 @@ function Invoke-VcpkgInstall {
     }
 }
 
-if (-not $Force -and (Test-ManifestCurrent)) {
-    Write-Host "Dependencies already up-to-date (use -Force to re-restore)." -ForegroundColor Green
-    exit 0
-}
+# Always let vcpkg resolve the manifest and registry pins. Package presence alone
+# cannot establish matching versions, features, ABI or compiler identity.
+# vcpkg install is itself incremental; retain -Force for caller compatibility.
 
 $restoreExitCode = Invoke-VcpkgInstall `
     -PreferVisualStudioTools:$PreferVisualStudioTools `

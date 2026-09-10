@@ -90,31 +90,12 @@ export class MediaScanner {
   }
 
   public async getAllMedia(albumId?: string): Promise<MediaAsset[]> {
-    if (!(await this.ensurePermission())) return [];
-
-    let allAssets: MediaLibrary.Asset[] = [];
-    let hasNextPage = true;
-    let after: string | undefined = undefined;
-
-    while (hasNextPage) {
-      const result = await MediaLibrary.getAssetsAsync({
-        first: 500, // fetch in chunks of 500
-        after,
-        sortBy: [MediaLibrary.SortBy.creationTime],
-        mediaType: [MediaLibrary.MediaType.photo, MediaLibrary.MediaType.video],
-        album: albumId
-      });
-
-      for (const asset of result.assets) {
-        allAssets.push(asset);
-      }
-      hasNextPage = result.hasNextPage;
-      after = result.endCursor;
-    }
-
-    return allAssets.map(asset => this.toMediaAsset(asset));
+    const allAssets: MediaAsset[] = [];
+    await this.forEachMediaPage(albumId, assets => {
+      allAssets.push(...assets);
+    });
+    return allAssets;
   }
-
   public formatDuration(seconds?: number): string | undefined {
     if (!seconds) return undefined;
     const m = Math.floor(seconds / 60);

@@ -1,6 +1,10 @@
+import { TransferOutcomes, UploadWorkerActivity } from './upload/TransferAccounting';
+import { retryChunkRequest } from './upload/RetryPolicy';
+import { ApiRequestError, isUnauthorizedError } from '@/api/errors';
 import * as FileSystem from 'expo-file-system/legacy';
+import { TransferLimits } from './upload/transferLimits';
 
-import { api, ApiRequestError } from '@/api/ApiClient';
+import { api } from '@/api/ApiClient';
 import { TransferHistoryFile } from '@/api/types';
 import { MediaAsset } from './MediaScanner';
 import { nativeCapabilities } from './NativeCapabilities';
@@ -37,7 +41,7 @@ export type { TransferProgress } from './upload/types';
 const MAX_HISTORY_PROBLEM_DETAILS = 1_000;
 
 export class UploadManager {
-  private readonly CHUNK_SIZE = 4 * 1024 * 1024;
+  private readonly CHUNK_SIZE = TransferLimits.CompatibilityChunkBytes;
   private readonly CONCURRENCY = 2;
   private readonly MAX_CHUNK_RETRIES = 2;
   private readonly CHUNK_TIMEOUT_MS = 60_000;
@@ -70,50 +74,27 @@ export class UploadManager {
     bodyPayload: string,
     retries: number,
   ): Promise<string> {
-    let attempt = 0;
-    while (true) {
-      const controller = new AbortController();
-      let timeout: ReturnType<typeof setTimeout> | undefined;
-      try {
-        if (this.isCancelled) throw new TransferFailure('upload', 'cancelled');
-        this.activeRequests.add(controller);
-        timeout = setTimeout(() => controller.abort(), this.CHUNK_TIMEOUT_MS);
-        const response = await fetch(url, {
-          method: 'POST',
-          headers,
-          body: bodyPayload,
-          signal: controller.signal,
-        });
-        const responseText = await response.text();
-        if (!response.ok) {
-          if (response.status === 401) {
-            api.notifyUnauthorized();
-            throw new ApiRequestError(
-              'Desktop server session changed. Scan the current QR code to reconnect.',
-              401,
-            );
-          }
-          if (response.status >= 500) throw new Error('Temporary desktop response failure');
-          throw new TransferFailure('server', 'server-rejected');
+    return retryChunkRequest(async signal => {
+      const response = await fetch(url, {
+        method: 'POST', headers, body: bodyPayload, signal,
+      });
+      const responseText = await response.text();
+      if (!response.ok) {
+        if (response.status === 401) {
+          api.notifyUnauthorized();
+          throw new ApiRequestError(
+            'Desktop server session changed. Scan the current QR code to reconnect.', 401,
+          );
         }
-        return responseText;
-      } catch (error) {
-        if (error instanceof ApiRequestError && error.status === 401) throw error;
-        if (attempt >= retries || this.isCancelled || error instanceof TransferFailure) {
-          if (controller.signal.aborted && !this.isCancelled) {
-            throw new TransferFailure('network', 'request-timeout');
-          }
-          throw error;
-        }
-        attempt += 1;
-        await new Promise(resolve => setTimeout(resolve, 500 * attempt));
-      } finally {
-        if (timeout) clearTimeout(timeout);
-        this.activeRequests.delete(controller);
+        if (response.status >= 500) throw new Error('Temporary desktop response failure');
+        throw new TransferFailure('server', 'server-rejected');
       }
-    }
+      return responseText;
+    }, {
+      retries, timeoutMs: this.CHUNK_TIMEOUT_MS,
+      isCancelled: () => this.isCancelled, activeRequests: this.activeRequests,
+    });
   }
-
   public async uploadFilesConcurrent(
     assets: MediaAsset[],
     observer: UploadObserver,
@@ -186,17 +167,6 @@ export class UploadManager {
     let additionalComponentsFiles = 0;
     let plannedUploadMediaBytes = 0;
     let diagnosticPlannedUploadBytes = 0;
-    let acknowledgedMediaBytes = 0;
-    let globalBytesSent = 0;
-    let filesCompleted = 0;
-    let uploadedFiles = 0;
-    let skippedFiles = 0;
-    let failedFiles = 0;
-    let preparationFailedFiles = 0;
-    let successfulUploadedBytes = 0;
-    let skippedBytes = 0;
-    let avoidedBytes = 0;
-    let finalizationDuplicateBytes = 0;
     let nativeRetryCount = 0;
     let peakNativeResidentMemoryBytes = 0;
     let preparationDurationMs = 0;
@@ -207,14 +177,8 @@ export class UploadManager {
     let preflightFailureCount = 0;
     let preflightSkippedFiles = 0;
     let preflightSkippedBytes = 0;
-    let serverSkippedFiles = 0;
-    let serverSkippedBytes = 0;
     let nextUploadFileSequence = 0;
-    let activeUploadWorkers = 0;
-    let maxActiveUploadWorkers = 0;
-    let uploadWorkersStarted = false;
-    let allUploadWorkersIdleSince: number | null = null;
-    let completedAllUploadWorkersIdleMs = 0;
+    const workerActivity = new UploadWorkerActivity();
     let fatalError: Error | null = null;
     const historyFiles: TransferHistoryFile[] = [];
     const recordHistoryProblem = (file: TransferHistoryFile) => {
@@ -223,38 +187,14 @@ export class UploadManager {
       }
     };
     const outgoingHashes: OutgoingHashRegistry = new Map();
-    const terminalItemIds = new Set<string>();
+    const outcomes = new TransferOutcomes();
     const preparedOutcomeAssetIds = new Set<string>();
     const startTime = Date.now();
     const throughput = new ThroughputTracker(startTime);
-    let currentMediaMBps = 0;
-    let averageMediaMBps = 0;
-    let peakMediaMBps = 0;
-    let currentEncodedMBps = 0;
-    let lastRateSampledAt = 0;
 
-    const currentAllUploadWorkersIdleMs = (now = Date.now()) =>
-      completedAllUploadWorkersIdleMs + (
-        uploadWorkersStarted && activeUploadWorkers === 0 && allUploadWorkersIdleSince !== null
-          ? Math.max(0, now - allUploadWorkersIdleSince)
-          : 0
-      );
-    const markUploadWorkerBusy = () => {
-      const now = Date.now();
-      if (activeUploadWorkers === 0 && allUploadWorkersIdleSince !== null) {
-        completedAllUploadWorkersIdleMs += Math.max(0, now - allUploadWorkersIdleSince);
-        allUploadWorkersIdleSince = null;
-      }
-      activeUploadWorkers += 1;
-      maxActiveUploadWorkers = Math.max(maxActiveUploadWorkers, activeUploadWorkers);
-      diagnostics.recordUploadWorkerStarted(activeUploadWorkers);
-    };
-    const markUploadWorkerIdle = () => {
-      activeUploadWorkers = Math.max(0, activeUploadWorkers - 1);
-      if (uploadWorkersStarted && activeUploadWorkers === 0) {
-        allUploadWorkersIdleSince = Date.now();
-      }
-    };
+    const currentAllUploadWorkersIdleMs = () => workerActivity.idleMilliseconds();
+    const markUploadWorkerBusy = () => diagnostics.recordUploadWorkerStarted(workerActivity.busy());
+    const markUploadWorkerIdle = () => workerActivity.idle();
 
     const releasePreparedFile = async (uri: string) => {
       try {
@@ -270,16 +210,16 @@ export class UploadManager {
       item: PreparedUploadFile,
       status: GlobalProgress['status'],
     ): GlobalProgress => ({
-      bytesSent: globalBytesSent,
+      bytesSent: throughput.current.uploadedMediaBytes,
       totalBytes: preparationComplete ? plannedUploadMediaBytes : 0,
-      acknowledgedMediaBytes,
+      acknowledgedMediaBytes: throughput.current.uploadedMediaBytes,
       plannedUploadMediaBytes,
-      rateSampledAt: lastRateSampledAt,
-      currentMediaMBps,
-      averageMediaMBps,
-      peakMediaMBps,
-      currentEncodedMBps,
-      currentIndex: filesCompleted,
+      rateSampledAt: throughput.current.sampledAt,
+      currentMediaMBps: throughput.current.currentMediaMBps,
+      averageMediaMBps: throughput.current.averageMediaMBps,
+      peakMediaMBps: throughput.current.peakMediaMBps,
+      currentEncodedMBps: throughput.current.currentEncodedMBps,
+      currentIndex: outcomes.filesCompleted,
       currentAsset: item.asset.filename === item.transferFilename
         ? item.asset
         : { ...item.asset, filename: item.transferFilename },
@@ -288,7 +228,7 @@ export class UploadManager {
       preparedFiles,
       readyFiles,
       totalFiles: preparationComplete
-        ? readyFiles + preparationFailedFiles
+        ? readyFiles + outcomes.preparationFailedFiles
         : assets.length,
       preparationComplete,
       discoveredBytes,
@@ -301,26 +241,26 @@ export class UploadManager {
 
     const diagnosticTransferValues = (reportedFailedFiles: number) => ({
       preparedAssets: preparedFiles,
-      expandedFiles: readyFiles + preparationFailedFiles,
-      uploadedFiles,
-      skippedFiles,
+      expandedFiles: readyFiles + outcomes.preparationFailedFiles,
+      uploadedFiles: outcomes.uploadedFiles,
+      skippedFiles: outcomes.skippedFiles,
       failedFiles: reportedFailedFiles,
       selectedMediaBytes,
       additionalComponentsBytes,
       selectedMediaFiles,
       additionalComponentsFiles,
       plannedUploadBytes: diagnosticPlannedUploadBytes,
-      acknowledgedBytes: acknowledgedMediaBytes,
-      skippedBytes,
+      acknowledgedBytes: throughput.current.uploadedMediaBytes,
+      skippedBytes: outcomes.skippedBytes,
       preflightSkippedFiles,
       preflightSkippedBytes,
-      serverSkippedFiles,
-      serverSkippedBytes,
+      serverSkippedFiles: outcomes.serverSkippedFiles,
+      serverSkippedBytes: outcomes.serverSkippedBytes,
       retryCount: nativeRetryCount,
-      averageMediaMBps,
-      peakMediaMBps,
+      averageMediaMBps: throughput.current.averageMediaMBps,
+      peakMediaMBps: throughput.current.peakMediaMBps,
       queueMaxDepth: queue.maxDepth,
-      maxActiveUploadWorkers,
+      maxActiveUploadWorkers: workerActivity.peakCount,
       filenameResolvedAppleFiles: filenameResolutionAppleCount,
       filenameFallbackFiles: filenameResolutionFallbackCount,
       peakNativeResidentMemoryBytes,
@@ -336,12 +276,8 @@ export class UploadManager {
       stage: 'rendition' | 'metadata' | 'filename',
       code: Parameters<typeof diagnostics.recordFailure>[0]['code'],
     ) => {
-      if (terminalItemIds.has(itemId)) return;
-      terminalItemIds.add(itemId);
+      if (!outcomes.fail(itemId, true)) return;
       preparedOutcomeAssetIds.add(asset.id);
-      filesCompleted += 1;
-      failedFiles += 1;
-      preparationFailedFiles += 1;
       recordHistoryProblem({
         id: itemId,
         name: originalFilename || asset.filename,
@@ -428,15 +364,15 @@ export class UploadManager {
                 );
                 onProgress({
                   ...progress,
-                  bytesSent: globalBytesSent,
+                  bytesSent: throughput.current.uploadedMediaBytes,
                   totalBytes: preparationComplete ? plannedUploadMediaBytes : 0,
-                  acknowledgedMediaBytes,
+                  acknowledgedMediaBytes: throughput.current.uploadedMediaBytes,
                   plannedUploadMediaBytes,
-                  rateSampledAt: lastRateSampledAt,
-                  currentMediaMBps,
-                  averageMediaMBps,
-                  peakMediaMBps,
-                  currentEncodedMBps,
+                  rateSampledAt: throughput.current.sampledAt,
+                  currentMediaMBps: throughput.current.currentMediaMBps,
+                  averageMediaMBps: throughput.current.averageMediaMBps,
+                  peakMediaMBps: throughput.current.peakMediaMBps,
+                  currentEncodedMBps: throughput.current.currentEncodedMBps,
                   preparedFiles: reportedPreparedFiles,
                   readyFiles,
                   thermalState,
@@ -481,7 +417,7 @@ export class UploadManager {
 
             const preflightIdleBefore = currentAllUploadWorkersIdleMs();
             const preflightQueueDepthAtStart = queue.depth;
-            const preflightActiveWorkersAtStart = activeUploadWorkers;
+            const preflightActiveWorkersAtStart = workerActivity.activeCount;
             preparationActivity = duplicatePolicy.shouldSkipDuplicates ? 'checking' : 'preparing';
             const firstPreparedFile = window.files[0];
             if (firstPreparedFile && duplicatePolicy.shouldSkipDuplicates) {
@@ -575,7 +511,7 @@ export class UploadManager {
                 queueDepthAtStart: preflightQueueDepthAtStart,
                 queueDepthAtEnd: queue.depth,
                 activeUploadWorkersAtStart: preflightActiveWorkersAtStart,
-                activeUploadWorkersAtEnd: activeUploadWorkers,
+                activeUploadWorkersAtEnd: workerActivity.activeCount,
               },
               uploadTiming: {
                 measuredFiles: 0,
@@ -619,7 +555,7 @@ export class UploadManager {
           }
           return preparedFiles === assets.length && !this.isCancelled;
         } catch (error) {
-          fatalError = error instanceof ApiRequestError && error.status === 401
+          fatalError = isUnauthorizedError(error)
             ? error
             : error instanceof TransferFailure && error.fatal
               ? error
@@ -668,11 +604,7 @@ export class UploadManager {
           } = item;
 
           if (item.preflightAction === 'skip') {
-            filesCompleted += 1;
-            skippedFiles += 1;
-            skippedBytes += size;
-            avoidedBytes += size;
-            terminalItemIds.add(item.variantId);
+            outcomes.skip(item.variantId, size, 'preflight');
             recordHistoryProblem({
               id: item.variantId,
               name: transferFilename,
@@ -704,9 +636,7 @@ export class UploadManager {
           }
 
           if (item.preflightFailureCode) {
-            filesCompleted += 1;
-            failedFiles += 1;
-            terminalItemIds.add(item.variantId);
+            outcomes.fail(item.variantId);
             recordHistoryProblem({
               id: item.variantId,
               name: transferFilename,
@@ -753,12 +683,17 @@ export class UploadManager {
           markUploadWorkerBusy();
           diagnostics.recordWindowUploadStarted(item.windowIndex);
           const totalChunks = Math.ceil(size / this.CHUNK_SIZE);
+          const effectiveChunkSize = nativeCapabilities.available ? TransferLimits.NativeChunkBytes : this.CHUNK_SIZE;
           let serverSkipped = false;
           let fileAcknowledgedBytes = 0;
           let sentFilename = transferFilename;
           let savedFilename: string | undefined;
 
           try {
+            if (size > TransferLimits.MaxFileBytes ||
+                Math.ceil(size / effectiveChunkSize) > TransferLimits.MaxChunksPerFile) {
+              throw new Error('File exceeds the receiver limit of 10,000 chunks. Split it before uploading.');
+            }
             if (nativeCapabilities.available) {
               let acknowledged = 0;
               const recordNativeAcknowledgement = (reportedBytes: number) => {
@@ -768,16 +703,9 @@ export class UploadManager {
                 if (delta <= 0) return;
                 acknowledged = boundedBytes;
                 fileAcknowledgedBytes += delta;
-                globalBytesSent += delta;
-                lastRateSampledAt = Date.now();
                 diagnostics.recordFirstAcknowledgement();
-                const rates = throughput.recordAcknowledgement(delta, delta, lastRateSampledAt);
-                acknowledgedMediaBytes = rates.uploadedMediaBytes;
-                currentMediaMBps = rates.currentMediaMBps;
-                averageMediaMBps = rates.averageMediaMBps;
-                peakMediaMBps = rates.peakMediaMBps;
-                currentEncodedMBps = rates.currentEncodedMBps;
-                metricsReporter.recordCurrentMediaRate(currentMediaMBps);
+                throughput.recordAcknowledgement(delta, delta);
+                metricsReporter.recordCurrentMediaRate(throughput.current.currentMediaMBps);
                 onProgress(progressFor(item, 'uploading'));
               };
               const listener = nativeCapabilities.addProgressListener(event => {
@@ -791,7 +719,7 @@ export class UploadManager {
                   token: api.uploadToken,
                   fileId: computedHash,
                   transferFilename,
-                  chunkSize: 8 * 1024 * 1024,
+                  chunkSize: TransferLimits.NativeChunkBytes,
                   skipDuplicates: duplicatePolicy.shouldSkipDuplicates,
                 });
                 // Native progress events are intentionally coalesced and can still be
@@ -880,33 +808,19 @@ export class UploadManager {
                     serverSkipped = false;
                   }
                 }
-                globalBytesSent += length;
                 fileAcknowledgedBytes += length;
-                lastRateSampledAt = Date.now();
                 if (length > 0) diagnostics.recordFirstAcknowledgement();
-                const rates = throughput.recordAcknowledgement(
+                throughput.recordAcknowledgement(
                   length,
                   base64Body.length,
-                  lastRateSampledAt,
                 );
-                acknowledgedMediaBytes = rates.uploadedMediaBytes;
-                currentMediaMBps = rates.currentMediaMBps;
-                averageMediaMBps = rates.averageMediaMBps;
-                peakMediaMBps = rates.peakMediaMBps;
-                currentEncodedMBps = rates.currentEncodedMBps;
-                metricsReporter.recordCurrentMediaRate(currentMediaMBps);
+                metricsReporter.recordCurrentMediaRate(throughput.current.currentMediaMBps);
                 onProgress(progressFor(item, 'uploading'));
               }
             }
 
-            filesCompleted += 1;
-            terminalItemIds.add(item.variantId);
             if (serverSkipped) {
-              skippedFiles += 1;
-              skippedBytes += size;
-              finalizationDuplicateBytes += size;
-              serverSkippedFiles += 1;
-              serverSkippedBytes += size;
+              outcomes.skip(item.variantId, size, 'finalization');
               recordHistoryProblem({
                 id: item.variantId,
                 name: sentFilename,
@@ -931,8 +845,7 @@ export class UploadManager {
                   : `${sentFilename} was not transferred because identical content was verified by the desktop.`,
               });
             } else {
-              uploadedFiles += 1;
-              successfulUploadedBytes += size;
+              outcomes.save(item.variantId, size);
               onFileStatusChange?.({
                 assetId: asset.id,
                 itemId: item.variantId,
@@ -948,16 +861,14 @@ export class UploadManager {
               });
             }
           } catch (error) {
-            if (error instanceof ApiRequestError && error.status === 401) {
+            if (isUnauthorizedError(error)) {
               fatalError = error;
               this.cancel();
               return;
             }
             if (this.isCancelled) return;
             const failure = transferFailure(error, 'upload', 'upload-failed');
-            failedFiles += 1;
-            filesCompleted += 1;
-            terminalItemIds.add(item.variantId);
+            outcomes.fail(item.variantId);
             recordHistoryProblem({
               id: item.variantId,
               name: transferFilename,
@@ -966,7 +877,7 @@ export class UploadManager {
               error: failure.code,
             });
             plannedUploadMediaBytes = Math.max(
-              acknowledgedMediaBytes,
+              throughput.current.uploadedMediaBytes,
               plannedUploadMediaBytes - Math.max(0, size - fileAcknowledgedBytes),
             );
             diagnostics.recordFailure({
@@ -1000,10 +911,7 @@ export class UploadManager {
       };
 
       const workers = () => {
-        if (!uploadWorkersStarted) {
-          uploadWorkersStarted = true;
-          allUploadWorkersIdleSince = Date.now();
-        }
+        workerActivity.start();
         return Array.from({ length: this.CONCURRENCY }, (_, index) => worker(index));
       };
       const preparedAll = await runTransferPipeline({
@@ -1037,8 +945,8 @@ export class UploadManager {
             : 0,
           filenameResolutionAppleCount,
           filenameResolutionFallbackCount: nativeCapabilities.available
-            ? Math.max(0, preparedFiles - preparationFailedFiles - filenameResolutionAppleCount)
-            : Math.max(0, preparedFiles - preparationFailedFiles),
+            ? Math.max(0, preparedFiles - outcomes.preparationFailedFiles - filenameResolutionAppleCount)
+            : Math.max(0, preparedFiles - outcomes.preparationFailedFiles),
           filenameResolutionMaxBatchSize: nativeCapabilities.available
             ? Math.min(preparationPolicy.windowSize, assets.length)
             : 0,
@@ -1064,8 +972,8 @@ export class UploadManager {
         }
       }
 
-      const reportedFailedFiles = failedFiles;
-      const expandedFiles = readyFiles + preparationFailedFiles;
+      const reportedFailedFiles = outcomes.failedFiles;
+      const expandedFiles = readyFiles + outcomes.preparationFailedFiles;
       const completionStatus = this.isCancelled
         ? 'cancelled'
         : reportedFailedFiles > 0
@@ -1081,22 +989,22 @@ export class UploadManager {
         selectedAssets: assets.length,
         expandedFiles,
         selectedFiles: expandedFiles,
-        uploadedFiles,
-        skippedFiles,
+        uploadedFiles: outcomes.uploadedFiles,
+        skippedFiles: outcomes.skippedFiles,
         failedFiles: reportedFailedFiles,
         selectedBytes: discoveredBytes,
         selectedMediaBytes,
         additionalComponentsBytes,
         selectedMediaFiles,
         additionalComponentsFiles,
-        byteTotalComplete: preparationFailedFiles === 0,
-        uploadedBytes: successfulUploadedBytes,
-        skippedBytes,
-        avoidedBytes,
-        finalizationDuplicateBytes,
+        byteTotalComplete: outcomes.preparationFailedFiles === 0,
+        uploadedBytes: outcomes.successfulUploadedBytes,
+        skippedBytes: outcomes.skippedBytes,
+        avoidedBytes: outcomes.avoidedBytes,
+        finalizationDuplicateBytes: outcomes.finalizationDuplicateBytes,
         uploadDurationMs,
-        averageMediaMBps,
-        peakMediaMBps,
+        averageMediaMBps: throughput.current.averageMediaMBps,
+        peakMediaMBps: throughput.current.peakMediaMBps,
         completionStatus,
         diagnosticReportAvailable: diagnostics.reportAvailable,
       };
@@ -1107,23 +1015,23 @@ export class UploadManager {
           selectedAssets: assets.length,
           expandedFiles,
           selectedFiles: expandedFiles,
-          uploadedFiles,
-          skippedFiles,
+          uploadedFiles: outcomes.uploadedFiles,
+          skippedFiles: outcomes.skippedFiles,
           failedFiles: reportedFailedFiles,
           selectedBytes: discoveredBytes,
           selectedMediaBytes,
           additionalComponentsBytes,
           selectedMediaFiles,
           additionalComponentsFiles,
-          uploadedBytes: successfulUploadedBytes,
-          skippedBytes,
-          avoidedBytes,
-          finalizationDuplicateBytes,
+          uploadedBytes: outcomes.successfulUploadedBytes,
+          skippedBytes: outcomes.skippedBytes,
+          avoidedBytes: outcomes.avoidedBytes,
+          finalizationDuplicateBytes: outcomes.finalizationDuplicateBytes,
           checkDurationMs: preparationDurationMs + preflightDurationMs,
           uploadDurationMs: summary.uploadDurationMs,
           totalDurationMs: summary.uploadDurationMs,
-          averageSpeedMBps: averageMediaMBps,
-          peakSpeedMBps: peakMediaMBps,
+          averageSpeedMBps: throughput.current.averageMediaMBps,
+          peakSpeedMBps: throughput.current.peakMediaMBps,
           retries: nativeRetryCount,
           files: historyFiles,
         };
@@ -1145,8 +1053,8 @@ export class UploadManager {
           : 'iPhone transfer completed',
         {
           sessionId,
-          uploadedFiles,
-          skippedFiles,
+          uploadedFiles: outcomes.uploadedFiles,
+          skippedFiles: outcomes.skippedFiles,
           failedFiles: reportedFailedFiles,
           preparationDurationMs,
           preflightDurationMs,
@@ -1162,10 +1070,10 @@ export class UploadManager {
 
       if (!this.isCancelled) onComplete(summary);
     } catch (error) {
-      const failure = error instanceof ApiRequestError && error.status === 401
+      const failure = isUnauthorizedError(error)
         ? new TransferFailure('network', 'unauthorized', true)
         : transferFailure(error, 'upload', 'unexpected');
-      diagnostics.updateTransfer(diagnosticTransferValues(failedFiles));
+      diagnostics.updateTransfer(diagnosticTransferValues(outcomes.failedFiles));
       await diagnostics.finish(this.isCancelled && !failure.fatal ? 'cancelled' : 'fatal');
       await api.logClientEvent('ERROR', 'transfer_exception', 'iPhone transfer stopped unexpectedly', {
         sessionId,
@@ -1175,27 +1083,27 @@ export class UploadManager {
         const summary: UploadSummary = {
           sessionId,
           selectedAssets: assets.length,
-          expandedFiles: readyFiles + preparationFailedFiles,
-          selectedFiles: Math.max(assets.length, readyFiles + preparationFailedFiles),
-          uploadedFiles,
-          skippedFiles,
+          expandedFiles: readyFiles + outcomes.preparationFailedFiles,
+          selectedFiles: Math.max(assets.length, readyFiles + outcomes.preparationFailedFiles),
+          uploadedFiles: outcomes.uploadedFiles,
+          skippedFiles: outcomes.skippedFiles,
           failedFiles: Math.max(
-            failedFiles,
-            Math.max(assets.length, readyFiles + preparationFailedFiles) - uploadedFiles - skippedFiles,
+            outcomes.failedFiles,
+            Math.max(assets.length, readyFiles + outcomes.preparationFailedFiles) - outcomes.uploadedFiles - outcomes.skippedFiles,
           ),
           selectedBytes: discoveredBytes,
           selectedMediaBytes,
           additionalComponentsBytes,
           selectedMediaFiles,
           additionalComponentsFiles,
-          byteTotalComplete: preparationFailedFiles === 0,
-          uploadedBytes: successfulUploadedBytes,
-          skippedBytes,
-          avoidedBytes,
-          finalizationDuplicateBytes,
+          byteTotalComplete: outcomes.preparationFailedFiles === 0,
+          uploadedBytes: outcomes.successfulUploadedBytes,
+          skippedBytes: outcomes.skippedBytes,
+          avoidedBytes: outcomes.avoidedBytes,
+          finalizationDuplicateBytes: outcomes.finalizationDuplicateBytes,
           uploadDurationMs: Date.now() - startTime,
-          averageMediaMBps,
-          peakMediaMBps,
+          averageMediaMBps: throughput.current.averageMediaMBps,
+          peakMediaMBps: throughput.current.peakMediaMBps,
           completionStatus: 'fatal',
           diagnosticReportAvailable: diagnostics.reportAvailable,
         };

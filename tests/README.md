@@ -1,5 +1,13 @@
 # Test Guide
 
+New developers should start with [setup and verification](../CONTRIBUTING.md).
+The full dispatcher now includes Release storage and HTTP integration as well
+as Debug coverage. `stress-tests` and `soak-tests` are separate opt-in targets;
+their budgets and manual device gates are in [release acceptance](../docs/RELEASE_ACCEPTANCE.md).
+The C# wrapper also checks benchmark failure acceptance and workload budgets.
+The [audit evidence map](../docs/AUDIT_STATUS.md) separates automated coverage
+from remaining compiler, installer and physical-device acceptance.
+
 ## Canonical Server Suite
 
 Run server tests through the isolated harness:
@@ -96,6 +104,21 @@ restart, and directory cleanup.
 
 ## Other Suites
 
+Native storage regressions build alongside the server, outside its packaged
+`bin` directory. After a Debug server build, run:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\verify.ps1 -Target storage-tests
+```
+
+The `server-tests` verification target runs these before the HTTP harness.
+They use tiny limits, a controllable clock, an erroring input stream and
+test-only mapped-write/flush/publication/delete fault injection. All files remain under
+`%TEMP%\LocalMediaTransfer.Tests`. The HTTP harness additionally covers QR/denied
+credential rejection, cross-owner/grant cancellation, self-cancellation and
+malformed first-chunk Base64 allocation. Native tests require the C++ toolchain;
+compiling the C# harness alone does not execute them.
+
 Frontend tests:
 
 ```powershell
@@ -165,18 +188,26 @@ The current automated checks include:
 - SQLite duplicate persistence across restart
 - second-instance conflict behavior
 - sequential chunk finalization and invalid chunk metadata
-- 43 frontend progress, queue, phase, timer, retry, upload-state, duplicate,
+- frontend progress, queue, phase, timer, retry, upload-state, duplicate,
   offline-entrypoint, live-speed, and iPadOS checks
-- 40 C# server ownership/state, live-session authentication and acknowledgements,
+- C# server ownership/state, live-session authentication and acknowledgements,
   DPAPI/HMAC tamper, credential-redaction, environment-isolation,
   native lifetime-job,
   generation-race, and named-pipe checks
-- 197 iOS Jest tests covering environment mismatch rejection, pairing-log
+- iOS Jest tests covering environment mismatch rejection, pairing-log
   privacy, deterministic filename-resolution batching, connection,
   picker range/auto-scroll behavior, transfer progress, ETA smoothing/staleness,
   upload planning, and cleanup
+- pairing-only/denied credential rejection, cross-owner and cross-grant
+  cancellation, denied-request capacity, concurrent settings and occupied-port
+  shutdown checks in the isolated C++ server harness
+- native storage admission, expiry and owned-file recovery, mapped-write SEH,
+  flush/publication/deletion faults and incomplete-read hashing
 - benchmark route gating, active-run conflict, storage, and restart persistence
 - GUI launch, authenticated acknowledged security-state reconciliation, WinUI
   close, and owned-server cleanup smoke coverage
 
 Generated result summaries under `tests` are ignored by Git.
+Use each run's summary for current counts. Jest native-source contracts do not
+compile Swift or verify PhotoKit/device behavior. GUI lifecycle smoke and
+installer staging checks do not replace a full install/uninstall acceptance run.

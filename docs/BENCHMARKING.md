@@ -87,12 +87,20 @@ Available profiles:
 |---|---|---|
 | `smoke` | 1 B, 4 KiB, 5 MiB, 99/100/101 MiB | Correctness and threshold coverage |
 | `standard` | 20 x 5 MiB, 100 MiB, 1 GiB; one warm-up and three measured runs | Repeatable baseline |
+| `stress` | Four concurrent 101 MiB files; one warm-up and ten measured runs | Bounded concurrency acceptance |
 | `soak` | Repeated 5 GiB transfers | Stalls, memory growth, thermals |
 | `tune` | 4/8/16/32/64 MiB chunks x 1/2/4 concurrent files | Chunk and concurrency sweep |
 | `manual` | Records while you transfer from iPhone/Safari | Real-device observation |
 
 The `tune` profile can write tens of gigabytes. Run it only against a dedicated
 upload directory with enough free space.
+
+For isolated, checked Release workloads, use `scripts/verify.ps1 -Target
+stress-tests` or `-Target soak-tests`. See [release acceptance](RELEASE_ACCEPTANCE.md)
+for budgets, evidence requirements and the distinction between volume and duration.
+The standalone runner returns failure when transfer errors or integrity checks
+fail. The harness additionally rejects retries and enforces the stress memory
+budget. `stress` always uses four concurrent files.
 
 Useful options:
 
@@ -148,6 +156,15 @@ concurrency unchanged. Compare medians against an iPhone-to-PC iperf3 result;
 the ISP subscription speed is not the local-network baseline.
 
 ## Stored Data
+
+The isolated harness selects its owned receiver PID for resource metrics.
+For a standalone run, set `LMT_BENCHMARK_PROCESS_ID` to the local receiver PID
+you intend to measure. Without it, process CPU/memory/I/O describe the benchmark
+client, not the receiver; remote receiver resources require separate observation.
+The runner never guesses a receiver from process names. Network samples are
+machine-wide and can include unrelated traffic.
+Exported commit metadata carries a `-dirty` suffix when the checkout has local
+changes, so developer measurements cannot be mistaken for a verified clean commit.
 
 `BenchmarkStore` uses SQLite WAL mode, prepared statements, transactions, and
 schema version `2`. Version `1` developer databases are migrated automatically

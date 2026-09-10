@@ -83,15 +83,7 @@ function latestPersistedDiagnostic(): PersistedDiagnostic {
 }
 
 jest.mock('@/api/ApiClient', () => ({
-  ApiRequestError: class ApiRequestError extends Error {
-    status: number;
-
-    constructor(message: string, status: number) {
-      super(message);
-      this.name = 'ApiRequestError';
-      this.status = status;
-    }
-  },
+  ApiRequestError: jest.requireActual('@/api/errors').ApiRequestError,
   api: {
     preflightCheck: jest.fn().mockResolvedValue([]),
     preflightVerify: jest.fn().mockResolvedValue({ files: [] }),

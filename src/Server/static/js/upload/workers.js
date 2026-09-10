@@ -8,7 +8,7 @@ window.UploadWorkers = {
     CHUNK_TIMEOUT_MS: 180000,
     MAX_CHUNK_RETRIES: 2,
     IOS_WHOLE_FILE_FALLBACK_BYTES: 1024 * 1024 * 1024,
-    IOS_MAX_CHUNK_BYTES: 8 * 1024 * 1024,
+    IOS_MAX_CHUNK_BYTES: window.TransferLimits.NativeChunkBytes,
     WHOLE_FILE_TIMEOUT_GRACE_MS: 120000,
     MIN_WHOLE_FILE_BPS: 1.5 * 1024 * 1024,
     _iosLargeTransferTail: Promise.resolve(),
@@ -322,6 +322,12 @@ window.UploadWorkers = {
         const isIOS = this.isIOSLike();
         const chunkSize = isIOS ? Math.min(manager.chunkSizeBytes, this.IOS_MAX_CHUNK_BYTES) : manager.chunkSizeBytes;
         const totalChunks = Math.ceil(meta.file.size / chunkSize);
+        if (totalChunks > window.TransferLimits.MaxChunksPerFile) {
+            throw new Error('File exceeds the receiver limit of 10,000 chunks. Split it before uploading.');
+        }
+        if (meta.file.size > window.TransferLimits.MaxFileBytes) {
+            throw new Error('File exceeds the receiver file-size limit. Split it before uploading.');
+        }
         const fileId = this.buildChunkFileId(meta.file);
         let uploadedBytes = 0;
         let finalResult = null;

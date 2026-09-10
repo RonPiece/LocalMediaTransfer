@@ -16,12 +16,8 @@ import {
   TransferHistoryPayload,
 } from './types';
 
-export class ApiRequestError extends Error {
-  constructor(message: string, public readonly status: number) {
-    super(message);
-    this.name = 'ApiRequestError';
-  }
-}
+import { ApiRequestError } from './errors';
+export { ApiRequestError } from './errors';
 
 export class ServerEnvironmentMismatchError extends Error {
   constructor(
@@ -237,7 +233,7 @@ export class ApiClient {
         method: init.method || 'GET',
         headers: headerRecord,
         body: typeof init.body === 'string' ? init.body : undefined,
-      });
+      }, init.signal ?? undefined);
       return {
         ok: result.status >= 200 && result.status < 300,
         status: result.status,

@@ -9,7 +9,7 @@ window.UploadManager = {
     CONCURRENCY: 4,
     SPEED_WINDOW_MS: 2000,
     AGG_ALPHA: 0.2,
-    SINGLE_FILE_MAX_BYTES: 100 * 1024 * 1024,
+    SINGLE_FILE_MAX_BYTES: window.TransferLimits.WholeFileBytes,
     chunkSizeBytes: 32 * 1024 * 1024,
     isMobile: window.Utils?.isMobileLike?.() ??
         /iPhone|iPad|iPod|Android/i.test(navigator.userAgent),

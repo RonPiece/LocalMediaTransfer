@@ -22,6 +22,7 @@
 #include <ctime>
 #include <cctype>
 #include <cwctype>
+#include <openssl/rand.h>
 
 #ifndef _WIN32
 #include <fcntl.h>
@@ -35,8 +36,54 @@ namespace {
 
 constexpr uint64_t MappingWindowBytes = 64ULL * 1024ULL * 1024ULL;
 constexpr size_t MaxCompletedSessions = 2048;
-constexpr uint64_t MaxChunksPerFile = 10000;
+constexpr uint64_t MaxChunksPerFile = lmt::TransferLimits::MaxChunksPerFile;
 constexpr auto FinalizationWaitTimeout = std::chrono::seconds(15);
+
+#ifdef _WIN32
+int mappedWriteException(EXCEPTION_POINTERS* info, const void* destination, size_t size) {
+    const auto* record = info->ExceptionRecord;
+    if (record->ExceptionCode != EXCEPTION_IN_PAGE_ERROR ||
+        record->NumberParameters < 2) return EXCEPTION_CONTINUE_SEARCH;
+    const auto address = record->ExceptionInformation[1];
+    const auto start = reinterpret_cast<ULONG_PTR>(destination);
+    return address >= start && address - start < size
+        ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH;
+}
+
+// Keep SEH in a leaf function without C++ objects requiring stack unwinding.
+bool copyMapped(void* destination, const char* source, size_t size, bool injectFault) {
+    __try {
+#ifdef LMT_STORAGE_TESTING
+        if (injectFault) {
+            ULONG_PTR details[] = {1, reinterpret_cast<ULONG_PTR>(destination), ERROR_WRITE_FAULT};
+            RaiseException(EXCEPTION_IN_PAGE_ERROR, 0, 3, details);
+        }
+#endif
+        memcpy(destination, source, size);
+        return true;
+    } __except(mappedWriteException(GetExceptionInformation(), destination, size)) {
+        return false;
+    }
+}
+#endif
+
+void publishTemporary(const fs::path& source, const fs::path& destination,
+    std::error_code& ec, bool injectFault) {
+#ifdef LMT_STORAGE_TESTING
+    if (injectFault) {
+        ec = std::make_error_code(std::errc::permission_denied);
+        return;
+    }
+#endif
+#ifdef _WIN32
+    // No REPLACE_EXISTING: preserve the existing collision policy. Request
+    // write-through publication after flushing the file's data and metadata.
+    if (!MoveFileExW(source.c_str(), destination.c_str(), MOVEFILE_WRITE_THROUGH))
+        ec = std::error_code(GetLastError(), std::system_category());
+#else
+    fs::rename(source, destination, ec);
+#endif
+}
 
 bool isSafeFileId(const std::string& fileId) {
     return !fileId.empty() &&
@@ -53,7 +100,7 @@ bool isManagedTempFile(const fs::path& path) {
     // contract. A generic ".<safe text>.tmp" rule could delete an unrelated
     // user file placed in the selected destination.
     static const std::regex managedTempPattern(
-        R"(^\.(ios-[0-9]{10,20}-[0-9]+|win-[a-f0-9]{32}-[A-Za-z0-9._-]+)\.tmp$)");
+        R"(^\.(lmt-upload-[a-f0-9]{64}|ios-[0-9]{10,20}-[0-9]+|win-[a-f0-9]{32}-[A-Za-z0-9._-]+)\.tmp$)");
     return std::regex_match(name, managedTempPattern);
 }
 
@@ -259,10 +306,12 @@ FileWriter::FileHandle& FileWriter::FileHandle::operator=(FileHandle&& other) no
 FileWriter::FileWriter(
     const std::string& uploadDir,
     std::shared_ptr<HashEngine> hashEngine,
-    lmt::FilenameConflictPolicy filenameConflictPolicy)
+    lmt::FilenameConflictPolicy filenameConflictPolicy,
+    UploadLimits limits)
     : m_uploadDir(uploadDir)
     , m_hashEngine(std::move(hashEngine))
     , m_filenameConflictPolicy(filenameConflictPolicy)
+    , m_limits(std::move(limits))
 {
     fs::create_directories(m_uploadDir);
     size_t removedOrphanCount = 0;
@@ -432,7 +481,8 @@ bool FileWriter::initFile(const std::string& fileId,
     }
     std::lock_guard<std::mutex> lock(m_mutex);
 
-    if (totalChunks == 0 || totalChunks > MaxChunksPerFile) {
+    if (totalSize == 0 || totalSize > m_limits.maxFileBytes ||
+        totalChunks == 0 || totalChunks > MaxChunksPerFile) {
         spdlog::warn(
             "Invalid chunk count {} for file {} (maximum {})",
             totalChunks,
@@ -458,12 +508,38 @@ bool FileWriter::initFile(const std::string& fileId,
     if (knownSession != m_sessions.end()) {
         const auto& state = knownSession->second;
         std::lock_guard<std::mutex> stateLock(state->mutex);
-        return state->originalName == originalName &&
+        return !state->failed && state->originalName == originalName &&
                state->totalSize == totalSize &&
                state->totalChunks == totalChunks &&
                state->skipExactDuplicates == skipExactDuplicates;
     }
     
+    // HTTP file IDs start with a SHA-256 credential namespace. Reservations
+    // include files being finalized or awaiting failed-file cleanup.
+    uint64_t reserved = 0, ownerReserved = 0;
+    size_t active = 0, ownerActive = 0;
+    const auto owner = fileId.substr(0, fileId.find('-'));
+    for (const auto& [id, state] : m_sessions) {
+        std::lock_guard<std::mutex> stateLock(state->mutex);
+        if (!state->reserved) continue;
+        reserved += state->totalSize;
+        ++active;
+        if (id.substr(0, id.find('-')) == owner) {
+            ownerReserved += state->totalSize;
+            ++ownerActive;
+        }
+    }
+    if (active >= m_limits.maxActiveFiles || ownerActive >= m_limits.maxOwnerFiles ||
+        totalSize > m_limits.maxReservedBytes ||
+        reserved > m_limits.maxReservedBytes - totalSize ||
+        totalSize > m_limits.maxOwnerBytes ||
+        ownerReserved > m_limits.maxOwnerBytes - totalSize) return false;
+
+    std::error_code spaceError;
+    const auto space = fs::space(fs::u8path(m_uploadDir), spaceError);
+    if (spaceError || space.available < m_limits.minFreeBytes ||
+        totalSize > space.available - m_limits.minFreeBytes) return false;
+
     FileHandle handle;
     handle.fileId = fileId;
     handle.originalName = originalName;
@@ -477,16 +553,28 @@ bool FileWriter::initFile(const std::string& fileId,
     handle.finalization->skipExactDuplicates = skipExactDuplicates;
     
     // Create temp file path
-    handle.tempPath = (fs::u8path(m_uploadDir) / fs::u8path("." + fileId + ".tmp")).u8string();
+    unsigned char random[32];
+    if (RAND_bytes(random, sizeof(random)) != 1) return false;
+    std::ostringstream temporaryName;
+    temporaryName << ".lmt-upload-" << std::hex << std::setfill('0');
+    for (auto value : random) temporaryName << std::setw(2) << static_cast<unsigned>(value);
+    temporaryName << ".tmp";
+    handle.tempPath = (fs::u8path(m_uploadDir) / temporaryName.str()).u8string();
+    handle.finalization->temporaryPath = handle.tempPath;
+    handle.finalization->lastActivity = m_limits.now();
     
-    // Reject 0-byte files (CreateFileMapping with size 0 is invalid on Windows)
-    if (totalSize == 0) {
-        spdlog::warn("Skipping 0-byte file: {}", originalName);
-        return false;
-    }
-
+    // Reserve before creation. Even a failed allocation whose file cannot be
+    // removed must remain charged until the reaper successfully deletes it.
+    m_sessions[fileId] = handle.finalization;
     // Create memory-mapped file
     if (!createMemoryMappedFile(handle)) {
+        closeHandle(handle);
+        std::error_code ec;
+        // createMemoryMappedFile clears tempPath when exclusive creation fails.
+        if (!handle.tempPath.empty()) fs::remove(fs::u8path(handle.tempPath), ec);
+        handle.finalization->failed = true;
+        handle.finalization->reserved = !!ec;
+        if (!ec) rememberCompletedSessionLocked(fileId);
         spdlog::error("Failed to create memory-mapped file for {}", fileId);
         return false;
     }
@@ -494,7 +582,6 @@ bool FileWriter::initFile(const std::string& fileId,
     handle.streamingHashValid =
         m_hashEngine && m_hashEngine->beginHash(fileId);
     
-    m_sessions[fileId] = handle.finalization;
     m_handles[fileId] = std::move(handle);
     spdlog::debug("Initialized file {} ({} bytes)", originalName, totalSize);
     return true;
@@ -505,18 +592,69 @@ size_t FileWriter::abortFilesWithPrefix(const std::string& fileIdPrefix) {
         return 0;
     }
 
+    return abortMatching([&](const auto& id, const auto&) {
+        return id.rfind(fileIdPrefix, 0) == 0;
+    });
+}
+
+void FileWriter::abortFile(const std::string& fileId) {
+    abortMatching([&](const auto& id, const auto&) { return id == fileId; });
+}
+
+bool FileWriter::ownsSession(const std::string& prefix) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return std::any_of(m_sessions.begin(), m_sessions.end(), [&](const auto& item) {
+        return item.first.rfind(prefix, 0) == 0;
+    });
+}
+
+void FileWriter::expireIdleFiles() {
+    const auto now = m_limits.now();
+    abortMatching([&](const auto&, const auto& state) {
+        return now - state.lastActivity >= m_limits.idleTimeout;
+    });
+    std::vector<std::pair<std::string, std::shared_ptr<FinalizationState>>> pending;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        for (const auto& [id, state] : m_sessions) {
+            std::lock_guard<std::mutex> stateLock(state->mutex);
+            if (state->failed && state->reserved) pending.emplace_back(id, state);
+        }
+    }
+    for (const auto& [id, state] : pending) retireTemporary(id, state);
+}
+
+void FileWriter::retireTemporary(const std::string& fileId,
+    const std::shared_ptr<FinalizationState>& state) {
+    // A failed delete retains its reservation and is retried by the reaper.
+    {
+        std::lock_guard<std::mutex> stateLock(state->mutex);
+        if (!state->reserved) return;
+        if (storageFault("delete")) return;
+        std::error_code ec;
+        fs::remove(fs::u8path(state->temporaryPath), ec);
+        if (ec) return;
+        state->reserved = false;
+    }
+    std::lock_guard<std::mutex> lock(m_mutex);
+    rememberCompletedSessionLocked(fileId);
+}
+
+size_t FileWriter::abortMatching(const std::function<bool(const std::string&,
+    const FinalizationState&)>& matches) {
     std::vector<FileHandle> abortedHandles;
     std::vector<std::string> abortedIds;
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         for (auto it = m_handles.begin(); it != m_handles.end();) {
-            if (it->first.rfind(fileIdPrefix, 0) != 0) {
+            std::lock_guard<std::mutex> stateLock(it->second.finalization->mutex);
+            if (!matches(it->first, *it->second.finalization)) {
                 ++it;
                 continue;
             }
             abortedIds.push_back(it->first);
+            it->second.finalization->failed = true;
             abortedHandles.push_back(std::move(it->second));
-            m_sessions.erase(it->first);
             it = m_handles.erase(it);
         }
     }
@@ -531,13 +669,6 @@ size_t FileWriter::abortFilesWithPrefix(const std::string& fileIdPrefix) {
             m_hashEngine->abortHash(abortedIds[index]);
         }
         closeHandle(handle);
-        std::error_code removeError;
-        fs::remove(fs::u8path(handle.tempPath), removeError);
-        if (removeError) {
-            spdlog::warn(
-                "Failed to remove cancelled upload temporary file: {}",
-                removeError.message());
-        }
         if (handle.finalization) {
             {
                 std::lock_guard<std::mutex> stateLock(
@@ -546,6 +677,7 @@ size_t FileWriter::abortFilesWithPrefix(const std::string& fileIdPrefix) {
                 handle.finalization->failed = true;
             }
             handle.finalization->completedCondition.notify_all();
+            retireTemporary(handle.fileId, handle.finalization);
         }
     }
     return abortedHandles.size();
@@ -561,12 +693,13 @@ bool FileWriter::createMemoryMappedFile(FileHandle& handle) {
         GENERIC_READ | GENERIC_WRITE,
         0,
         nullptr,
-        CREATE_ALWAYS,
+        CREATE_NEW,
         FILE_ATTRIBUTE_NORMAL,
         nullptr
     );
     
     if (handle.hFile == INVALID_HANDLE_VALUE) {
+        handle.tempPath.clear(); // No file was created; never remove a collision.
         spdlog::error("CreateFile failed: {}", GetLastError());
         return false;
     }
@@ -601,11 +734,12 @@ bool FileWriter::createMemoryMappedFile(FileHandle& handle) {
     return true;
 #else
     // Linux/macOS implementation. Views are created in bounded windows while writing.
-    handle.fd = open(handle.tempPath.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0644);
-    if (handle.fd < 0) return false;
+    handle.fd = open(handle.tempPath.c_str(), O_RDWR | O_CREAT | O_EXCL, 0600);
+    if (handle.fd < 0) { handle.tempPath.clear(); return false; }
     
     if (ftruncate(handle.fd, handle.totalSize) < 0) {
         close(handle.fd);
+        handle.fd = -1;
         return false;
     }
     
@@ -646,8 +780,12 @@ bool FileWriter::writeMappedRange(
             return false;
         }
 
-        memcpy(static_cast<char*>(view) + viewDelta, currentData, static_cast<size_t>(copyBytes));
-        UnmapViewOfFile(view);
+        const bool copied = copyMapped(static_cast<char*>(view) + viewDelta,
+            currentData, static_cast<size_t>(copyBytes), storageFault("copy"));
+        const bool flushed = copied && !storageFault("view-flush") &&
+            FlushViewOfFile(view, static_cast<SIZE_T>(available)) != 0;
+        const bool unmapped = UnmapViewOfFile(view) != 0;
+        if (!flushed || !unmapped) return false;
 
         currentOffset += copyBytes;
         currentData += copyBytes;
@@ -679,8 +817,12 @@ bool FileWriter::writeMappedRange(
             return false;
         }
 
-        memcpy(static_cast<char*>(view) + viewDelta, currentData, static_cast<size_t>(copyBytes));
-        munmap(view, static_cast<size_t>(available));
+        const bool copied = !storageFault("copy");
+        if (copied) memcpy(static_cast<char*>(view) + viewDelta, currentData, static_cast<size_t>(copyBytes));
+        const bool flushed = copied && !storageFault("view-flush") &&
+            msync(view, static_cast<size_t>(available), MS_SYNC) == 0;
+        const bool unmapped = munmap(view, static_cast<size_t>(available)) == 0;
+        if (!flushed || !unmapped) return false;
 
         currentOffset += copyBytes;
         currentData += copyBytes;
@@ -721,7 +863,7 @@ ChunkWriteStatus FileWriter::writeChunk(const std::string& fileId,
         return waitForFinalization(finalization);
     }
 
-    std::lock_guard<std::mutex> writeLock(*writeMutex);
+    std::unique_lock<std::mutex> writeLock(*writeMutex);
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         auto it = m_handles.find(fileId);
@@ -753,12 +895,16 @@ ChunkWriteStatus FileWriter::writeChunk(const std::string& fileId,
 
             offset = handle.bytesWritten;
 
-            if (offset + size > handle.totalSize) {
+            if (size > handle.totalSize - offset) {
                 spdlog::error("Chunk would exceed file size");
                 return ChunkWriteStatus::SizeExceeded;
             }
 
             writeTarget.totalSize = handle.totalSize;
+            {
+                std::lock_guard<std::mutex> stateLock(handle.finalization->mutex);
+                handle.finalization->lastActivity = m_limits.now();
+            }
 #ifdef _WIN32
             writeTarget.hMapping = handle.hMapping;
 #else
@@ -780,6 +926,8 @@ ChunkWriteStatus FileWriter::writeChunk(const std::string& fileId,
     // Per-file locking keeps chunks sequential while allowing separate files
     // to copy through independent bounded mapping windows concurrently.
     if (!writeMappedRange(writeTarget, offset, data, size)) {
+        writeLock.unlock();
+        abortFile(fileId);
         return ChunkWriteStatus::StorageError;
     }
 
@@ -801,18 +949,6 @@ ChunkWriteStatus FileWriter::writeChunk(const std::string& fileId,
     }
 
     return ChunkWriteStatus::Success;
-}
-
-std::string FileWriter::finalizeFile(
-    const std::string& fileId,
-    bool* finalizedNow,
-    bool* stillFinalizing) {
-    FileFinalizeResult result = finalizeFileResult(fileId, finalizedNow);
-    if (stillFinalizing) {
-        *stillFinalizing =
-            result.disposition == FileFinalizeDisposition::Finalizing;
-    }
-    return result.filename;
 }
 
 FileFinalizeResult FileWriter::finalizeFileResult(
@@ -849,8 +985,8 @@ FileFinalizeResult FileWriter::finalizeFileResult(
     }
 
     {
-        std::lock_guard<std::mutex> writeLock(*writeMutex);
-        std::lock_guard<std::mutex> lock(m_mutex);
+        std::unique_lock<std::mutex> writeLock(*writeMutex);
+        std::unique_lock<std::mutex> lock(m_mutex);
         auto it = m_handles.find(fileId);
         if (it == m_handles.end()) {
             auto session = m_sessions.find(fileId);
@@ -867,6 +1003,9 @@ FileFinalizeResult FileWriter::finalizeFileResult(
                     it->second.totalSize,
                     it->second.chunksReceived,
                     it->second.chunksExpected);
+                lock.unlock();
+                writeLock.unlock();
+                abortFile(fileId);
                 return {};
             }
 
@@ -888,19 +1027,26 @@ FileFinalizeResult FileWriter::finalizeFileResult(
     // The active handle is no longer discoverable, so retries observe the
     // finalization state instead of blocking this mutex across filesystem I/O.
     
-    auto failFinalization = [&finalization]() {
+    auto failFinalization = [this, &finalization, &localHandle, &fileId]() {
+        closeHandle(localHandle);
         {
             std::lock_guard<std::mutex> stateLock(finalization->mutex);
             finalization->finalizing = false;
             finalization->failed = true;
         }
         finalization->completedCondition.notify_all();
+        retireTemporary(fileId, finalization);
     };
 
     std::string finalName;
     std::string fullHash;
     FileFinalizeDisposition disposition = FileFinalizeDisposition::Error;
     try {
+        if (!flushFile(localHandle)) {
+            if (m_hashEngine) m_hashEngine->abortHash(fileId);
+            failFinalization();
+            return {};
+        }
         if (localHandle.streamingHashValid && m_hashEngine) {
             fullHash = m_hashEngine->finalizeHash(fileId);
         } else if (m_hashEngine) {
@@ -910,7 +1056,7 @@ FileFinalizeResult FileWriter::finalizeFileResult(
         closeHandle(localHandle);
 
         if (fullHash.empty()) {
-            fullHash = HashEngine::computeFileHash(localHandle.tempPath);
+            fullHash = HashEngine::computeFileHash(localHandle.tempPath, localHandle.totalSize);
         }
         if (fullHash.empty()) {
             spdlog::error("Failed to compute full SHA-256 for {}", localHandle.originalName);
@@ -972,10 +1118,10 @@ FileFinalizeResult FileWriter::finalizeFileResult(
                     finalPath =
                         fs::u8path(m_uploadDir) / fs::u8path(finalName);
                     std::error_code renameError;
-                    fs::rename(
+                    publishTemporary(
                         fs::u8path(localHandle.tempPath),
                         finalPath,
-                        renameError);
+                        renameError, storageFault("publish"));
                     if (renameError) {
                         spdlog::error(
                             "Failed to rename conflicting file: {}",
@@ -991,6 +1137,8 @@ FileFinalizeResult FileWriter::finalizeFileResult(
                         spdlog::warn(
                             "Failed to remove conflicting temporary file: {}",
                             removeError.message());
+                        failFinalization();
+                        return {};
                     }
                     disposition = FileFinalizeDisposition::NameConflict;
                 }
@@ -1014,10 +1162,10 @@ FileFinalizeResult FileWriter::finalizeFileResult(
                 disposition = FileFinalizeDisposition::Duplicate;
             } else {
                 std::error_code renameError;
-                fs::rename(
+                publishTemporary(
                     fs::u8path(localHandle.tempPath),
                     finalPath,
-                    renameError);
+                    renameError, storageFault("publish"));
 
                 if (renameError) {
                     spdlog::error(
@@ -1049,6 +1197,7 @@ FileFinalizeResult FileWriter::finalizeFileResult(
         finalization->disposition = disposition;
         finalization->finalizing = false;
         finalization->completed = true;
+        finalization->reserved = false;
     }
     finalization->completedCondition.notify_all();
 
@@ -1095,25 +1244,6 @@ ChunkWriteStatus FileWriter::waitForFinalization(
         : ChunkWriteStatus::StorageError;
 }
 
-std::string FileWriter::waitForFinalizedFilename(
-    const std::shared_ptr<FinalizationState>& state,
-    bool* stillFinalizing) const {
-    std::unique_lock<std::mutex> lock(state->mutex);
-    const bool resolved = state->completedCondition.wait_for(
-        lock,
-        FinalizationWaitTimeout,
-        [&state] {
-            return state->completed || state->failed;
-        });
-    if (!resolved) {
-        if (stillFinalizing) {
-            *stillFinalizing = true;
-        }
-        return "";
-    }
-    return state->completed ? state->filename : "";
-}
-
 FileFinalizeResult FileWriter::waitForFinalizedResult(
     const std::shared_ptr<FinalizationState>& state) const {
     std::unique_lock<std::mutex> lock(state->mutex);
@@ -1145,6 +1275,25 @@ void FileWriter::rememberCompletedSessionLocked(const std::string& fileId) {
             m_sessions.erase(expired);
         }
     }
+}
+
+bool FileWriter::storageFault(const char* operation) const {
+#ifdef LMT_STORAGE_TESTING
+    return failStorageOperation && failStorageOperation(operation);
+#else
+    return false;
+#endif
+}
+
+bool FileWriter::flushFile(FileHandle& handle) {
+    if (storageFault("file-flush")) return false;
+#ifdef _WIN32
+    // Views were flushed before unmapping; flush the file metadata/device
+    // buffers before publishing success. Storage hardware must honor flushes.
+    return FlushFileBuffers(handle.hFile) != 0;
+#else
+    return fsync(handle.fd) == 0;
+#endif
 }
 
 void FileWriter::closeHandle(FileHandle& handle) {
@@ -1223,21 +1372,11 @@ PreflightResult FileWriter::verifyPreflight(
 
     const std::string safeName = makeFinalFilename(originalName);
     std::lock_guard<std::mutex> finalizeLock(m_finalizeMutex);
-    auto candidates = m_hashEngine->findVerificationCandidates(
-        safeName,
-        sizeBytes,
-        sha256);
-    const bool hasExactCandidate = std::any_of(
-        candidates.begin(),
-        candidates.end(),
-        [&safeName](const FileInventoryRecord& record) {
-            return record.filename == safeName;
-        });
+    std::vector<FileInventoryRecord> candidates;
     const fs::path exactPath =
         fs::u8path(m_uploadDir) / fs::u8path(safeName).filename();
     std::error_code exactError;
-    if (!hasExactCandidate &&
-        fs::is_regular_file(exactPath, exactError) &&
+    if (fs::is_regular_file(exactPath, exactError) &&
         !exactError) {
         FileInventoryRecord exact;
         exact.filename = safeName;
@@ -1246,94 +1385,115 @@ PreflightResult FileWriter::verifyPreflight(
     }
     bool sameNameConflict = false;
     bool inconclusive = false;
-
-    for (const auto& candidate : candidates) {
-        const fs::path path =
-            fs::u8path(m_uploadDir) / fs::u8path(candidate.filename).filename();
-        std::error_code ec;
-        if (!fs::is_regular_file(path, ec) || ec) {
-            m_hashEngine->removeFile(candidate.filename);
-            continue;
-        }
-
-        const uint64_t actualSize = fs::file_size(path, ec);
-        if (ec) {
-            continue;
-        }
-        if (candidate.filename == safeName &&
-            (actualSize != sizeBytes || candidate.sha256 != sha256)) {
-            sameNameConflict = true;
-        }
-        if (actualSize != sizeBytes) {
-            continue;
-        }
-
-        const int64_t modifiedTime = inventoryModifiedTime(path);
-        const bool exactName = candidate.filename == safeName;
-        const bool storedHashMatches = candidate.sha256 == sha256;
-        const bool inventoryMetadataChanged =
-            candidate.sizeBytes != actualSize ||
-            candidate.modifiedTime != modifiedTime;
-        if (!exactName &&
-            !candidate.sha256.empty() &&
-            !storedHashMatches &&
-            !inventoryMetadataChanged) {
-            continue;
-        }
-        std::string actualHash;
-        if (hashCache) {
-            const auto cached = hashCache->find(candidate.filename);
-            if (cached != hashCache->end() &&
-                cached->second.sizeBytes == actualSize &&
-                cached->second.modifiedTime == modifiedTime) {
-                actualHash = cached->second.sha256;
+    std::string afterFilename;
+    bool exactPage = true;
+    bool knownHashPages = true;
+    while (true) {
+        if (!exactPage) {
+            // Verify indexed matches before scanning same-size candidates.
+            // Each phase has its own stable filename cursor and bounded page.
+            candidates = knownHashPages
+                ? m_hashEngine->findByHash(sha256, afterFilename)
+                : m_hashEngine->findVerificationCandidates(safeName, sizeBytes, sha256, afterFilename);
+            if (candidates.empty() && knownHashPages) {
+                knownHashPages = false;
+                afterFilename.clear();
+                continue;
             }
+            if (candidates.empty()) break;
+            afterFilename = candidates.back().filename;
         }
-        if (actualHash.empty()) {
-            actualHash = HashEngine::computeFileHash(path.u8string());
-            if (hashCache && !actualHash.empty()) {
-                (*hashCache)[candidate.filename] = {
-                    actualSize,
-                    modifiedTime,
-                    actualHash
+        exactPage = false;
+        for (const auto& candidate : candidates) {
+            const fs::path path =
+                fs::u8path(m_uploadDir) / fs::u8path(candidate.filename).filename();
+            std::error_code ec;
+            if (!fs::is_regular_file(path, ec) || ec) {
+                m_hashEngine->removeFile(candidate.filename);
+                continue;
+            }
+
+            const uint64_t actualSize = fs::file_size(path, ec);
+            if (ec) {
+                continue;
+            }
+            if (candidate.filename == safeName &&
+                (actualSize != sizeBytes || candidate.sha256 != sha256)) {
+                sameNameConflict = true;
+            }
+            if (actualSize != sizeBytes) {
+                continue;
+            }
+
+            const int64_t modifiedTime = inventoryModifiedTime(path);
+            const bool exactName = candidate.filename == safeName;
+            const bool storedHashMatches = candidate.sha256 == sha256;
+            const bool inventoryMetadataChanged =
+                candidate.sizeBytes != actualSize ||
+                candidate.modifiedTime != modifiedTime;
+            if (!exactName &&
+                !candidate.sha256.empty() &&
+                !storedHashMatches &&
+                !inventoryMetadataChanged) {
+                continue;
+            }
+            std::string actualHash;
+            if (hashCache) {
+                const auto cached = hashCache->find(candidate.filename);
+                if (cached != hashCache->end() &&
+                    cached->second.sizeBytes == actualSize &&
+                    cached->second.modifiedTime == modifiedTime) {
+                    actualHash = cached->second.sha256;
+                }
+            }
+            if (actualHash.empty()) {
+                actualHash = HashEngine::computeFileHash(path.u8string(), actualSize);
+                if (hashCache && !actualHash.empty()) {
+                    // Cache reuse is best-effort; bound it independently of inventory size.
+                    if (hashCache->size() >= 256) hashCache->clear();
+                    (*hashCache)[candidate.filename] = {
+                        actualSize,
+                        modifiedTime,
+                        actualHash
+                    };
+                }
+            }
+            if (actualHash.empty()) {
+                inconclusive = true;
+                continue;
+            }
+            const uint64_t afterSize = fs::file_size(path, ec);
+            const int64_t afterModifiedTime = inventoryModifiedTime(path);
+            if (ec || afterSize != actualSize || afterModifiedTime != modifiedTime) {
+                inconclusive = true;
+                if (!ec) {
+                    m_hashEngine->upsertFile(
+                        candidate.filename,
+                        "",
+                        afterSize,
+                        afterModifiedTime,
+                        inventoryNow());
+                }
+                continue;
+            }
+            m_hashEngine->upsertFile(
+                candidate.filename,
+                actualHash,
+                actualSize,
+                modifiedTime,
+                inventoryNow());
+            if (actualHash == sha256) {
+                return {
+                    PreflightDisposition::Skip,
+                    candidate.filename
                 };
             }
-        }
-        if (actualHash.empty()) {
-            inconclusive = true;
-            continue;
-        }
-        const uint64_t afterSize = fs::file_size(path, ec);
-        const int64_t afterModifiedTime = inventoryModifiedTime(path);
-        if (ec || afterSize != actualSize || afterModifiedTime != modifiedTime) {
-            inconclusive = true;
-            if (!ec) {
-                m_hashEngine->upsertFile(
-                    candidate.filename,
-                    "",
-                    afterSize,
-                    afterModifiedTime,
-                    inventoryNow());
+            if (candidate.filename == safeName) {
+                sameNameConflict = true;
             }
-            continue;
         }
-        m_hashEngine->upsertFile(
-            candidate.filename,
-            actualHash,
-            actualSize,
-            modifiedTime,
-            inventoryNow());
-        if (actualHash == sha256) {
-            return {
-                PreflightDisposition::Skip,
-                candidate.filename
-            };
-        }
-        if (candidate.filename == safeName) {
-            sameNameConflict = true;
-        }
-    }
 
+    }
     if (sameNameConflict) {
         return {
             PreflightDisposition::UploadNameConflict,
@@ -1348,9 +1508,15 @@ PreflightResult FileWriter::verifyPreflight(
 
 std::pair<bool, std::string> FileWriter::findVerifiedDuplicate(
     const std::string& hash) {
-    for (const auto& record : m_hashEngine->findByHash(hash)) {
-        if (verifyInventoryRecord(record.filename, record.sizeBytes, hash)) {
-            return {true, record.filename};
+    std::string afterFilename;
+    while (true) {
+        const auto records = m_hashEngine->findByHash(hash, afterFilename);
+        if (records.empty()) break;
+        afterFilename = records.back().filename;
+        for (const auto& record : records) {
+            if (verifyInventoryRecord(record.filename, record.sizeBytes, hash)) {
+                return {true, record.filename};
+            }
         }
     }
     return {false, ""};
@@ -1375,7 +1541,7 @@ bool FileWriter::verifyInventoryRecord(
     }
 
     const std::string actualHash =
-        HashEngine::computeFileHash(candidate.u8string());
+        HashEngine::computeFileHash(candidate.u8string(), actualSize);
     if (actualHash == expectedHash) {
         m_hashEngine->upsertFile(
             filename,

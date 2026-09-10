@@ -15,81 +15,104 @@ import { PairingPayload } from '@/security/ConnectionSecurity';
 import { ConnectionHealthStatus, ConnectionSecurityState, ScreenState } from './types';
 import { PreparationMode } from '@/services/upload/types';
 
-export type AppNavigatorProps = {
+export type NavigationProps = {
   appState: ScreenState;
   selectedAssets: MediaAsset[];
+  scanRequestId: number;
+  onOpenPicker: () => void;
+  onTransfer: (assets: MediaAsset[]) => void;
+  onCancelPicker: () => void;
+  onCancelTransfer: () => void;
+  onCompleteTransfer: () => void;
+};
+
+export type ConnectionProps = {
   isServerConnected: boolean;
   isConnecting: boolean;
   pairingDesktopName: string | null;
   connectionSecurity: ConnectionSecurityState;
   connectionHealthStatus: ConnectionHealthStatus;
-  discoveredServers: DiscoveredServer[];
-  isDiscovering: boolean;
-  discoveryFailed: boolean;
+  onConnect: (ipOrUrl: string, token?: string, pairing?: PairingPayload, silent?: boolean) => Promise<boolean>;
+  onConnectDiscovered: (server: DiscoveredServer) => Promise<void>;
+  onDisconnect: () => Promise<void>;
+  onRetryConnection: () => void;
+};
+
+export type PreferenceProps = {
   nearbyDiscoveryEnabled: boolean;
   allowInsecureHttp: boolean;
   nativeHttpsAvailable: boolean;
   preparationMode: PreparationMode;
   skipExactDuplicates: boolean;
   includeAdditionalMediaComponents: boolean;
-  scanRequestId: number;
-  onConnect: (ipOrUrl: string, token?: string, pairing?: PairingPayload, silent?: boolean) => Promise<boolean>;
-  onConnectDiscovered: (server: DiscoveredServer) => Promise<void>;
   onAllowInsecureHttpChange: (enabled: boolean) => Promise<void>;
   onExplainUnencryptedHttp: () => void;
   onExplainNearbyDiscovery: () => void;
-  onEnableNearbyDiscovery: () => void;
-  onRefreshDiscovery: () => void | Promise<void>;
   onNearbyDiscoveryChange: (enabled: boolean) => void;
   onPreparationModeChange: (mode: PreparationMode) => void;
   onSkipExactDuplicatesChange: (enabled: boolean) => void;
   onIncludeAdditionalMediaComponentsChange: (enabled: boolean) => void;
-  onOpenPicker: () => void;
-  onTransfer: (assets: MediaAsset[]) => void;
-  onCancelPicker: () => void;
-  onCancelTransfer: () => void;
-  onCompleteTransfer: () => void;
-  onDisconnect: () => Promise<void>;
-  onRetryConnection: () => void;
 };
 
-export default function AppNavigator({
-  appState,
-  selectedAssets,
-  isServerConnected,
-  isConnecting,
-  pairingDesktopName,
-  connectionSecurity,
-  connectionHealthStatus,
-  discoveredServers,
-  isDiscovering,
-  discoveryFailed,
-  nearbyDiscoveryEnabled,
-  allowInsecureHttp,
-  nativeHttpsAvailable,
-  preparationMode,
-  skipExactDuplicates,
-  includeAdditionalMediaComponents,
-  scanRequestId,
-  onConnect,
-  onConnectDiscovered,
-  onAllowInsecureHttpChange,
-  onExplainUnencryptedHttp,
-  onExplainNearbyDiscovery,
-  onEnableNearbyDiscovery,
-  onRefreshDiscovery,
-  onNearbyDiscoveryChange,
-  onPreparationModeChange,
-  onSkipExactDuplicatesChange,
-  onIncludeAdditionalMediaComponentsChange,
-  onOpenPicker,
-  onTransfer,
-  onCancelPicker,
-  onCancelTransfer,
-  onCompleteTransfer,
-  onDisconnect,
-  onRetryConnection,
-}: AppNavigatorProps) {
+export type DiscoveryProps = {
+  discoveredServers: DiscoveredServer[];
+  isDiscovering: boolean;
+  discoveryFailed: boolean;
+  onEnableNearbyDiscovery: () => void;
+  onRefreshDiscovery: () => void | Promise<void>;
+};
+
+export type AppNavigatorProps = {
+  navigation: NavigationProps;
+  connection: ConnectionProps;
+  preferences: PreferenceProps;
+  discovery: DiscoveryProps;
+};
+
+export default function AppNavigator({ navigation, connection, preferences, discovery }: AppNavigatorProps) {
+  const {
+    appState,
+    selectedAssets,
+    scanRequestId,
+    onOpenPicker,
+    onTransfer,
+    onCancelPicker,
+    onCancelTransfer,
+    onCompleteTransfer,
+  } = navigation;
+  const {
+    isServerConnected,
+    isConnecting,
+    pairingDesktopName,
+    connectionSecurity,
+    connectionHealthStatus,
+    onConnect,
+    onConnectDiscovered,
+    onDisconnect,
+    onRetryConnection,
+  } = connection;
+  const {
+    nearbyDiscoveryEnabled,
+    allowInsecureHttp,
+    nativeHttpsAvailable,
+    preparationMode,
+    skipExactDuplicates,
+    includeAdditionalMediaComponents,
+    onAllowInsecureHttpChange,
+    onExplainUnencryptedHttp,
+    onExplainNearbyDiscovery,
+    onNearbyDiscoveryChange,
+    onPreparationModeChange,
+    onSkipExactDuplicatesChange,
+    onIncludeAdditionalMediaComponentsChange,
+  } = preferences;
+  const {
+    discoveredServers,
+    isDiscovering,
+    discoveryFailed,
+    onEnableNearbyDiscovery,
+    onRefreshDiscovery,
+  } = discovery;
   const transition = React.useRef(new Animated.Value(1)).current;
   const previousState = React.useRef(appState);
 

@@ -17,12 +17,14 @@
 #include <chrono>
 #include <deque>
 #include <vector>
+#include <functional>
 
 #ifdef _WIN32
 #include <windows.h>
 #endif
 
 #include "common/Types.hpp"
+#include "common/TransferLimits.hpp"
 
 class HashEngine;
 
@@ -72,13 +74,26 @@ struct PreflightHashCacheEntry {
 using PreflightHashCache =
     std::unordered_map<std::string, PreflightHashCacheEntry>;
 
+struct UploadLimits {
+    uint64_t maxFileBytes = lmt::TransferLimits::MaxFileBytes;
+    uint64_t maxReservedBytes = 128ULL * 1024 * 1024 * 1024;
+    uint64_t maxOwnerBytes = lmt::TransferLimits::MaxFileBytes;
+    uint64_t minFreeBytes = 256ULL * 1024 * 1024;
+    size_t maxActiveFiles = 32;
+    size_t maxOwnerFiles = 8;
+    std::chrono::seconds idleTimeout{30 * 60};
+    std::function<std::chrono::steady_clock::time_point()> now =
+        [] { return std::chrono::steady_clock::now(); };
+};
+
 class FileWriter {
 public:
     FileWriter(
         const std::string& uploadDir,
         std::shared_ptr<HashEngine> hashEngine,
         lmt::FilenameConflictPolicy filenameConflictPolicy =
-            lmt::FilenameConflictPolicy::KeepBoth);
+            lmt::FilenameConflictPolicy::KeepBoth,
+        UploadLimits limits = {});
     ~FileWriter();
     
     /**
@@ -99,6 +114,13 @@ public:
      * Closes mappings, removes temporary files, and wakes finalization waiters.
      */
     size_t abortFilesWithPrefix(const std::string& fileIdPrefix);
+    void abortFile(const std::string& fileId);
+    bool ownsSession(const std::string& fileIdPrefix);
+    void expireIdleFiles();
+#ifdef LMT_STORAGE_TESTING
+    // Compiled only into the native regression executable, never the server.
+    std::function<bool(const char*)> failStorageOperation;
+#endif
     
     /**
      * Write a sequential chunk to a memory-mapped file.
@@ -113,16 +135,6 @@ public:
                                 const char* data,
                                 uint64_t size);
     
-    /**
-     * Finalize a file after all chunks received
-     * @param fileId File identifier
-     * @return Final saved filename, or empty on error
-     */
-    std::string finalizeFile(
-        const std::string& fileId,
-        bool* finalizedNow = nullptr,
-        bool* stillFinalizing = nullptr);
-
     /**
      * Finalize a file and report whether it was saved, skipped as an exact
      * duplicate, or rejected because the original name belongs to other data.
@@ -176,6 +188,9 @@ private:
         std::string filename;
         std::string sha256;
         FileFinalizeDisposition disposition = FileFinalizeDisposition::Error;
+        bool reserved = true;
+        std::string temporaryPath;
+        std::chrono::steady_clock::time_point lastActivity{};
     };
 
     struct FileHandle {
@@ -223,11 +238,14 @@ private:
         const char* data,
         uint64_t size);
     void closeHandle(FileHandle& handle);
+    bool flushFile(FileHandle& handle);
+    bool storageFault(const char* operation) const;
+    size_t abortMatching(const std::function<bool(const std::string&,
+        const FinalizationState&)>& matches);
+    void retireTemporary(const std::string& fileId,
+        const std::shared_ptr<FinalizationState>& state);
     ChunkWriteStatus waitForFinalization(
         const std::shared_ptr<FinalizationState>& state) const;
-    std::string waitForFinalizedFilename(
-        const std::shared_ptr<FinalizationState>& state,
-        bool* stillFinalizing) const;
     FileFinalizeResult waitForFinalizedResult(
         const std::shared_ptr<FinalizationState>& state) const;
     void rememberCompletedSessionLocked(const std::string& fileId);
@@ -251,4 +269,5 @@ private:
     std::unordered_map<std::string, uint64_t> m_nextFilenameSuffix;
     std::shared_ptr<HashEngine> m_hashEngine;
     lmt::FilenameConflictPolicy m_filenameConflictPolicy;
+    UploadLimits m_limits;
 };

@@ -7,41 +7,63 @@ on:
       - "v*"
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: windows-release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
+  native-ios:
+    uses: ./.github/workflows/ios-unsigned-ipa.yml
+    with:
+      environment: production
+
   build:
+    needs: native-ios
     runs-on: windows-2022
     timeout-minutes: 90
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      artifact-id: ${{ steps.artifacts.outputs.artifact-id }}
     env:
       VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}\.vcpkg-cache
 
     steps:
       - name: Check out exact requested ref
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
 
       - name: Set up .NET
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
         with:
           dotnet-version: "8.0.x"
 
       - name: Cache NuGet packages
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: ~/.nuget/packages
           key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
           restore-keys: |
             nuget-${{ runner.os }}-
 
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: src/LocalMediaTransfer.iOS/package-lock.json
+
+      - name: Restore locked iOS dependencies
+        working-directory: src/LocalMediaTransfer.iOS
+        run: npm ci --no-audit --no-fund
+
       - name: Cache vcpkg binaries
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
-          key: vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
+          key: vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
           restore-keys: |
             vcpkg-${{ runner.os }}-
 
@@ -49,9 +71,24 @@ jobs:
         shell: powershell
         run: .\scripts\verify.ps1 -Target validate
 
+      - name: Validate release version
+        id: version
+        shell: powershell
+        run: |
+          $version = (Get-Content -LiteralPath .\VERSION -Raw).Trim()
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid release version.' }
+          if ($env:GITHUB_REF -like 'refs/tags/*' -and $env:GITHUB_REF_NAME -ne "v$version") {
+              throw 'Release tag does not match VERSION.'
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+
       - name: Restore native dependencies
         shell: powershell
         run: .\scripts\bootstrap-dependencies.ps1 -PreferVisualStudioTools -RestoreTimeoutSeconds 2400
+
+      - name: Require full automated verification on this commit
+        shell: powershell
+        run: .\scripts\verify.ps1 -Target all
 
       - name: Build release artifacts
         shell: powershell
@@ -61,8 +98,15 @@ jobs:
         shell: powershell
         run: .\tools\LocalMediaTransfer.InnoSetup\verify-release-artifacts.ps1
 
+      - name: Test the packaged server and measure concurrent stress
+        shell: powershell
+        run: |
+          .\scripts\verify.ps1 -Target server-release-tests -ServerExecutable .\tools\LocalMediaTransfer.InnoSetup\staging\app\server\LocalMediaTransferServer.exe
+          .\scripts\verify.ps1 -Target stress-tests -ServerExecutable .\tools\LocalMediaTransfer.InnoSetup\staging\app\server\LocalMediaTransferServer.exe
+
       - name: Upload verified Windows release artifact set
-        uses: actions/upload-artifact@v6
+        id: artifacts
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: LocalMediaTransfer-${{ github.ref_name }}-windows-x64
           if-no-files-found: error
@@ -72,24 +116,75 @@ jobs:
             tools/LocalMediaTransfer.InnoSetup/output/LocalMediaTransfer-*-windows-x64-portable.zip
             tools/LocalMediaTransfer.InnoSetup/output/SHA256SUMS.txt
 
-      - name: Create draft GitHub Release for a version tag
-        if: startsWith(github.ref, 'refs/tags/v')
+  provenance:
+    needs: build
+    runs-on: windows-2022
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download this build's immutable artifact for attestation
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          artifact-ids: ${{ needs.build.outputs.artifact-id }}
+          path: release-assets
+          merge-multiple: true
+      - name: Attest tested Windows artifact provenance
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-path: release-assets/*
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build, provenance]
+    runs-on: windows-2022
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download this build's immutable artifact
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          artifact-ids: ${{ needs.build.outputs.artifact-id }}
+          path: release-assets
+          merge-multiple: true
+
+      - name: Check hashes and create draft release
         shell: powershell
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_VERSION: ${{ needs.build.outputs.version }}
         run: |
-          $version = (Get-Content -LiteralPath .\VERSION -Raw).Trim()
+          $ErrorActionPreference = 'Stop'
+          $version = $env:RELEASE_VERSION
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid release version.' }
           $expectedTag = "v$version"
           if ($env:GITHUB_REF_NAME -ne $expectedTag) {
               throw "Tag $($env:GITHUB_REF_NAME) does not match VERSION $version."
           }
 
-          $output = ".\tools\LocalMediaTransfer.InnoSetup\output"
+          $output = '.\release-assets'
           $assets = @(
               "$output\LocalMediaTransfer-Setup-$version-x64.exe",
               "$output\LocalMediaTransfer-$version-windows-x64-portable.zip",
               "$output\SHA256SUMS.txt"
           )
+          $expectedNames = @($assets[0..1] | ForEach-Object { Split-Path $_ -Leaf })
+          $seen = @{}
+          foreach ($line in Get-Content -LiteralPath "$output\SHA256SUMS.txt") {
+              if ($line -notmatch '^([a-fA-F0-9]{64})\s+\*?([^\\/]+)$') { throw 'Invalid checksum entry.' }
+              $hash = $Matches[1]
+              $name = $Matches[2]
+              if ($name -notin $expectedNames -or $seen.ContainsKey($name)) { throw 'Unexpected checksum entry.' }
+              if ((Get-FileHash -LiteralPath (Join-Path $output $name) -Algorithm SHA256).Hash -ne $hash) {
+                  throw 'Release artifact checksum mismatch.'
+              }
+              $seen[$name] = $true
+          }
+          if ($seen.Count -ne 2) { throw 'Missing release checksum.' }
           gh release create $env:GITHUB_REF_NAME @assets `
               --draft `
               --verify-tag `

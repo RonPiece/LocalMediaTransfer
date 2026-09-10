@@ -11,14 +11,15 @@ the user's Apple ID and installs it on the iPhone.
 3. Select **Actions** > **Build unsigned iOS IPA** > **Run workflow**.
 4. Select the branch containing the commit you intend to install. A workflow
    can build only committed, pushed GitHub content; local changes are invisible.
-5. Wait for the build job to finish successfully.
+5. Select the `production` environment (or `test` for the separate TEST app),
+   then wait for the build job to finish successfully.
 6. Open the completed workflow run and download the
-   **LocalMediaTransfer-unsigned-ipa** artifact.
+   **LocalMediaTransfer-production-unsigned-ipa** artifact for production.
 7. Extract the downloaded ZIP. It contains
-   `LocalMediaTransfer-unsigned.ipa`.
+   `LocalMediaTransfer-production-unsigned.ipa` and native build evidence.
 
-The workflow is manual-only so it does not consume macOS runner minutes on
-every commit. It verifies the generated application scheme, embedded JavaScript
+The workflow also runs on pull requests and is called by Windows release
+verification. It verifies the generated application scheme, embedded JavaScript
 bundle, ExpoFont pod, and `LocalMediaTransferNative` Swift module before
 publishing the artifact.
 
@@ -32,7 +33,7 @@ publishing the artifact.
 
 ## 3. Sign and install
 
-1. Drag `LocalMediaTransfer-unsigned.ipa` onto Sideloadly's IPA area.
+1. Drag the selected environment's unsigned IPA onto Sideloadly's IPA area.
 2. Enter the Apple ID used for free signing.
 3. Leave **Anisette Authentication** set to **Local**.
 4. Leave **Signing Mode** set to **Apple ID Sideload**.

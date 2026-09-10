@@ -1,4 +1,5 @@
 #include "security/NativeSessionStore.hpp"
+#include "common/TransferLimits.hpp"
 
 #include "ipc/PipeServer.hpp"
 #include "security/PairingStore.hpp"
@@ -23,8 +24,8 @@ using json = nlohmann::json;
 namespace {
 constexpr size_t MaxPairingRequests = 5;
 constexpr size_t MaxTransferRequests = 10;
-constexpr size_t MaxTransferFiles = 1000;
-constexpr unsigned long long MaxFileBytes = 100ULL * 1024ULL * 1024ULL * 1024ULL;
+constexpr size_t MaxTransferFiles = lmt::TransferLimits::MaxQueuedFiles;
+constexpr unsigned long long MaxFileBytes = lmt::TransferLimits::MaxFileBytes;
 constexpr auto PairingLifetime = std::chrono::minutes(2);
 constexpr auto TransferIdleLifetime = std::chrono::minutes(30);
 constexpr auto TransferAbsoluteLifetime = std::chrono::hours(24);
@@ -111,12 +112,14 @@ NativeSessionStore::NativeSessionStore(
     std::shared_ptr<PipeServer> pipeServer,
     std::string serverId,
     std::string certificateFingerprint,
-    std::string environment)
+    std::string environment,
+    std::function<std::chrono::steady_clock::time_point()> now)
     : m_pairingStore(std::move(pairingStore))
     , m_pipeServer(std::move(pipeServer))
     , m_serverId(std::move(serverId))
     , m_certificateFingerprint(std::move(certificateFingerprint))
     , m_environment(std::move(environment))
+    , m_now(std::move(now))
     , m_grantMaster(randomHex(32)) {}
 
 NativeSessionStore::~NativeSessionStore() {
@@ -230,7 +233,7 @@ std::string NativeSessionStore::confirmationProof(
 
 void NativeSessionStore::beginPairingWindow() {
     std::lock_guard lock(m_mutex);
-    m_pairingWindowExpiresAt = std::chrono::steady_clock::now() + PairingLifetime;
+    m_pairingWindowExpiresAt = m_now() + PairingLifetime;
     logNativeDiagnostic(json{{"event", "pairing_window_opened"}});
 }
 
@@ -242,7 +245,7 @@ void NativeSessionStore::endPairingWindow() {
 
 bool NativeSessionStore::pairingAvailable() const {
     std::lock_guard lock(m_mutex);
-    return std::chrono::steady_clock::now() < m_pairingWindowExpiresAt;
+    return m_now() < m_pairingWindowExpiresAt;
 }
 
 json NativeSessionStore::identity() const {
@@ -256,7 +259,7 @@ json NativeSessionStore::identity() const {
 }
 
 void NativeSessionStore::pruneLocked() {
-    const auto now = std::chrono::steady_clock::now();
+    const auto now = m_now();
     for (auto it = m_pairings.begin(); it != m_pairings.end();) {
         if (now > it->second.expiresAt) {
             if (it->second.state == PairState::Pending ||
@@ -267,7 +270,8 @@ void NativeSessionStore::pruneLocked() {
         } else ++it;
     }
     for (auto it = m_transfers.begin(); it != m_transfers.end();) {
-        const bool pendingExpired = it->second.state == TransferState::Pending &&
+        const bool pendingExpired = (it->second.state == TransferState::Pending ||
+            it->second.state == TransferState::Denied) &&
             now > it->second.expiresAt;
         const bool activeExpired = it->second.state == TransferState::Approved &&
             (now - it->second.lastActivity > TransferIdleLifetime ||
@@ -290,7 +294,7 @@ void NativeSessionStore::pruneLocked() {
 bool NativeSessionStore::pairingRateLimitedLocked(const std::string& ip) {
     auto& attempts = m_pairingAttempts[ip];
     if (attempts.size() >= 5) return true;
-    attempts.push_back(std::chrono::steady_clock::now());
+    attempts.push_back(m_now());
     return false;
 }
 
@@ -315,7 +319,7 @@ NativeSessionStore::Result NativeSessionStore::requestPairing(
 
     std::lock_guard lock(m_mutex);
     pruneLocked();
-    if (std::chrono::steady_clock::now() >= m_pairingWindowExpiresAt) {
+    if (m_now() >= m_pairingWindowExpiresAt) {
         return error(403, "pairing_window_closed",
             "Windows pairing is not currently enabled.");
     }
@@ -341,7 +345,7 @@ NativeSessionStore::Result NativeSessionStore::requestPairing(
     request.expectedProof = confirmationProof(credential, request.requestId, nonce);
     request.securityCode = computeSecurityCode(m_environment, m_serverId,
         m_certificateFingerprint, deviceId, nonce, request.requestId);
-    request.expiresAt = std::chrono::steady_clock::now() + PairingLifetime;
+    request.expiresAt = m_now() + PairingLifetime;
     const std::string requestId = request.requestId;
     m_pairings.emplace(requestId, std::move(request));
     logNativeDiagnostic(json{{"event", "pairing_requested"}});
@@ -462,7 +466,12 @@ NativeSessionStore::Result NativeSessionStore::requestTransfer(
 
     std::lock_guard lock(m_mutex);
     pruneLocked();
-    if (m_transfers.size() >= MaxTransferRequests ||
+    // Terminal denial stays observable until expiry but does not consume an
+    // active slot. Bound retained history separately below.
+    if (std::count_if(m_transfers.begin(), m_transfers.end(), [](const auto& item) {
+            return item.second.state == TransferState::Pending ||
+                item.second.state == TransferState::Approved;
+        }) >= MaxTransferRequests ||
         std::any_of(m_transfers.begin(), m_transfers.end(), [&](const auto& item) {
             return item.second.deviceId == device->id &&
                 item.second.state == TransferState::Pending;
@@ -470,7 +479,15 @@ NativeSessionStore::Result NativeSessionStore::requestTransfer(
         return error(409, "transfer_already_pending",
             "A transfer request from this computer is already pending.");
     }
-    request.createdAt = request.lastActivity = std::chrono::steady_clock::now();
+    request.createdAt = request.lastActivity = m_now();
+    if (m_transfers.size() >= MaxTransferRequests * 4) {
+        auto oldest = m_transfers.end();
+        for (auto it = m_transfers.begin(); it != m_transfers.end(); ++it) {
+            if (it->second.state == TransferState::Denied &&
+                (oldest == m_transfers.end() || it->second.createdAt < oldest->second.createdAt)) oldest = it;
+        }
+        if (oldest != m_transfers.end()) m_transfers.erase(oldest);
+    }
     request.expiresAt = request.createdAt + PairingLifetime;
     std::string tokenMaterial;
     appendCanonical(tokenMaterial, "LMT-WINDOWS-TRANSFER-GRANT-V1");
@@ -543,7 +560,7 @@ bool NativeSessionStore::approveTransfer(const std::string& requestId) {
     auto item = m_transfers.find(requestId);
     if (item == m_transfers.end() || item->second.state != TransferState::Pending) return false;
     item->second.state = TransferState::Approved;
-    item->second.lastActivity = std::chrono::steady_clock::now();
+    item->second.lastActivity = m_now();
     logNativeDiagnostic(json{{"event", "transfer_approved"}});
     return true;
 }
@@ -568,7 +585,7 @@ bool NativeSessionStore::authorizeTransfer(
             constantTimeEqual(value.second.tokenHash, sha256Hex(token));
     });
     if (item == m_transfers.end()) return false;
-    item->second.lastActivity = std::chrono::steady_clock::now();
+    item->second.lastActivity = m_now();
     return true;
 }
 
@@ -591,7 +608,7 @@ bool NativeSessionStore::authorizeFile(
                 value.sizeBytes == sizeBytes;
         });
     if (file == transfer->second.files.end()) return false;
-    transfer->second.lastActivity = std::chrono::steady_clock::now();
+    transfer->second.lastActivity = m_now();
     return true;
 }
 

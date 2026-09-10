@@ -1,4 +1,5 @@
-import { api, ApiRequestError } from '@/api/ApiClient';
+import { isUnauthorizedError } from '@/api/errors';
+import { api } from '@/api/ApiClient';
 import { PreflightAction } from '@/api/types';
 import { nativeCapabilities } from '../NativeCapabilities';
 import {
@@ -173,7 +174,7 @@ export async function runDuplicatePreflightWindow({
         }
       }
     } catch (error) {
-      if (error instanceof ApiRequestError && error.status === 401) throw error;
+      if (isUnauthorizedError(error)) throw error;
       failureCount += 1;
       metrics.metadataFailureCount += 1;
       metrics.metadataFallbackFiles += batch.length;
@@ -358,7 +359,7 @@ export async function runDuplicatePreflightWindow({
         if (!returned.has(file.id)) preflightResults.set(file.id, 'upload');
       }
     } catch (error) {
-      if (error instanceof ApiRequestError && error.status === 401) throw error;
+      if (isUnauthorizedError(error)) throw error;
       failureCount += 1;
       metrics.verificationFailureCount += 1;
       for (const file of batch) preflightResults.set(file.id, 'upload');

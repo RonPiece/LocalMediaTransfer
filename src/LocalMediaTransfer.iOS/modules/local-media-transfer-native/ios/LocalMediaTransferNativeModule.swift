@@ -66,6 +66,7 @@ private struct SecureConnectionRecord: Record {
 }
 
 private struct NativeHttpRequestRecord: Record {
+  @Field(.required) var requestId: String
   @Field(.required) var url: String
   @Field var method: String = "GET"
   @Field var headers: [String: String] = [:]
@@ -170,9 +171,13 @@ public final class LocalMediaTransferNativeModule: Module {
       self.httpClient.clear()
     }
 
+    Function("prepareRequest") { (id: String) in try self.httpClient.prepareRequest(id) }
+    Function("cancelRequest") { (id: String) in self.httpClient.cancelRequest(id) }
+
     AsyncFunction("request") {
       (options: NativeHttpRequestRecord) -> [String: Any] in
       try await self.httpClient.performRequest(
+        requestId: options.requestId,
         url: options.url,
         method: options.method,
         headers: options.headers,

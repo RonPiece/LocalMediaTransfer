@@ -13,6 +13,8 @@
 #include <functional>
 #include <chrono>
 #include <mutex>
+#include <optional>
+#include <cstdint>
 
 class HashEngine;
 class BenchmarkStore;
@@ -100,7 +102,23 @@ private:
         std::string& token);
     bool validateRequestToken(const crow::request& req) const;
     bool validateAnyToken(const std::string& token) const;
-    bool validateUploadAuthorization(const crow::request& req) const;
+    enum class UploadAction { Preflight, Chunk, WholeFile, Cancel };
+    enum class UploadPrincipal { Session, TrustedDevice, NativeGrant };
+    struct UploadAuthorization {
+        UploadPrincipal principal;
+        UploadAction action;
+        std::string transferId;
+        std::string ownerPrefix;
+        // Request-local credential, never logged or returned to clients.
+        std::string credential;
+        bool isNative() const { return principal == UploadPrincipal::NativeGrant; }
+    };
+    std::optional<UploadAuthorization> authorizeUpload(const crow::request& req,
+        UploadAction action) const;
+    std::string credentialOwnerPrefix(const std::string& token) const;
+    bool authorizeUploadFile(const UploadAuthorization& authorization,
+        const std::string& id, const std::string& name, uint64_t size,
+        bool skipExactDuplicates) const;
     std::string getTokenFromRequest(const crow::request& req) const;
     
     lmt::ServerConfig m_config;
@@ -125,4 +143,5 @@ private:
     std::string m_browserBootstrap;
     std::chrono::steady_clock::time_point m_browserBootstrapExpiresAt{};
     std::string m_settingsJson = R"({"autoDelete": false, "darkMode": true})";
+    std::mutex m_settingsMutex;
 };

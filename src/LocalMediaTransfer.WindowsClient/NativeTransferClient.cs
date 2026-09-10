@@ -8,14 +8,20 @@ public sealed class NativeTransferClient
 {
     private const int DefaultParallelFiles = 6;
 
+    public static long MaximumFileBytes(int chunkSizeBytes)
+    {
+        if (chunkSizeBytes <= 0) throw new ArgumentOutOfRangeException(nameof(chunkSizeBytes));
+        return Math.Min(TransferLimits.MaxFileBytes, (long)TransferLimits.MaxChunksPerFile * chunkSizeBytes);
+    }
+
     public static IReadOnlyList<TransferSource> PrepareFiles(IEnumerable<string> paths,
         string clientSessionId)
     {
         if (clientSessionId.Length != 36 || !clientSessionId.StartsWith("win-",
             StringComparison.Ordinal))
             throw new ArgumentException("Invalid native transfer session ID.");
-        string[] selected = paths.Distinct(StringComparer.OrdinalIgnoreCase).Take(1001).ToArray();
-        if (selected.Length is 0 or > 1000)
+        string[] selected = paths.Distinct(StringComparer.OrdinalIgnoreCase).Take(TransferLimits.MaxQueuedFiles + 1).ToArray();
+        if (selected.Length is 0 or > TransferLimits.MaxQueuedFiles)
             throw new NativeClientException("invalid_file_count",
                 "Select between 1 and 1,000 files.");
         var files = new List<TransferSource>(selected.Length);
@@ -45,6 +51,9 @@ public sealed class NativeTransferClient
         ClientConfiguration configuration = await NativeTransferAuthorization
             .GetConfigurationAsync(client,
             cancellationToken);
+        if (sources.Any(file => file.SizeBytes > MaximumFileBytes(configuration.ChunkSizeBytes)))
+            throw new NativeClientException("file_too_large",
+                "A selected file exceeds the receiver's 10,000-chunk limit. Split it before sending.", false);
         TransferApproval approval = await NativeTransferAuthorization.RequestApprovalAsync(
             client, receiver,
             clientSessionId, sources, skipExactDuplicates, cancellationToken);
@@ -150,10 +159,10 @@ public sealed class NativeTransferClient
 
     private static void ValidateSources(IReadOnlyList<TransferSource> sources)
     {
-        if (sources.Count is 0 or > 1000) throw new NativeClientException(
+        if (sources.Count is 0 or > TransferLimits.MaxQueuedFiles) throw new NativeClientException(
             "invalid_file_count", "Select between 1 and 1,000 files.");
         if (sources.Any(file => file.SizeBytes <= 0 || file.Name.Length == 0 ||
-            file.SizeBytes > 100L * 1024 * 1024 * 1024))
+            file.SizeBytes > TransferLimits.MaxFileBytes))
             throw new NativeClientException("invalid_transfer_manifest",
                 "One or more selected files cannot be transferred.");
         string prefix = sources[0].FileId[..Math.Min(36, sources[0].FileId.Length)];

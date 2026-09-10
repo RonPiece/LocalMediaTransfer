@@ -16,6 +16,7 @@
 #include <thread>
 #include <unordered_map>
 #include <vector>
+#include <istream>
 
 typedef struct evp_md_ctx_st EVP_MD_CTX;
 struct sqlite3;
@@ -42,7 +43,10 @@ public:
     void abortHash(const std::string& fileId);
 
     static std::string computeHash(const char* data, uint64_t size);
-    static std::string computeFileHash(const std::string& path);
+    static std::string computeFileHash(const std::string& path,
+        std::optional<uint64_t> expectedSize = std::nullopt);
+    static std::string computeStreamHash(std::istream& input,
+        std::optional<uint64_t> expectedSize = std::nullopt);
 
     void openDatabase(const std::string& dbPath);
     void reconcileDirectory(const std::string& uploadDir);
@@ -54,8 +58,10 @@ public:
     std::vector<FileInventoryRecord> findVerificationCandidates(
         const std::string& filename,
         uint64_t sizeBytes,
-        const std::string& expectedHash) const;
-    std::vector<FileInventoryRecord> findByHash(const std::string& hash) const;
+        const std::string& expectedHash,
+        const std::string& afterFilename = "") const;
+    std::vector<FileInventoryRecord> findByHash(const std::string& hash,
+        const std::string& afterFilename = "") const;
     void upsertFile(
         const std::string& filename,
         const std::string& hash,
@@ -64,10 +70,6 @@ public:
         int64_t verifiedAt);
     void removeFile(const std::string& filename);
 
-    // Compatibility helpers retained for the existing /check_file path.
-    std::pair<bool, std::string> hashExists(const std::string& hash) const;
-    void addKnownHash(const std::string& hash, const std::string& filename);
-    void removeKnownHash(const std::string& hash);
     int getHashCount() const;
 
 private:
@@ -78,7 +80,7 @@ private:
 
     bool executeSchemaMigrationUnsafe();
     int getHashCountUnsafe() const;
-    std::vector<FileInventoryRecord> findUnhashedFiles() const;
+    std::vector<FileInventoryRecord> findUnhashedFiles(const std::string& afterFilename) const;
     void runBackgroundIndexing(std::string uploadDir);
 
     std::unordered_map<std::string, std::shared_ptr<HashContext>> m_contexts;

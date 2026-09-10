@@ -126,6 +126,34 @@ final class PinnedHTTPClient {
   private var secureSession: URLSession?
   private var secureDelegate: PinnedSessionDelegate?
   private var secureBaseUrl: String?
+  private struct ControlRequest {
+    var task: URLSessionDataTask?
+    var cancelled = false
+  }
+  private var requests: [String: ControlRequest] = [:]
+
+  func prepareRequest(_ id: String) throws {
+    lock.lock(); defer { lock.unlock() }
+    guard !id.isEmpty, id.count <= 100, requests[id] == nil, requests.count < 128 else {
+      throw serviceError("Invalid or excessive pending control requests")
+    }
+    requests[id] = ControlRequest()
+  }
+
+  func cancelRequest(_ id: String) {
+    lock.lock()
+    guard var request = requests[id] else { lock.unlock(); return }
+    request.cancelled = true
+    requests[id] = request
+    let task = request.task
+    lock.unlock()
+    task?.cancel()
+  }
+
+  private func completeRequest(_ id: String) {
+    lock.lock(); defer { lock.unlock() }
+    requests.removeValue(forKey: id)
+  }
 
   func configure(baseUrl: String, fingerprint: String) throws {
     guard let parsedBaseUrl = URL(string: baseUrl),
@@ -189,11 +217,15 @@ final class PinnedHTTPClient {
   }
 
   func performRequest(
+    requestId: String,
     url urlText: String,
     method: String,
     headers: [String: String],
     body requestBody: String?
   ) async throws -> [String: Any] {
+    let deadline = DispatchWorkItem { [weak self] in self?.cancelRequest(requestId) }
+    DispatchQueue.global().asyncAfter(deadline: .now() + 30, execute: deadline)
+    defer { deadline.cancel(); completeRequest(requestId) }
     guard let url = URL(string: urlText) else {
       throw serviceError("Invalid request URL")
     }
@@ -205,7 +237,24 @@ final class PinnedHTTPClient {
     if let requestBody {
       request.httpBody = Data(requestBody.utf8)
     }
-    let (body, response) = try await session(for: url).data(for: request)
+    let activeSession = try session(for: url)
+    let (body, response): (Data, URLResponse) = try await withCheckedThrowingContinuation { continuation in
+      lock.lock()
+      guard var control = requests[requestId], !control.cancelled else {
+        lock.unlock()
+        continuation.resume(throwing: URLError(.cancelled))
+        return
+      }
+      let task = activeSession.dataTask(with: request) { data, response, error in
+        if let error { continuation.resume(throwing: error) }
+        else if let response { continuation.resume(returning: (data ?? Data(), response)) }
+        else { continuation.resume(throwing: URLError(.badServerResponse)) }
+      }
+      control.task = task
+      requests[requestId] = control
+      task.resume()
+      lock.unlock()
+    }
     guard let http = response as? HTTPURLResponse else {
       throw serviceError("Server returned a non-HTTP response")
     }

@@ -9,7 +9,6 @@
 #include <fstream>
 #include <iomanip>
 #include <sstream>
-#include <unordered_set>
 #include <vector>
 
 #ifdef _WIN32
@@ -185,28 +184,8 @@ bool HashEngine::executeSchemaMigrationUnsafe() {
 }
 
 void HashEngine::reconcileDirectory(const std::string& uploadDir) {
-    std::vector<FileInventoryRecord> diskFiles;
     const fs::path root = fs::u8path(uploadDir);
     std::error_code ec;
-    for (const auto& entry : fs::directory_iterator(root, ec)) {
-        if (ec) {
-            break;
-        }
-        if (!isManagedFile(entry) ||
-            entry.path().filename() == fs::u8path("_dont_delete")) {
-            continue;
-        }
-
-        FileInventoryRecord record;
-        record.filename = entry.path().filename().u8string();
-        record.sizeBytes = entry.file_size(ec);
-        if (ec) {
-            ec.clear();
-            continue;
-        }
-        record.modifiedTime = fileModifiedTime(entry.path());
-        diskFiles.push_back(std::move(record));
-    }
 
     std::lock_guard<std::mutex> lock(m_mutex);
     if (!m_db) {
@@ -214,7 +193,6 @@ void HashEngine::reconcileDirectory(const std::string& uploadDir) {
     }
 
     execSql(m_db, "BEGIN IMMEDIATE;");
-    std::unordered_set<std::string> present;
     sqlite3_stmt* lookup = nullptr;
     sqlite3_stmt* upsert = nullptr;
     sqlite3_prepare_v2(
@@ -234,8 +212,17 @@ void HashEngine::reconcileDirectory(const std::string& uploadDir) {
         &upsert,
         nullptr);
 
-    for (const auto& disk : diskFiles) {
-        present.insert(disk.filename);
+    // Stream the directory instead of retaining a second full inventory in RAM.
+    // Keep the existing serialization contract while reconciling SQLite.
+    for (fs::directory_iterator it(root, ec), end; !ec && it != end; it.increment(ec)) {
+        const auto& entry = *it;
+        if (!isManagedFile(entry)) continue;
+        FileInventoryRecord disk;
+        disk.filename = entry.path().filename().u8string();
+        std::error_code statError;
+        disk.sizeBytes = entry.file_size(statError);
+        if (statError) continue;
+        disk.modifiedTime = fileModifiedTime(entry.path());
         std::string retainedHash;
         int64_t retainedVerifiedAt = 0;
 
@@ -294,7 +281,9 @@ void HashEngine::reconcileDirectory(const std::string& uploadDir) {
         const char* value = reinterpret_cast<const char*>(
             sqlite3_column_text(all, 0));
         const std::string filename = value ? value : "";
-        if (present.find(filename) == present.end()) {
+        std::error_code statError;
+        const bool exists = fs::is_regular_file(root / fs::u8path(filename).filename(), statError);
+        if (!exists && (!statError || statError == std::errc::no_such_file_or_directory)) {
             sqlite3_bind_text(
                 remove,
                 1,
@@ -354,24 +343,21 @@ std::optional<FileInventoryRecord> HashEngine::findFirstCandidate(
 std::vector<FileInventoryRecord> HashEngine::findVerificationCandidates(
     const std::string& filename,
     uint64_t sizeBytes,
-    const std::string& expectedHash) const {
+    const std::string& expectedHash,
+    const std::string& afterFilename) const {
     std::vector<FileInventoryRecord> records;
     std::lock_guard<std::mutex> lock(m_mutex);
     if (!m_db || filename.empty() || expectedHash.empty()) {
         return records;
     }
 
-    constexpr int CandidatePageSize = 256;
     sqlite3_stmt* statement = nullptr;
     if (sqlite3_prepare_v2(
             m_db,
             "SELECT filename,COALESCE(sha256,''),size_bytes,modified_time,"
             "verified_at FROM files "
-            "WHERE filename=?1 OR sha256=?2 OR size_bytes=?3 "
-            "ORDER BY CASE WHEN filename=?1 THEN 0 "
-            "WHEN sha256=?2 THEN 1 "
-            "WHEN COALESCE(sha256,'')='' THEN 2 ELSE 3 END, filename "
-            "LIMIT ?4 OFFSET ?5;",
+            "WHERE (filename=?1 OR sha256=?2 OR size_bytes=?3) AND filename>?4 "
+            "ORDER BY filename LIMIT 256;",
             -1,
             &statement,
             nullptr) != SQLITE_OK) {
@@ -380,42 +366,26 @@ std::vector<FileInventoryRecord> HashEngine::findVerificationCandidates(
     sqlite3_bind_text(statement, 1, filename.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(statement, 2, expectedHash.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_int64(statement, 3, static_cast<sqlite3_int64>(sizeBytes));
-    sqlite3_bind_int(statement, 4, CandidatePageSize);
-    int offset = 0;
-    while (true) {
-        sqlite3_bind_int(statement, 5, offset);
-        int pageCount = 0;
-        while (sqlite3_step(statement) == SQLITE_ROW) {
-            FileInventoryRecord record;
-            const char* name = reinterpret_cast<const char*>(
-                sqlite3_column_text(statement, 0));
-            const char* hash = reinterpret_cast<const char*>(
-                sqlite3_column_text(statement, 1));
-            record.filename = name ? name : "";
-            record.sha256 = hash ? hash : "";
-            record.sizeBytes =
-                static_cast<uint64_t>(sqlite3_column_int64(statement, 2));
-            record.modifiedTime = sqlite3_column_int64(statement, 3);
-            record.verifiedAt = sqlite3_column_int64(statement, 4);
-            records.push_back(std::move(record));
-            ++pageCount;
-        }
-        if (pageCount < CandidatePageSize) {
-            break;
-        }
-        offset += pageCount;
-        sqlite3_reset(statement);
-        sqlite3_clear_bindings(statement);
-        sqlite3_bind_text(statement, 1, filename.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(statement, 2, expectedHash.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_int64(statement, 3, static_cast<sqlite3_int64>(sizeBytes));
-        sqlite3_bind_int(statement, 4, CandidatePageSize);
+    sqlite3_bind_text(statement, 4, afterFilename.c_str(), -1, SQLITE_TRANSIENT);
+    while (sqlite3_step(statement) == SQLITE_ROW) {
+        FileInventoryRecord record;
+        const char* name = reinterpret_cast<const char*>(
+            sqlite3_column_text(statement, 0));
+        const char* hash = reinterpret_cast<const char*>(
+            sqlite3_column_text(statement, 1));
+        record.filename = name ? name : "";
+        record.sha256 = hash ? hash : "";
+        record.sizeBytes =
+            static_cast<uint64_t>(sqlite3_column_int64(statement, 2));
+        record.modifiedTime = sqlite3_column_int64(statement, 3);
+        record.verifiedAt = sqlite3_column_int64(statement, 4);
+        records.push_back(std::move(record));
     }
     sqlite3_finalize(statement);
     return records;
 }
 
-std::vector<FileInventoryRecord> HashEngine::findUnhashedFiles() const {
+std::vector<FileInventoryRecord> HashEngine::findUnhashedFiles(const std::string& afterFilename) const {
     std::vector<FileInventoryRecord> records;
     std::lock_guard<std::mutex> lock(m_mutex);
     if (!m_db) {
@@ -425,13 +395,14 @@ std::vector<FileInventoryRecord> HashEngine::findUnhashedFiles() const {
     if (sqlite3_prepare_v2(
             m_db,
             "SELECT filename,COALESCE(sha256,''),size_bytes,modified_time,"
-            "verified_at FROM files WHERE COALESCE(sha256,'')='' "
-            "ORDER BY filename;",
+            "verified_at FROM files WHERE COALESCE(sha256,'')='' AND filename>?1 "
+            "ORDER BY filename LIMIT 256;",
             -1,
             &statement,
             nullptr) != SQLITE_OK) {
         return records;
     }
+    sqlite3_bind_text(statement, 1, afterFilename.c_str(), -1, SQLITE_TRANSIENT);
     while (sqlite3_step(statement) == SQLITE_ROW) {
         FileInventoryRecord record;
         const char* name = reinterpret_cast<const char*>(
@@ -463,39 +434,44 @@ void HashEngine::runBackgroundIndexing(std::string uploadDir) {
     constexpr auto ReconcileInterval = std::chrono::seconds(5);
     while (!m_stopBackground.load()) {
         reconcileDirectory(uploadDir);
-        const auto records = findUnhashedFiles();
-        for (const auto& record : records) {
-            if (m_stopBackground.load()) {
-                return;
+        std::string afterFilename;
+        while (!m_stopBackground.load()) {
+            const auto records = findUnhashedFiles(afterFilename);
+            if (records.empty()) break;
+            afterFilename = records.back().filename;
+            for (const auto& record : records) {
+                if (m_stopBackground.load()) {
+                    return;
+                }
+                const fs::path path = fs::u8path(uploadDir) /
+                    fs::u8path(record.filename).filename();
+                std::error_code ec;
+                if (!fs::is_regular_file(path, ec) || ec) {
+                    removeFile(record.filename);
+                    continue;
+                }
+                const uint64_t beforeSize = fs::file_size(path, ec);
+                const int64_t beforeModified = fileModifiedTime(path);
+                if (ec || beforeSize != record.sizeBytes ||
+                    beforeModified != record.modifiedTime) {
+                    continue;
+                }
+                const std::string hash = computeFileHash(path.u8string());
+                if (hash.empty() || m_stopBackground.load()) {
+                    continue;
+                }
+                const uint64_t afterSize = fs::file_size(path, ec);
+                const int64_t afterModified = fileModifiedTime(path);
+                if (ec || afterSize != beforeSize || afterModified != beforeModified) {
+                    continue;
+                }
+                upsertFile(
+                    record.filename,
+                    hash,
+                    afterSize,
+                    afterModified,
+                    unixNow());
             }
-            const fs::path path = fs::u8path(uploadDir) /
-                fs::u8path(record.filename).filename();
-            std::error_code ec;
-            if (!fs::is_regular_file(path, ec) || ec) {
-                removeFile(record.filename);
-                continue;
-            }
-            const uint64_t beforeSize = fs::file_size(path, ec);
-            const int64_t beforeModified = fileModifiedTime(path);
-            if (ec || beforeSize != record.sizeBytes ||
-                beforeModified != record.modifiedTime) {
-                continue;
-            }
-            const std::string hash = computeFileHash(path.u8string());
-            if (hash.empty() || m_stopBackground.load()) {
-                continue;
-            }
-            const uint64_t afterSize = fs::file_size(path, ec);
-            const int64_t afterModified = fileModifiedTime(path);
-            if (ec || afterSize != beforeSize || afterModified != beforeModified) {
-                continue;
-            }
-            upsertFile(
-                record.filename,
-                hash,
-                afterSize,
-                afterModified,
-                unixNow());
         }
         for (auto waited = std::chrono::milliseconds(0);
              waited < ReconcileInterval && !m_stopBackground.load();
@@ -506,7 +482,7 @@ void HashEngine::runBackgroundIndexing(std::string uploadDir) {
 }
 
 std::vector<FileInventoryRecord> HashEngine::findByHash(
-    const std::string& hash) const {
+    const std::string& hash, const std::string& afterFilename) const {
     std::vector<FileInventoryRecord> records;
     std::lock_guard<std::mutex> lock(m_mutex);
     if (!m_db || hash.empty()) {
@@ -516,13 +492,14 @@ std::vector<FileInventoryRecord> HashEngine::findByHash(
     if (sqlite3_prepare_v2(
             m_db,
             "SELECT filename,sha256,size_bytes,modified_time,verified_at "
-            "FROM files WHERE sha256=?;",
+            "FROM files WHERE sha256=?1 AND filename>?2 ORDER BY filename LIMIT 256;",
             -1,
             &statement,
             nullptr) != SQLITE_OK) {
         return records;
     }
     sqlite3_bind_text(statement, 1, hash.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(statement, 2, afterFilename.c_str(), -1, SQLITE_TRANSIENT);
     while (sqlite3_step(statement) == SQLITE_ROW) {
         FileInventoryRecord record;
         const char* name = reinterpret_cast<const char*>(
@@ -589,37 +566,6 @@ void HashEngine::removeFile(const std::string& filename) {
         &statement,
         nullptr);
     sqlite3_bind_text(statement, 1, filename.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_step(statement);
-    sqlite3_finalize(statement);
-}
-
-std::pair<bool, std::string> HashEngine::hashExists(
-    const std::string& hash) const {
-    const auto records = findByHash(hash);
-    return records.empty()
-        ? std::make_pair(false, std::string())
-        : std::make_pair(true, records.front().filename);
-}
-
-void HashEngine::addKnownHash(
-    const std::string& hash,
-    const std::string& filename) {
-    upsertFile(filename, hash, 0, 0, unixNow());
-}
-
-void HashEngine::removeKnownHash(const std::string& hash) {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    if (!m_db || hash.empty()) {
-        return;
-    }
-    sqlite3_stmt* statement = nullptr;
-    sqlite3_prepare_v2(
-        m_db,
-        "DELETE FROM files WHERE sha256=?;",
-        -1,
-        &statement,
-        nullptr);
-    sqlite3_bind_text(statement, 1, hash.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_step(statement);
     sqlite3_finalize(statement);
 }
@@ -769,35 +715,48 @@ std::string HashEngine::computeHash(const char* data, uint64_t size) {
     return output.str();
 }
 
-std::string HashEngine::computeFileHash(const std::string& path) {
+std::string HashEngine::computeFileHash(const std::string& path,
+    std::optional<uint64_t> expectedSize) {
     std::ifstream input(fs::u8path(path), std::ios::binary);
     if (!input) {
         return "";
     }
+    std::error_code ec;
+    const auto size = fs::file_size(fs::u8path(path), ec);
+    if (ec || (expectedSize && size != *expectedSize)) return "";
+    return computeStreamHash(input, expectedSize.value_or(size));
+}
+
+std::string HashEngine::computeStreamHash(std::istream& input,
+    std::optional<uint64_t> expectedSize) {
     EVP_MD_CTX* context = EVP_MD_CTX_new();
     if (!context || EVP_DigestInit_ex(context, EVP_sha256(), nullptr) != 1) {
         EVP_MD_CTX_free(context);
         return "";
     }
 
+    std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)> owner(context, EVP_MD_CTX_free);
     std::vector<char> buffer(4 * 1024 * 1024);
-    while (input) {
-        input.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
-        const auto count = input.gcount();
-        if (count > 0 &&
-            EVP_DigestUpdate(context, buffer.data(), count) != 1) {
-            EVP_MD_CTX_free(context);
-            return "";
+    uint64_t consumed = 0;
+    try {
+        while (input) {
+            input.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
+            const auto count = input.gcount();
+            if (count > 0) consumed += static_cast<uint64_t>(count);
+            if (count > 0 &&
+                EVP_DigestUpdate(context, buffer.data(), static_cast<size_t>(count)) != 1) {
+                return "";
+            }
         }
-    }
+    } catch (const std::ios_base::failure&) { return ""; }
+    if (input.bad() || !input.eof() ||
+        (expectedSize && consumed != *expectedSize)) return "";
 
     unsigned char digest[EVP_MAX_MD_SIZE];
     unsigned int length = 0;
     if (EVP_DigestFinal_ex(context, digest, &length) != 1) {
-        EVP_MD_CTX_free(context);
         return "";
     }
-    EVP_MD_CTX_free(context);
 
     std::ostringstream output;
     output << std::hex << std::setfill('0');

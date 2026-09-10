@@ -1,6 +1,7 @@
 import React from 'react';
 import { act, renderHook } from '@testing-library/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { api } from '@/api/ApiClient';
 
 import { parseSavedConnection, usePairingController } from './usePairingController';
 
@@ -15,12 +16,15 @@ jest.mock('expo-secure-store', () => ({
 }));
 
 jest.mock('@/api/ApiClient', () => ({
-  api: {},
+  api: {
+    setConfig: jest.fn(), pingServer: jest.fn(), requestPairing: jest.fn(),
+    pairingStatus: jest.fn(), logClientEvent: jest.fn().mockResolvedValue(undefined),
+  },
 }));
 
 jest.mock('@/services/NativeCapabilities', () => ({
   expectedServerEnvironment: () => 'production',
-  nativeCapabilities: { available: true },
+  nativeCapabilities: { available: true, clearSecureConnection: jest.fn() },
 }));
 
 describe('parseSavedConnection', () => {
@@ -94,5 +98,33 @@ describe('usePairingController nearby discovery', () => {
     expect(setIsConnecting).toHaveBeenNthCalledWith(1, true);
     expect(setIsConnecting).toHaveBeenLastCalledWith(false);
     expect(connectionAttemptRef.current).toBe(false);
+  });
+});
+
+describe('HTTP pairing-only capability', () => {
+  it.each(['approved', 'denied'] as const)('requires Windows approval in Expo Go: %s', async status => {
+    jest.clearAllMocks();
+    (api.pingServer as jest.Mock).mockResolvedValue(true);
+    (api.requestPairing as jest.Mock).mockResolvedValue(status);
+    const markHttpConnected = jest.fn();
+    const { result } = renderHook(() => usePairingController({
+      nativeHttpsAvailable: false, effectiveAllowInsecureHttp: true,
+      connectionSecurity: { mode: 'disconnected', certificateVerified: false },
+      setAppState: jest.fn(), setIsConnecting: jest.fn(), setPairingDesktopName: jest.fn(),
+      markDisconnected: jest.fn(), markHttpConnected, markSecureConnected: jest.fn(),
+      getDeviceIdentity: jest.fn().mockResolvedValue({ deviceId: 'test-device', credential: 'approved-secret' }),
+      connectTrusted: jest.fn(), showAlertOnce: jest.fn(), confirmOnce: jest.fn(),
+      requestQrScan: jest.fn(), persistAllowInsecureHttp: jest.fn(),
+      connectionAttemptRef: { current: false },
+    }));
+    await act(async () => {
+      await result.current.handleConnect('http://192.0.2.1:8080', 'pair-test');
+    });
+    expect(api.requestPairing).toHaveBeenCalledWith(
+      'http://192.0.2.1:8080', 'test-device', 'iPhone', 'approved-secret');
+    if (status === 'approved') {
+      expect(api.setConfig).toHaveBeenCalledWith('http://192.0.2.1:8080', 'approved-secret');
+      expect(markHttpConnected).toHaveBeenCalledTimes(1);
+    } else expect(markHttpConnected).not.toHaveBeenCalled();
   });
 });

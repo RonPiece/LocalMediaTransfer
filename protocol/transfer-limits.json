@@ -1,0 +1,10 @@
+{
+  "MaxChunksPerFile": 10000,
+  "MaxFileBytes": 107374182400,
+  "MaxQueuedFiles": 1000,
+  "NativeChunkBytes": 8388608,
+  "CompatibilityChunkBytes": 4194304,
+  "WholeFileBytes": 104857600,
+  "MaxChunkBytes": 67108864,
+  "MaxEncodedChunkBytes": 94371840
+}

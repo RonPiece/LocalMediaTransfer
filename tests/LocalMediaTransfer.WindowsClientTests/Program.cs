@@ -5,12 +5,15 @@ using LocalMediaTransfer.WindowsClient;
 var tests = new (string Name, Func<Task> Run)[]
 {
     ("security code test vector", SecurityCodeVector),
+    ("chunk capacity bounds file size", ChunkCapacity),
     ("confirmation proof test vector", ConfirmationProofVector),
     ("manual address validation", ManualAddressValidation),
     ("discovery uses packet source address", DiscoverySourceAddress),
     ("transfer source limits and stable IDs", TransferSourceValidation),
     ("retry classification", RetryClassification),
     ("invalid certificate pins fail before transport", InvalidCertificatePin),
+    ("pinned TLS stalled body cancels", () => PinnedNetworkCancellation.RunAsync(false)),
+    ("pinned TLS trickling body cancels", () => PinnedNetworkCancellation.RunAsync(true)),
     ("invalid approval identifiers are typed errors", InvalidApprovalIdentifiers),
     ("DPAPI trust persistence and corruption", TrustPersistence)
 };
@@ -27,6 +30,17 @@ foreach (var test in tests)
 }
 Console.WriteLine($"WindowsClient tests: {tests.Length - failed} passed, {failed} failed");
 return failed == 0 ? 0 : 1;
+
+static Task ChunkCapacity()
+{
+    Assert(NativeTransferClient.MaximumFileBytes(8 * 1024 * 1024) == 83_886_080_000L,
+        "Native chunk capacity is incorrect.");
+    Assert(NativeTransferClient.MaximumFileBytes(4 * 1024 * 1024) == 41_943_040_000L,
+        "Compatibility chunk capacity is incorrect.");
+    Assert(NativeTransferClient.MaximumFileBytes(16 * 1024 * 1024) == 100L * 1024 * 1024 * 1024,
+        "Server byte limit must also apply.");
+    return Task.CompletedTask;
+}
 
 static Task SecurityCodeVector()
 {

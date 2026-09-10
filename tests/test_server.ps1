@@ -541,6 +541,8 @@ Test-Feature "Security" "POST /upload_single without token returns 401" `
 
 Test-Feature "Security" "POST /upload_chunk without token returns 401" `
     "Native iOS upload authentication loss is rejected before a partial file is created" {
+    $temporaryBefore = @(Get-ChildItem -LiteralPath $uploadRootDir -Filter '*.tmp' -File |
+        Select-Object -ExpandProperty FullName)
     $fileId = "ios-unauthorized-probe-1"
     $headers = @{
         "X-File-Id" = $fileId
@@ -559,8 +561,9 @@ Test-Feature "Security" "POST /upload_chunk without token returns 401" `
         $code = Get-ResponseStatusCode $_
         if ($code -ne 401) { throw "Expected 401, got $code" }
     }
-    $temporaryPath = Join-Path $uploadRootDir ".$fileId.tmp"
-    if (Test-Path -LiteralPath $temporaryPath) {
+    $temporaryCreated = @(Get-ChildItem -LiteralPath $uploadRootDir -Filter '*.tmp' -File |
+        Where-Object { $_.FullName -notin $temporaryBefore })
+    if ($temporaryCreated.Count -ne 0) {
         throw "Unauthenticated native upload created a partial file"
     }
     "Native chunk authentication failed closed without creating a partial file"
@@ -1227,6 +1230,8 @@ Test-Feature "Chunks" "Duplicate chunk retry is idempotent" `
 
 Test-Feature "Chunks" "Cancelling an iOS upload session removes partial files" `
     "Authenticated cancellation closes mappings and removes matching temporary files" {
+    $temporaryBefore = @(Get-ChildItem -LiteralPath $uploadRootDir -Filter '*.tmp' -File |
+        Select-Object -ExpandProperty FullName)
     $sessionId = "ios-" + [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
     $fileId = "$sessionId-1"
     Invoke-ChunkRequest `
@@ -1237,10 +1242,12 @@ Test-Feature "Chunks" "Cancelling an iOS upload session removes partial files" `
         -FileSize "4" `
         -Body ([byte[]](1, 2)) | Out-Null
 
-    $temporaryPath = Join-Path $uploadRootDir ".$fileId.tmp"
-    if (-not (Test-Path -LiteralPath $temporaryPath)) {
-        throw "Expected the partial upload temporary file to exist before cancellation."
+    $temporaryCreated = @(Get-ChildItem -LiteralPath $uploadRootDir -Filter '*.tmp' -File |
+        Where-Object { $_.FullName -notin $temporaryBefore })
+    if ($temporaryCreated.Count -ne 1) {
+        throw "Expected exactly one new partial upload temporary file before cancellation."
     }
+    $temporaryPath = $temporaryCreated[0].FullName
 
     $body = @{ sessionId = $sessionId } | ConvertTo-Json -Compress
     $cancelled = Invoke-RestMethod `

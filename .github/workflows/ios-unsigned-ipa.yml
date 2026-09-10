@@ -1,6 +1,12 @@
 name: Build unsigned iOS IPA
 
 on:
+  pull_request:
+  workflow_call:
+    inputs:
+      environment:
+        type: string
+        default: production
   workflow_dispatch:
     inputs:
       environment:
@@ -20,14 +26,16 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 45
     env:
-      EXPO_PUBLIC_LMT_ENVIRONMENT: ${{ inputs.environment }}
+      EXPO_PUBLIC_LMT_ENVIRONMENT: ${{ inputs.environment || 'production' }}
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
 
       - name: Set up Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 24
           cache: npm
@@ -36,6 +44,18 @@ jobs:
       - name: Install JavaScript dependencies
         working-directory: src/LocalMediaTransfer.iOS
         run: npm ci
+
+      - name: Record native toolchain and validate environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$EXPO_PUBLIC_LMT_ENVIRONMENT" == production || "$EXPO_PUBLIC_LMT_ENVIRONMENT" == test ]]
+          mkdir -p native-build-evidence
+          git rev-parse HEAD > native-build-evidence/commit.txt
+          xcodebuild -version > native-build-evidence/xcode.txt
+          swift --version > native-build-evidence/swift.txt
+          node --version > native-build-evidence/node.txt
+          pod --version > native-build-evidence/cocoapods.txt
 
       - name: Run Jest tests
         working-directory: src/LocalMediaTransfer.iOS
@@ -59,6 +79,7 @@ jobs:
           pod install --repo-update
           grep -q "LocalMediaTransferNative" Podfile.lock
           grep -q "ExpoFont" Podfile.lock
+          cp Podfile.lock ../../../native-build-evidence/Podfile.lock
 
       - name: Build unsigned device application
         working-directory: src/LocalMediaTransfer.iOS
@@ -133,9 +154,11 @@ jobs:
           ditto -c -k --sequesterRsrc --keepParent Payload "${artifact_basename}.ipa"
 
       - name: Upload IPA artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: LocalMediaTransfer-${{ inputs.environment }}-unsigned-ipa
-          path: src/LocalMediaTransfer.iOS/LocalMediaTransfer-${{ inputs.environment }}-unsigned.ipa
+          name: LocalMediaTransfer-${{ inputs.environment || 'production' }}-unsigned-ipa
+          path: |
+            src/LocalMediaTransfer.iOS/LocalMediaTransfer-${{ inputs.environment || 'production' }}-unsigned.ipa
+            native-build-evidence/**
           if-no-files-found: error
           retention-days: 14
