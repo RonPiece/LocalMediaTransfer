@@ -62,10 +62,48 @@ bundle does not require a new identifier.
 
 ## Development versus installed behavior
 
+### Native TEST development client
+
+For Fast Refresh while retaining the custom Swift module:
+
+1. Commit and push the intended branch.
+2. Run **Actions** > **Build unsigned iOS IPA** > **Run workflow**, select the
+   `development` build profile, and select the TEST application environment.
+3. Download and extract the
+   `LocalMediaTransfer-test-development-unsigned-ipa` artifact.
+4. Sign and install `LocalMediaTransfer-test-development-unsigned.ipa` with
+   Sideloadly using the same free-signing steps above.
+5. On Windows, from `src\LocalMediaTransfer.iOS`, start Metro with:
+
+   ```powershell
+   npm run start:dev-client
+   ```
+
+   This command selects the TEST environment and the development client's
+   dedicated `exp+ronthedev-local-media-transfer-iphone-2026-test` URL scheme.
+
+6. Keep the iPhone and Windows PC on the same local network. Scan Metro's QR
+   code with the iPhone Camera, or open the TEST development client and select
+   the detected development server.
+
+The TEST bundle identifier is separate from production, so both applications
+can remain installed. Most JavaScript, TypeScript, and style edits use Fast
+Refresh without rebuilding the IPA. Rebuild and sideload the development IPA
+after changing Swift/native code, installing or updating a native dependency,
+changing native app configuration, or upgrading Expo SDK. The development
+client is for trusted local development only and depends on the Windows Metro
+server; keep the production IPA for normal use.
+
+If the phone cannot reach Metro, verify that Windows Firewall permits Node on
+the private network, that both devices are on the same non-isolated Wi-Fi/LAN,
+and that a VPN is not replacing the advertised local address.
+
+### Expo Go compatibility mode
+
 Run the Expo development server from `src\LocalMediaTransfer.iOS` with:
 
 ```powershell
-npx expo start --offline
+npm run start:go
 ```
 
 Expo Go supports UI work, QR/manual connection, and the compatibility uploader.

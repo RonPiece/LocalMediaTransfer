@@ -14,6 +14,7 @@
     "expo-camera": "~17.0.10",
     "expo-clipboard": "~8.0.8",
     "expo-crypto": "~15.0.9",
+    "expo-dev-client": "~6.0.21",
     "expo-file-system": "~19.0.24",
     "expo-font": "~14.0.12",
     "expo-haptics": "~15.0.8",
@@ -38,6 +39,7 @@
     "@types/react": "~19.1.10",
     "babel-plugin-module-resolver": "^5.0.3",
     "babel-preset-expo": "~54.0.10",
+    "cross-env": "^10.1.0",
     "eslint": "^9.39.4",
     "eslint-config-expo": "~10.0.0",
     "eslint-plugin-react-hooks": "^7.1.1",
@@ -47,7 +49,9 @@
     "typescript": "~5.9.2"
   },
   "scripts": {
-    "start": "expo start --offline",
+    "start": "npm run start:dev-client",
+    "start:dev-client": "cross-env EXPO_PUBLIC_LMT_ENVIRONMENT=test expo start --offline --dev-client",
+    "start:go": "cross-env EXPO_PUBLIC_LMT_ENVIRONMENT=production expo start --offline --go",
     "android": "expo start --android --offline",
     "ios": "expo start --ios --offline",
     "web": "expo start --web --offline",

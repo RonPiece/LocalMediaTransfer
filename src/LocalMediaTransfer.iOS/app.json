@@ -49,6 +49,12 @@
     },
     "plugins": [
       [
+        "expo-dev-client",
+        {
+          "addGeneratedScheme": false
+        }
+      ],
+      [
         "expo-media-library",
         {
           "photosPermission": "Allow Local Media Transfer to access your photos to transfer them to your desktop.",

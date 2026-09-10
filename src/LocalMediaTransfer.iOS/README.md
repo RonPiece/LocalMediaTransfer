@@ -47,6 +47,9 @@ upload, and discovery logic should not be placed in generic UI components.
 ## Required constraints
 
 - Keep `expo` pinned to `~54.0.0`.
+- Keep `expo-dev-client` on the Expo SDK-resolved version. The TEST development
+  client is a Debug-only developer tool; do not replace the production IPA with
+  it.
 - Use Node.js 24 LTS and npm 11 for local checks and the IPA workflow.
 - Keep `tailwindcss` pinned to exactly `3.3.2` for NativeWind v2.
 - Keep `react-native-reanimated` on `~4.1.1` and
@@ -64,6 +67,7 @@ upload, and discovery logic should not be placed in generic UI components.
 | Mode | Use for | Capabilities |
 |:---|:---|:---|
 | Installed IPA | Real device testing and normal use | Pinned HTTPS, UDP unicast discovery, Keychain credential, original/current PhotoKit export, CryptoKit preflight, native raw uploads |
+| TEST development client | Fast Refresh against Metro on Windows | Same native module as the installed IPA, plus the Expo launcher and developer menu; requires the Windows Metro server while developing |
 | Expo Go | UI development and compatibility checks | QR/manual connection and Base64 compatibility uploader; no native hashing or archival Photos fidelity |
 | Browser fallback | No installed app available | Local web upload page from the Windows server |
 
@@ -110,6 +114,11 @@ The free Windows-first install path is:
 4. Use Sideloadly on Windows to sign and install it.
 
 See [Unsigned IPA + Sideloadly](../../docs/IOS_SIDELOADLY.md).
+For Fast Refresh with the native module, run the `ios-unsigned-ipa.yml` workflow
+with the `development` build profile, sideload its TEST IPA, and start Metro with
+`npm run start:dev-client`. That command explicitly selects the TEST environment
+and its dedicated `exp+ronthedev-local-media-transfer-iphone-2026-test`
+development-client URL scheme. Keep the production IPA installed for normal use.
 The same macOS workflow also runs for pull requests and is required by the
 Windows release workflow. It records the native toolchain and generated
 Podfile.lock alongside the IPA; a local Jest pass does not replace that build.
@@ -120,7 +129,8 @@ Run these from `src/LocalMediaTransfer.iOS`.
 
 ```powershell
 npm ci
-npx expo start --offline
+npm run start:dev-client
+npm run start:go
 npx tsc --noEmit
 npm run lint
 npm test -- --runInBand

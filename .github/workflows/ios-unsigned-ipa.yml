@@ -7,6 +7,9 @@ on:
       environment:
         type: string
         default: production
+      build_profile:
+        type: string
+        default: release
   workflow_dispatch:
     inputs:
       environment:
@@ -17,6 +20,14 @@ on:
         options:
           - test
           - production
+      build_profile:
+        description: iOS IPA build profile
+        required: true
+        default: release
+        type: choice
+        options:
+          - release
+          - development
 
 permissions:
   contents: read
@@ -26,7 +37,8 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 45
     env:
-      EXPO_PUBLIC_LMT_ENVIRONMENT: ${{ inputs.environment || 'production' }}
+      EXPO_PUBLIC_LMT_ENVIRONMENT: ${{ (inputs.build_profile == 'development' && 'test') || inputs.environment || 'production' }}
+      LMT_IOS_BUILD_PROFILE: ${{ inputs.build_profile || 'release' }}
 
     steps:
       - name: Check out repository
@@ -50,6 +62,10 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$EXPO_PUBLIC_LMT_ENVIRONMENT" == production || "$EXPO_PUBLIC_LMT_ENVIRONMENT" == test ]]
+          [[ "$LMT_IOS_BUILD_PROFILE" == release || "$LMT_IOS_BUILD_PROFILE" == development ]]
+          if [[ "$LMT_IOS_BUILD_PROFILE" == development ]]; then
+            [[ "$EXPO_PUBLIC_LMT_ENVIRONMENT" == test ]]
+          fi
           mkdir -p native-build-evidence
           git rev-parse HEAD > native-build-evidence/commit.txt
           xcodebuild -version > native-build-evidence/xcode.txt
@@ -79,6 +95,10 @@ jobs:
           pod install --repo-update
           grep -q "LocalMediaTransferNative" Podfile.lock
           grep -q "ExpoFont" Podfile.lock
+          if [[ "$LMT_IOS_BUILD_PROFILE" == development ]]; then
+            grep -q "expo-dev-client" Podfile.lock
+            grep -q "expo-dev-launcher" Podfile.lock
+          fi
           cp Podfile.lock ../../../native-build-evidence/Podfile.lock
 
       - name: Build unsigned device application
@@ -100,11 +120,15 @@ jobs:
             echo "No Xcode scheme found" >&2
             exit 1
           fi
-          echo "Building application scheme: $scheme"
+          configuration="Release"
+          if [[ "$LMT_IOS_BUILD_PROFILE" == development ]]; then
+            configuration="Debug"
+          fi
+          echo "Building application scheme: $scheme ($configuration)"
           xcodebuild \
             -workspace "$workspace" \
             -scheme "$scheme" \
-            -configuration Release \
+            -configuration "$configuration" \
             -sdk iphoneos \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO \
@@ -117,14 +141,23 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          app="$(find build/Build/Products/Release-iphoneos -maxdepth 1 -name '*.app' -print -quit)"
+          products_directory="Release-iphoneos"
+          if [[ "$LMT_IOS_BUILD_PROFILE" == development ]]; then
+            products_directory="Debug-iphoneos"
+          fi
+          app="$(find "build/Build/Products/$products_directory" -maxdepth 1 -name '*.app' -print -quit)"
           if [[ -z "$app" ]]; then
             echo "Unsigned application bundle was not produced" >&2
             exit 1
           fi
-          if [[ ! -f "$app/main.jsbundle" ]]; then
-            echo "Application bundle is missing main.jsbundle" >&2
-            find "$app" -maxdepth 2 -type f -print
+          if [[ "$LMT_IOS_BUILD_PROFILE" == release ]]; then
+            if [[ ! -f "$app/main.jsbundle" ]]; then
+              echo "Release application bundle is missing main.jsbundle" >&2
+              find "$app" -maxdepth 2 -type f -print
+              exit 1
+            fi
+          elif [[ -z "$(find "$app" -maxdepth 2 -name 'EXDevLauncher.bundle' -print -quit)" ]]; then
+            echo "Debug application is missing the Expo development-client launcher" >&2
             exit 1
           fi
           executable="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Info.plist")"
@@ -135,11 +168,20 @@ jobs:
             exit 1
           fi
           echo "Packaging application: $app"
-          echo "Embedded JavaScript bundle: $(du -h "$app/main.jsbundle" | cut -f1)"
+          if [[ "$LMT_IOS_BUILD_PROFILE" == release ]]; then
+            echo "Embedded JavaScript bundle: $(du -h "$app/main.jsbundle" | cut -f1)"
+          else
+            echo "Development client will load JavaScript from Metro"
+          fi
           expected_bundle_id="com.ronthedev.localmediatransfer"
           expected_display_name="Local Media Transfer"
           artifact_basename="LocalMediaTransfer-production-unsigned"
-          if [[ "$EXPO_PUBLIC_LMT_ENVIRONMENT" == "test" ]]; then
+          if [[ "$LMT_IOS_BUILD_PROFILE" == "development" ]]; then
+            expected_bundle_id="com.ronthedev.localmediatransfer.test"
+            expected_display_name="Local Media Transfer TEST"
+            artifact_basename="LocalMediaTransfer-test-development-unsigned"
+            /usr/libexec/PlistBuddy -c 'Print :CFBundleURLTypes' "$app/Info.plist" | grep -q "exp+ronthedev-local-media-transfer-iphone-2026-test"
+          elif [[ "$EXPO_PUBLIC_LMT_ENVIRONMENT" == "test" ]]; then
             expected_bundle_id="com.ronthedev.localmediatransfer.test"
             expected_display_name="Local Media Transfer TEST"
             artifact_basename="LocalMediaTransfer-test-unsigned"
@@ -152,13 +194,14 @@ jobs:
           mkdir Payload
           cp -R "$app" Payload/
           ditto -c -k --sequesterRsrc --keepParent Payload "${artifact_basename}.ipa"
+          echo "LMT_IPA_ARTIFACT_BASENAME=$artifact_basename" >> "$GITHUB_ENV"
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: LocalMediaTransfer-${{ inputs.environment || 'production' }}-unsigned-ipa
+          name: ${{ env.LMT_IPA_ARTIFACT_BASENAME }}-ipa
           path: |
-            src/LocalMediaTransfer.iOS/LocalMediaTransfer-${{ inputs.environment || 'production' }}-unsigned.ipa
+            src/LocalMediaTransfer.iOS/${{ env.LMT_IPA_ARTIFACT_BASENAME }}.ipa
             native-build-evidence/**
           if-no-files-found: error
           retention-days: 14
