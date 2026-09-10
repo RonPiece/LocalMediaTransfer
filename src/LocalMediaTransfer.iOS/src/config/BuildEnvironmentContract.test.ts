@@ -44,6 +44,15 @@ describe('iOS build environment contract', () => {
     expect(workflowSource).toContain('expo-dev-client');
     expect(workflowSource).toContain('expo-dev-launcher');
     expect(workflowSource).toContain(
+      "find Pods -name 'ExpoModulesProvider.swift'",
+    );
+    expect(workflowSource).toContain(
+      'grep -q "LocalMediaTransferNativeModule" "$modules_provider"',
+    );
+    expect(workflowSource).not.toContain(
+      'Application binary is missing the native discovery/uploader module',
+    );
+    expect(workflowSource).toContain(
       'com.ronthedev.localmediatransfer.test',
     );
     expect(workflowSource).toContain(

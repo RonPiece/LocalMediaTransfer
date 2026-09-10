@@ -95,6 +95,11 @@ jobs:
           pod install --repo-update
           grep -q "LocalMediaTransferNative" Podfile.lock
           grep -q "ExpoFont" Podfile.lock
+          modules_provider="$(find Pods -name 'ExpoModulesProvider.swift' -print -quit)"
+          if [[ -z "$modules_provider" ]] || ! grep -q "LocalMediaTransferNativeModule" "$modules_provider"; then
+            echo "Expo module provider is missing LocalMediaTransferNativeModule" >&2
+            exit 1
+          fi
           if [[ "$LMT_IOS_BUILD_PROFILE" == development ]]; then
             grep -q "expo-dev-client" Podfile.lock
             grep -q "expo-dev-launcher" Podfile.lock
@@ -158,13 +163,6 @@ jobs:
             fi
           elif [[ -z "$(find "$app" -maxdepth 2 -name 'EXDevLauncher.bundle' -print -quit)" ]]; then
             echo "Debug application is missing the Expo development-client launcher" >&2
-            exit 1
-          fi
-          executable="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Info.plist")"
-          strings_output="$RUNNER_TEMP/local-media-transfer-app-strings.txt"
-          strings "$app/$executable" > "$strings_output"
-          if ! grep -q "LocalMediaTransferNative" "$strings_output"; then
-            echo "Application binary is missing the native discovery/uploader module" >&2
             exit 1
           fi
           echo "Packaging application: $app"
