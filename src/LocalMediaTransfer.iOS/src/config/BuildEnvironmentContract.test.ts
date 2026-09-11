@@ -71,9 +71,12 @@ describe('iOS build environment contract', () => {
     );
   });
 
-  it('uses the SDK 56 native toolchain and deployment floor', () => {
-    expect(packageSource).toContain('"expo": "~56.0.21"');
-    expect(packageSource).toContain('"react-native": "0.85.3"');
+  it('uses the SDK 57 native toolchain and deployment floor', () => {
+    expect(packageSource).toContain('"expo": "~57.0.22"');
+    expect(packageSource).toContain('"react-native": "0.86.3"');
+    expect(packageSource).toContain('"@react-native/jest-preset": "0.86.3"');
+    expect(packageSource).toContain('"react-native-reanimated": "4.5.1"');
+    expect(packageSource).toContain('"react-native-worklets": "0.10.1"');
     expect(appConfigSource).toContain("'expo-status-bar'");
     expect(workflowSource).toContain('runs-on: macos-26');
     expect(workflowSource).toContain('/Applications/Xcode_26.4.app/Contents/Developer');

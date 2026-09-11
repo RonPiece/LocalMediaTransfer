@@ -53,7 +53,7 @@ jobs:
           cache: npm
           cache-dependency-path: src/LocalMediaTransfer.iOS/package-lock.json
 
-      - name: Select SDK 56-compatible Xcode
+      - name: Select SDK 57-compatible Xcode
         shell: bash
         run: sudo xcode-select -s /Applications/Xcode_26.4.app/Contents/Developer
 

@@ -10,7 +10,7 @@ ownership, including the native modernization work intentionally kept separate.
 
 ## Purpose
 
-This project is the iPhone client for Local Media Transfer. It uses Expo SDK 56
+This project is the iPhone client for Local Media Transfer. It uses Expo SDK 57
 and React Native for UI/state, plus a Swift native module for installed-app
 features that Expo Go cannot provide.
 
@@ -48,14 +48,16 @@ upload, and discovery logic should not be placed in generic UI components.
 
 ## Required constraints
 
-- Keep `expo` and `jest-expo` on the Expo SDK 56 line.
+- Keep `expo` and `jest-expo` on the Expo SDK 57 line.
 - Keep `expo-dev-client` on the Expo SDK-resolved version. The TEST development
   client is a Debug-only developer tool; do not replace the production IPA with
   it.
 - Use Node.js 24 LTS and npm 11 for local checks and the IPA workflow.
+- Keep `@react-native/jest-preset` aligned with React Native so npm 11 clean
+  installs satisfy the SDK 57 `jest-expo` peer contract.
 - Keep `tailwindcss` pinned to exactly `3.3.2` for NativeWind v2.
-- Keep `react-native-reanimated` at `4.3.1` and
-  `react-native-worklets` at `0.8.3`, the Expo SDK 56-resolved versions. The media picker
+- Keep `react-native-reanimated` at `4.5.1` and
+  `react-native-worklets` at `0.10.1`, the Expo SDK 57-resolved versions. The media picker
   uses UI-thread worklets for frame-rate-independent drag auto-scroll.
 - Use `npx expo install <package>` for Expo/native dependencies.
 - Start Metro with `npx expo start --offline`.
@@ -150,14 +152,14 @@ npx expo install --fix
 ## Do not break
 
 - Do not upgrade Expo, React Native, Jest Expo, NativeWind, or Tailwind without
-  checking SDK 56 compatibility.
+  checking SDK 57 compatibility.
 - Do not use broadcast or multicast discovery. The app uses bounded UDP unicast
   because multicast requires an Apple entitlement that does not fit the free
   sideloading path.
 - Do not put session tokens or trusted-device credentials in discovery packets.
 - Do not display or copy the trusted-device credential in the UI.
 - Do not create upload `Blob`s from `ArrayBuffer` or `ArrayBufferView` on Expo
-  SDK 56. Keep the bounded Base64 compatibility uploader for Expo Go.
+  SDK 57. Keep the bounded Base64 compatibility uploader for Expo Go.
 - Do not start one native operation per selected asset with unbounded
   `Promise.all`.
 - Keep installed-app Photos filename resolution sequential and capped at 250

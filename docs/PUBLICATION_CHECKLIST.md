@@ -89,7 +89,7 @@ not need to wait for an installer or IPA.
 
 - Keep `.github/dependabot.yml`. It opens reviewable dependency-update pull
   requests; it does not merge them automatically. Pay special attention to
-  the current Expo SDK 56 checkpoint and do not accept broad iOS upgrades blindly.
+  the current Expo SDK 57 line and do not accept broad iOS upgrades blindly.
 - After the repository is public, enable **CodeQL default setup** in
   `Settings > Advanced Security`. Default setup is preferred here because
   GitHub maintains the generated configuration and recognizes the repository's

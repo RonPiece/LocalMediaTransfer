@@ -7,7 +7,7 @@ Local Media Transfer has five runtime layers:
 2. The C++ Crow server authenticates requests, serves the browser frontend,
    writes files through memory-mapped regions, verifies SHA-256 hashes, and
    persists inventory/history in SQLite.
-3. The Expo SDK 56 iOS application owns UI, preferences, state orchestration,
+3. The Expo SDK 57 iOS application owns UI, preferences, state orchestration,
    and error presentation. Focused Swift services own PhotoKit resource
    cataloguing/export, session files, CryptoKit hashing, discovery, TLS,
    thermal observation, cancellation, and raw streaming without passing media

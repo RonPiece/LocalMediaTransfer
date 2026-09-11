@@ -126,7 +126,6 @@ npm run start:go
 ```
 
 The QR/manual connection and Base64 compatibility path remain available in Expo
-Go when its installed version supports this SDK. Current iOS Expo Go releases
-may not retain the SDK 56 checkpoint, and Expo Go cannot load the custom native
-module in any case. Use the TEST development-client IPA for physical-iPhone
+Go when its installed version supports this SDK. Expo Go cannot load the custom
+native module in any case. Use the TEST development-client IPA for physical-iPhone
 development; automatic discovery and raw Swift uploads require that build.

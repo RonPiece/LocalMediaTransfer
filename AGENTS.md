@@ -10,7 +10,7 @@ dirty worktree and keep edits limited to the requested behavior.
 - `src/Server`: C++ Crow HTTP server, file writing, SQLite duplicate metadata,
   named-pipe telemetry, and opt-in benchmark storage.
 - `src/LocalMediaTransfer.GUI`: C# WinUI 3 unpackaged desktop application.
-- `src/LocalMediaTransfer.iOS`: Expo SDK 56 React Native application with a
+- `src/LocalMediaTransfer.iOS`: Expo SDK 57 React Native application with a
   custom Swift discovery and raw-upload module.
 - `src/Server/static`: browser upload frontend.
 - `tests/LocalMediaTransfer.TestHarness`: canonical isolated server integration
@@ -104,15 +104,15 @@ Load `$lmt-reliability-tests` for the suite order and invariants.
 - Preserve and restore local GUI settings changed by a smoke test.
 - Verify compact and expanded navigation states at the minimum window size.
 - Block drag/drop and file-input queue mutation while an upload is active.
-- On Expo SDK 56 iOS, do not build upload `Blob`s from `ArrayBuffer` or
+- On Expo SDK 57 iOS, do not build upload `Blob`s from `ArrayBuffer` or
   `ArrayBufferView`; use bounded `readAsStringAsync` ranges and verify exact
   server-side decoding. A stale installed server may not support a wire format
   that exists only in the source tree.
 - Large iOS selections must keep native metadata work bounded and process
   uploads in visible batches; never launch one native operation per selected
   asset with an unbounded `Promise.all`.
-- The SDK 56 picker uses `react-native-reanimated 4.3.1` and
-  `react-native-worklets 0.8.3` for UI-thread drag auto-scroll. Keep movement based on
+- The SDK 57 picker uses `react-native-reanimated 4.5.1` and
+  `react-native-worklets 0.10.1` for UI-thread drag auto-scroll. Keep movement based on
   frame delta; do not reintroduce a JavaScript interval or per-frame React
   updates.
 - Follow `docs/TRANSFER_METRICS.md`: live UI shows rolling current media MB/s,
