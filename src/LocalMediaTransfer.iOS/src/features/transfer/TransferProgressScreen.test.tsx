@@ -114,7 +114,7 @@ describe('TransferProgressScreen', () => {
     expect(await screen.findByText('FAILED')).toBeTruthy();
     expect(await screen.findByText('View 2 errors')).toBeTruthy();
     fireEvent.press(screen.getByText('View 2 errors'));
-    expect(screen.getByText('2 files · 1 reason groups')).toBeTruthy();
+    expect(screen.getByText('2 files · 1 reason group')).toBeTruthy();
     expect(screen.getByText('Files affected')).toBeTruthy();
     expect(alert).toHaveBeenCalledWith('Upload Fatal Error', 'Desktop connection timed out');
     alert.mockRestore();
@@ -146,6 +146,46 @@ describe('TransferProgressScreen', () => {
     expect(screen.getByText('Average speed')).toBeTruthy();
     expect(screen.getByText('Peak speed')).toBeTruthy();
     expect(screen.getByText('1.0 MB')).toBeTruthy();
+  });
+
+  it('moves incomplete-size guidance into errors and exposes every affected filename', async () => {
+    (uploadManager.uploadFilesConcurrent as jest.Mock).mockImplementation(async (_assets, observer) => {
+      for (const asset of mockAssets) {
+        observer.onFileStatusChange({
+          assetId: asset.id,
+          status: 'error',
+          transferFilename: asset.filename,
+          stage: 'rendition',
+          errorCode: 'temporary-storage-limit',
+          message: 'This iPhone does not have enough free space to prepare this media item.',
+        });
+      }
+      observer.onComplete({
+        sessionId: 'session', selectedFiles: 2, expandedFiles: 2,
+        uploadedFiles: 0, skippedFiles: 0, failedFiles: 2,
+        selectedBytes: 0, selectedMediaBytes: 0, additionalComponentsBytes: 0,
+        selectedMediaFiles: 0, additionalComponentsFiles: 0, byteTotalComplete: false,
+        uploadedBytes: 0, skippedBytes: 0, avoidedBytes: 0,
+        finalizationDuplicateBytes: 0, preparationDurationMs: 28_000,
+        uploadDurationMs: 30_000, averageMediaMBps: 0, peakMediaMBps: 0,
+        completionStatus: 'mixed', diagnosticReportAvailable: true,
+      });
+    });
+
+    const screen = render(
+      <TransferProgressScreen assets={mockAssets} onCancel={jest.fn()} onComplete={jest.fn()} />,
+    );
+
+    expect(await screen.findByText('Preparation time')).toBeTruthy();
+    expect(screen.queryByText('Size excludes media that could not be prepared.')).toBeNull();
+    fireEvent.press(screen.getByText('View 2 errors'));
+    expect(screen.getByText(/File-size totals include only media that could be prepared/)).toBeTruthy();
+    expect(screen.getByText(/tap Done, open Settings, and turn on Transfer while preparing/)).toBeTruthy();
+    fireEvent.press(screen.getByText('View all 2 affected filenames'));
+    expect(screen.getByText('Affected files')).toBeTruthy();
+    expect(screen.getByText('2 filenames')).toBeTruthy();
+    expect(screen.getByText('photo1.jpg')).toBeTruthy();
+    expect(screen.getByText('photo2.jpg')).toBeTruthy();
   });
 
   it('clamps progress ring display at 100 percent when bytes exceed total', () => {
@@ -268,13 +308,13 @@ describe('TransferProgressScreen', () => {
     });
 
     expect(await screen.findByText('Transferring files')).toBeTruthy();
-    expect(screen.getByText('3 files to process')).toBeTruthy();
-    fireEvent.press(screen.getByLabelText('Transferring files. 3 files to process. Hide details'));
-    fireEvent.press(screen.getByLabelText('Transferring files. 3 files to process. Show details'));
-    expect(screen.getByText('2 selected Photos items expanded into 3 transferable files. 3 are ready.')).toBeTruthy();
-    expect(screen.getByText('Media analyzed')).toBeTruthy();
-    expect(screen.getByText('2 / 2')).toBeTruthy();
-    expect(screen.getByText('0 of 3 processed')).toBeTruthy();
+    expect(screen.getByText('3 files remaining')).toBeTruthy();
+    fireEvent.press(screen.getByLabelText('Transferring files. 3 files remaining. Hide details'));
+    fireEvent.press(screen.getByLabelText('Transferring files. 3 files remaining. Show details'));
+    expect(screen.getByText('2 selected Photos items produced 3 transfer entries. 3 files were prepared.')).toBeTruthy();
+    expect(screen.getByText('Files processed')).toBeTruthy();
+    expect(screen.getByText('0 / 3')).toBeTruthy();
+    expect(screen.getByText('files')).toBeTruthy();
   });
 
   it('explains streaming preparation and passes the optional mode to scheduling', async () => {
@@ -441,10 +481,9 @@ describe('TransferProgressScreen', () => {
       <TransferProgressScreen assets={mockAssets} onCancel={jest.fn()} onComplete={jest.fn()} />,
     );
 
-    expect(await screen.findByText('100%')).toBeTruthy();
-    expect(screen.getByText('2 / 2')).toBeTruthy();
-    expect(screen.getByText('assets')).toBeTruthy();
-    expect(screen.getByText('1 of 2 processed')).toBeTruthy();
+    expect(await screen.findByText('50%')).toBeTruthy();
+    expect(screen.getByText('1 / 2')).toBeTruthy();
+    expect(screen.getByText('files')).toBeTruthy();
     expect(screen.queryByText('iPhone is warm')).toBeNull();
     expect(screen.queryByText(/reduced speed/i)).toBeNull();
     expect(screen.queryByText(/paused/i)).toBeNull();

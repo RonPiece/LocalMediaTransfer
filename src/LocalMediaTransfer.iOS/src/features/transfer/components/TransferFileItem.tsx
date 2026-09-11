@@ -5,7 +5,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { FileState, fileStatusPresentation } from '../transferPresentation';
 import { mediaVariantLabel } from '@/services/upload/mediaVariants';
 
-export const TransferFileItem = React.memo(function TransferFileItem({ item }: { item: FileState }) {
+export const TransferFileItem = React.memo(function TransferFileItem({
+  item,
+  showFullFilename = false,
+}: {
+  item: FileState;
+  showFullFilename?: boolean;
+}) {
   const presentation = fileStatusPresentation(item.status);
 
   return (
@@ -13,7 +19,9 @@ export const TransferFileItem = React.memo(function TransferFileItem({ item }: {
       <View className="flex-row items-start flex-1">
         <Ionicons name={presentation.icon} size={20} color={presentation.color} />
         <View className="ml-3 flex-1">
-          <Text className="text-on-surface text-sm" numberOfLines={1}>{item.filename}</Text>
+          <Text className="text-on-surface text-sm" numberOfLines={showFullFilename ? undefined : 1}>
+            {item.filename}
+          </Text>
           {item.mediaRole && item.mediaRole !== 'unknown' && (
             <Text className="text-on-surface-variant text-[11px] mt-0.5">
               {item.componentSemantics === 'optional' ? 'Additional' : 'Primary'} · {mediaVariantLabel(item.mediaRole)}

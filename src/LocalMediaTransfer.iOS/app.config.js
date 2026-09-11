@@ -9,6 +9,10 @@ module.exports = ({ config }) => {
     name: isTest ? 'Local Media Transfer TEST' : 'Local Media Transfer',
     slug,
     scheme: isTest ? `exp+${slug}` : config.scheme,
+    plugins: [
+      ...(config.plugins ?? []),
+      'expo-image',
+    ],
     ios: {
       ...config.ios,
       bundleIdentifier: isTest

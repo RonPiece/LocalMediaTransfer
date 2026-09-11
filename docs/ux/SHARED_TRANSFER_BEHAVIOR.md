@@ -91,9 +91,9 @@ name, including `(2)`, `(3)`, and later collision suffixes.
 - Prepare and preflight all items in sequential windows of at most 250.
 - Begin uploading only when final planned file and byte totals are known.
 - Start ETA estimation only when uploading starts.
-- Honor this mode for every selection size. Large selections can retain all
-  prepared temporary media until upload begins and therefore require
-  significantly more free device storage.
+- Honor this mode through one 250-item native preparation window. Larger native
+  selections automatically use bounded streaming and disclose that safety
+  adjustment, preventing unbounded prepared temporary-media retention.
 
 ### Transfer while preparing
 
@@ -123,13 +123,12 @@ These values are independent and monotonic:
 - Planned upload bytes after definite preflight skips.
 - Acknowledged bytes accepted by successful server responses.
 
-During an active transfer, the circular progress indicator always uses analyzed
-selected assets divided by selected assets and is labelled `assets`. Native
-progress is coalesced for UI responsiveness but does not wait for a complete
-window. After expansion is authoritative, terminal files divided by expanded
-files appears as a separate file-transfer bar; skipped and failed items advance
-that bar because they are terminal. Reusing one percentage with two
-denominators is forbidden because it can appear to move backward.
+During preparation, the circular progress indicator uses analyzed selected
+assets divided by selected assets and is labelled `assets`. Native progress is
+coalesced for UI responsiveness but does not wait for a complete window. After
+expansion is authoritative, the ring visibly changes label and unit, resets for
+the transfer phase, and uses terminal files divided by expanded transfer
+entries. Skipped and failed items advance it because they are terminal.
 
 Before upload, duplicate preflight may become the main `Checking for
 duplicates` phase. It exposes only truthful stages: possible-match lookup,

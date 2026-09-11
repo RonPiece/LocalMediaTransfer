@@ -32,7 +32,7 @@ describe('TransferStatsBar', () => {
     expect(screen.getByText('Final transfer size is still being determined.')).toBeTruthy();
   });
 
-  it('shows authoritative file progress separately from media analysis', () => {
+  it('shows remaining files, live speed, and time without duplicating ring progress', () => {
     const screen = render(
       <TransferStatsBar
         itemsRemaining={188}
@@ -40,16 +40,13 @@ describe('TransferStatsBar', () => {
         currentMediaMBps={42.9}
         timeLabel="Time remaining"
         timeText="About 40s"
-        processedFiles={200}
-        totalFiles={388}
       />,
     );
 
-    expect(screen.getByText('200 of 388 processed')).toBeTruthy();
-    expect(screen.getByLabelText('File transfer progress')).toHaveAccessibilityValue({
-      min: 0,
-      max: 388,
-      now: 200,
-    });
+    expect(screen.getByText('188')).toBeTruthy();
+    expect(screen.getByText('Speed')).toBeTruthy();
+    expect(screen.getByText('MB/s')).toBeTruthy();
+    expect(screen.getByText('About 40s')).toBeTruthy();
+    expect(screen.queryByLabelText('File transfer progress')).toBeNull();
   });
 });

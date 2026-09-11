@@ -24,6 +24,7 @@ describe('TransferSummaryCard', () => {
         transferredBytes={24_000_000}
         avoidedBytes={2_000_000}
         finalizationDuplicateBytes={3_000_000}
+        preparationSeconds={28}
         elapsedSeconds={60}
         averageMediaMBps={1}
         peakMediaMBps={2}
@@ -36,7 +37,9 @@ describe('TransferSummaryCard', () => {
     expect(screen.getByText('Prepared selected media')).toBeTruthy();
     expect(screen.getByText('Additional components (2)')).toBeTruthy();
     expect(screen.getByText('Total transfer content')).toBeTruthy();
-    expect(screen.getByText('Size excludes media that could not be prepared.')).toBeTruthy();
+    expect(screen.queryByText('Size excludes media that could not be prepared.')).toBeNull();
+    expect(screen.getByText('Preparation time')).toBeTruthy();
+    expect(screen.getByText('28s')).toBeTruthy();
     expect(screen.getByText('Avoided before upload')).toBeTruthy();
     expect(screen.getByText('Uploaded, then found duplicate')).toBeTruthy();
     expect(screen.getByText('Stored as new files')).toBeTruthy();

@@ -378,7 +378,7 @@ describe('UploadManager Integration', () => {
     expect(diagnostic.filenameFallbackFiles).toBe(251);
   });
 
-  it('honors prepare-first for a large native selection before starting upload workers', async () => {
+  it('automatically streams a large native selection before temporary exports accumulate', async () => {
     const assets = Array.from({ length: 251 }, (_, index) => ({
       id: `native-large-${index}`,
       uri: `ph://native-large-${index}`,
@@ -447,8 +447,11 @@ describe('UploadManager Integration', () => {
       { includeAdditionalMediaComponents: false },
       expect.any(Function),
     );
-    expect((nativeCapabilities.prepareAssetWindow as jest.Mock).mock.calls[0][1]).toHaveLength(250);
-    expect(nativeCapabilities.uploadFile).not.toHaveBeenCalled();
+    expect((nativeCapabilities.prepareAssetWindow as jest.Mock).mock.calls[0][1]).toHaveLength(16);
+    for (let attempt = 0; attempt < 40 && (nativeCapabilities.uploadFile as jest.Mock).mock.calls.length === 0; attempt += 1) {
+      await new Promise(resolve => setImmediate(resolve));
+    }
+    expect(nativeCapabilities.uploadFile).toHaveBeenCalled();
 
     releaseSecondWindow();
     await transfer;
@@ -460,12 +463,13 @@ describe('UploadManager Integration', () => {
     };
     expect(diagnostic).toEqual(expect.objectContaining({
       requestedPreparationMode: 'prepare-first',
-      preparationMode: 'prepare-first',
+      preparationMode: 'streaming',
     }));
     expect(diagnostic.automaticPreparationReason).toBeUndefined();
     expect(onProgress).toHaveBeenCalledWith(expect.objectContaining({
-      preparationMode: 'prepare-first',
-      totalBatches: 2,
+      preparationMode: 'streaming',
+      automaticallyStreamsLargeSelection: true,
+      totalBatches: 16,
     }));
   });
 

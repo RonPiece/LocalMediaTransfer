@@ -86,6 +86,25 @@ For Fast Refresh while retaining the custom Swift module:
    code with the iPhone Camera, or open the TEST development client and select
    the detected development server.
 
+Metro's QR is only the first QR in this workflow: it opens the JavaScript bundle
+and Fast Refresh connection over development-only LAN HTTP on port `8081`. To
+pair the loaded iPhone application with Local Media Transfer, open a second
+PowerShell window at the repository root, then build and launch the matching
+TEST Windows application:
+
+```powershell
+dotnet build .\src\LocalMediaTransfer.GUI\LocalMediaTransfer.GUI.csproj `
+  -c Debug -p:Platform=x64 -p:LmtEnvironment=Test
+
+& ".\src\LocalMediaTransfer.GUI\bin\x64\Debug-Test\net8.0-windows10.0.19041.0\LocalMediaTransfer.GUI.Test.exe"
+```
+
+Verify the persistent amber `TEST` banner, then scan that Windows application's
+QR from inside the loaded iPhone app. This second QR pairs the TEST client with
+the TEST server over pinned HTTPS on port `18443`. A production Windows QR is
+rejected intentionally because its environment identity, credentials, ports,
+and storage are separate.
+
 The TEST bundle identifier is separate from production, so both applications
 can remain installed. Most JavaScript, TypeScript, and style edits use Fast
 Refresh without rebuilding the IPA. Rebuild and sideload the development IPA
@@ -106,6 +125,8 @@ Run the Expo development server from `src\LocalMediaTransfer.iOS` with:
 npm run start:go
 ```
 
-Expo Go supports UI work, QR/manual connection, and the compatibility uploader.
-Automatic desktop discovery and the raw Swift uploader require the generated
-native application, so test those behaviors with a newly built IPA.
+The QR/manual connection and Base64 compatibility path remain available in Expo
+Go when its installed version supports this SDK. Current iOS Expo Go releases
+may not retain the SDK 55 checkpoint, and Expo Go cannot load the custom native
+module in any case. Use the TEST development-client IPA for physical-iPhone
+development; automatic discovery and raw Swift uploads require that build.

@@ -118,7 +118,7 @@ export function DashboardSettingsModal({
               <View className="h-[0.5px] bg-border ml-4" />
               <SettingRow
                 title="Transfer while preparing"
-                detail="Off waits until all selected media is prepared before uploading and may use substantial temporary storage. On uploads prepared groups while the remaining media is prepared."
+                detail="Off prepares up to 250 selected items before uploading. Larger selections automatically use the storage-saving mode. On always uploads prepared groups while the remaining media is prepared."
                 value={preparationMode === 'streaming'}
                 onChange={enabled => onPreparationModeChange(enabled ? 'streaming' : 'prepare-first')}
               />

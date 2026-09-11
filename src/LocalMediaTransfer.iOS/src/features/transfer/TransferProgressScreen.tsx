@@ -62,6 +62,7 @@ export default function TransferProgressScreen({
     readyFiles,
     preparationComplete,
     activePreparationMode,
+    automaticallyStreamsLargeSelection,
     totalTransferFiles,
     duplicateCheck,
     summary,
@@ -88,8 +89,9 @@ export default function TransferProgressScreen({
   const successCount = summary.success;
   const processedCount = successCount + skipCount + errorCount;
   const displayedTotalFiles = completionSummary?.expandedFiles ?? totalTransferFiles;
-  const ringCompleted = isFinished ? processedCount : preparedFiles;
-  const ringTotal = isFinished ? displayedTotalFiles : assets.length;
+  const transferPhaseActive = preparationComplete || isFinished;
+  const ringCompleted = transferPhaseActive ? processedCount : preparedFiles;
+  const ringTotal = transferPhaseActive ? displayedTotalFiles : assets.length;
   const itemsRemaining = preparationComplete
     ? Math.max(0, displayedTotalFiles - processedCount)
     : Math.max(0, assets.length - preparedFiles);
@@ -132,12 +134,14 @@ export default function TransferProgressScreen({
           expandedFiles={displayedTotalFiles}
           preparationComplete={preparationComplete}
           preparationMode={activePreparationMode}
+          automaticallyStreamsLargeSelection={automaticallyStreamsLargeSelection}
           phase={phase}
           hasUploadStarted={hasUploadStarted}
           queueCatchUpVisible={queueCatchUpVisible}
           acknowledgedMediaBytes={progressBytes}
           currentMediaMBps={currentMediaMBps}
           duplicateCheck={duplicateCheck}
+          processedFiles={processedCount}
         />
 
         <TransferProgressRing
@@ -147,11 +151,11 @@ export default function TransferProgressScreen({
           finalColor={finalColor}
           completedItems={ringCompleted}
           totalItems={ringTotal}
-          unit={isFinished ? 'files' : 'assets'}
+          unit={transferPhaseActive ? 'files' : 'assets'}
           phaseLabel={isFinished
             ? 'Transfer complete'
             : preparationComplete
-              ? 'Media analyzed'
+              ? 'Files processed'
               : 'Analyzing media'}
         />
 
@@ -163,8 +167,6 @@ export default function TransferProgressScreen({
             timeLabel={timeLabel}
             timeText={timeText}
             timeHint={timeHint}
-            processedFiles={preparationComplete ? processedCount : undefined}
-            totalFiles={preparationComplete ? displayedTotalFiles : undefined}
           />
         )}
 
@@ -183,6 +185,9 @@ export default function TransferProgressScreen({
             avoidedBytes={completionSummary?.avoidedBytes ?? 0}
             finalizationDuplicateBytes={completionSummary?.finalizationDuplicateBytes ?? 0}
             elapsedSeconds={elapsedSeconds}
+            preparationSeconds={completionSummary?.preparationDurationMs === undefined
+              ? undefined
+              : Math.round(completionSummary.preparationDurationMs / 1000)}
             averageMediaMBps={averageMediaMBps}
             peakMediaMBps={peakMediaMBps}
             resultCount={resultList.length}
@@ -218,6 +223,7 @@ export default function TransferProgressScreen({
         visible={showAllResults}
         showOnlyErrors={showOnlyErrors}
         errorCount={errorCount}
+        byteTotalComplete={completionSummary?.byteTotalComplete !== false}
         results={resultList}
         onClose={closeResultsModal}
       />

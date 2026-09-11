@@ -126,6 +126,22 @@ The server working directory is the `server` folder, so the web UI must be under
 
 ## Troubleshooting
 
+### vcpkg Cannot Fetch powershell-core
+
+The server build asks vcpkg for its pinned CMake, 7-Zip, and PowerShell Core
+helpers before enabling `VCPKG_FORCE_SYSTEM_BINARIES`. You do not need to add
+`pwsh` to the global Windows `PATH`. If helper restoration is blocked by an
+offline network or security policy, run the repository dependency bootstrap
+while online and retry:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File `
+  .\scripts\bootstrap-dependencies.ps1
+```
+
+The TEST GUI-only `dotnet build` does not execute this C++/vcpkg restore path,
+which is why it can succeed independently of a production installer build.
+
 ### Shortcut Opens "The system cannot find the file specified"
 
 The shortcut target must be:

@@ -2,7 +2,6 @@ import React from 'react';
 import { LayoutChangeEvent, Text, useWindowDimensions, View } from 'react-native';
 
 import { transferText } from '../content/transferText';
-import { theme } from '@/theme';
 
 const SCREEN_HORIZONTAL_PADDING = 48;
 const CARD_HORIZONTAL_INSET = 18;
@@ -14,8 +13,6 @@ type TransferStatsBarProps = {
   timeLabel: string;
   timeText: string;
   timeHint?: string;
-  processedFiles?: number;
-  totalFiles?: number;
 };
 
 export function shouldUseCompactStatsLayout(availableWidth: number, fontScale: number): boolean {
@@ -29,8 +26,6 @@ export function TransferStatsBar({
   timeLabel,
   timeText,
   timeHint,
-  processedFiles,
-  totalFiles,
 }: TransferStatsBarProps) {
   const { width, fontScale } = useWindowDimensions();
   const [measuredContentWidth, setMeasuredContentWidth] = React.useState(0);
@@ -81,29 +76,6 @@ export function TransferStatsBar({
           {!compact && timeStat}
         </View>
         {compact && timeStat}
-        {typeof processedFiles === 'number' && typeof totalFiles === 'number' && totalFiles > 0 && (
-          <View className="px-3 pt-3 mt-3 border-t border-border">
-            <View className="flex-row justify-between mb-2">
-              <Text className="text-on-surface-variant text-[10px] font-bold uppercase tracking-wider">File transfer</Text>
-              <Text className="text-on-surface-variant text-[11px] font-semibold" style={{ fontVariant: ['tabular-nums'] }}>
-                {Math.min(processedFiles, totalFiles).toLocaleString()} of {totalFiles.toLocaleString()} processed
-              </Text>
-            </View>
-            <View
-              accessible
-              accessibilityRole="progressbar"
-              accessibilityLabel="File transfer progress"
-              accessibilityValue={{ min: 0, max: totalFiles, now: Math.min(processedFiles, totalFiles) }}
-              className="h-1.5 rounded-full overflow-hidden"
-              style={{ backgroundColor: theme.colors.progressTrack }}
-            >
-              <View
-                className="h-full rounded-full bg-primary"
-                style={{ width: `${Math.min(100, Math.max(0, processedFiles / totalFiles * 100))}%` }}
-              />
-            </View>
-          </View>
-        )}
       </View>
     </View>
   );

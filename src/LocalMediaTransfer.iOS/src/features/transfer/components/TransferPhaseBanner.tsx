@@ -14,6 +14,7 @@ type TransferPhaseBannerProps = {
   expandedFiles: number;
   preparationComplete: boolean;
   preparationMode: PreparationMode;
+  automaticallyStreamsLargeSelection: boolean;
   phase: 'preparing' | 'checking' | 'waiting' | 'uploading';
   hasUploadStarted: boolean;
   queueCatchUpVisible: boolean;
@@ -24,6 +25,7 @@ type TransferPhaseBannerProps = {
     checked: number;
     total: number;
   };
+  processedFiles: number;
 };
 
 function duplicateStageText(stage: DuplicateCheckStage): string {
@@ -46,12 +48,14 @@ export const TransferPhaseBanner = React.memo(function TransferPhaseBanner({
   expandedFiles,
   preparationComplete,
   preparationMode,
+  automaticallyStreamsLargeSelection,
   phase,
   hasUploadStarted,
   queueCatchUpVisible,
   acknowledgedMediaBytes,
   currentMediaMBps,
   duplicateCheck,
+  processedFiles,
 }: TransferPhaseBannerProps) {
   const [expanded, setExpanded] = React.useState(false);
   if (isFinished) return null;
@@ -61,6 +65,8 @@ export const TransferPhaseBanner = React.memo(function TransferPhaseBanner({
   const duplicateStatus = duplicateCheck.total > 0
     ? `${duplicateStage} · ${Math.min(duplicateCheck.checked, duplicateCheck.total).toLocaleString()} of ${duplicateCheck.total.toLocaleString()} checked · ${duplicateRemaining.toLocaleString()} remaining`
     : duplicateStage;
+  const preparationFailureCount = Math.max(0, expandedFiles - readyFiles);
+  const remainingFiles = Math.max(0, expandedFiles - processedFiles);
   const title = !preparationComplete && phase === 'checking' && !streamingTransferActive
     ? 'Checking for duplicates'
     : streamingTransferActive && !preparationComplete
@@ -72,7 +78,9 @@ export const TransferPhaseBanner = React.memo(function TransferPhaseBanner({
     ? duplicateStatus
     : !preparationComplete
       ? `${preparedFiles.toLocaleString()} of ${totalAssets.toLocaleString()} media items analyzed`
-      : `${expandedFiles.toLocaleString()} files to process`;
+      : remainingFiles > 0
+        ? `${remainingFiles.toLocaleString()} files remaining`
+        : 'Finalizing transfer';
   const transferStatus = streamingTransferActive
     ? `${formatBytes(acknowledgedMediaBytes)} transferred · ${currentMediaMBps.toFixed(1)} MB/s`
     : undefined;
@@ -83,11 +91,15 @@ export const TransferPhaseBanner = React.memo(function TransferPhaseBanner({
       : undefined;
   const details = !preparationComplete && phase === 'checking'
     ? 'Possible matches are checked before upload. Windows makes the final duplicate decision.'
-    : !preparationComplete && preparationMode === 'prepare-first'
+    : !preparationComplete && automaticallyStreamsLargeSelection
+      ? 'To protect iPhone storage, this large selection automatically uses Transfer while preparing. Prepared files upload and release while later items are analyzed.'
+      : !preparationComplete && preparationMode === 'prepare-first'
       ? 'Media selected ✓ · Prepare and check · Transfer. Upload begins after all selected media is ready, which can require significant free device storage.'
       : !preparationComplete
         ? 'Media selected ✓ · Prepare and check · Transfer. In this mode, preparation and transfer overlap while the final size is determined.'
-        : `${totalAssets.toLocaleString()} selected Photos items expanded into ${expandedFiles.toLocaleString()} transferable files. ${readyFiles.toLocaleString()} are ready.`;
+        : expandedFiles > totalAssets
+          ? `${totalAssets.toLocaleString()} selected Photos items produced ${expandedFiles.toLocaleString()} transfer entries. ${readyFiles.toLocaleString()} files were prepared${preparationFailureCount > 0 ? `; ${preparationFailureCount.toLocaleString()} could not be prepared` : ''}.`
+          : `${totalAssets.toLocaleString()} selected Photos items analyzed. ${readyFiles.toLocaleString()} files were prepared${preparationFailureCount > 0 ? `; ${preparationFailureCount.toLocaleString()} could not be prepared` : ''}.`;
 
   return (
     <View className="mb-4">
@@ -97,13 +109,13 @@ export const TransferPhaseBanner = React.memo(function TransferPhaseBanner({
         accessibilityState={{ expanded }}
         activeOpacity={0.75}
         onPress={() => setExpanded(value => !value)}
-        className={`rounded-[18px] border px-4 py-3 ${preparationComplete ? 'bg-green-50 border-green-200' : 'bg-surface border-border'}`}
+        className={`rounded-[18px] border px-4 py-3 ${preparationComplete ? 'bg-primary/5 border-primary/20' : 'bg-surface border-border'}`}
       >
         <View className="flex-row items-center min-h-[44px]">
           <Ionicons
-            name={preparationComplete ? 'checkmark-circle' : 'images-outline'}
+            name={preparationComplete ? 'cloud-upload-outline' : 'images-outline'}
             size={22}
-            color={preparationComplete ? theme.colors.success : theme.colors.primary}
+            color={theme.colors.primary}
           />
           <View className="flex-1 ml-3">
             <Text className="text-on-surface text-[16px] font-semibold" numberOfLines={1}>

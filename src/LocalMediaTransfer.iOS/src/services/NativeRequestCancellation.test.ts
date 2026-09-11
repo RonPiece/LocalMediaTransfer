@@ -3,7 +3,7 @@ import { nativeCapabilities } from './NativeCapabilities';
 const mockPrepare = jest.fn();
 const mockCancel = jest.fn();
 const mockRequest = jest.fn();
-jest.mock('expo-modules-core', () => ({
+jest.mock('expo', () => ({
   requireNativeModule: () => ({
     prepareRequest: (...args: unknown[]) => mockPrepare(...args),
     cancelRequest: (...args: unknown[]) => mockCancel(...args),

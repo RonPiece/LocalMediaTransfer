@@ -7,6 +7,7 @@ export const STREAMING_READY_QUEUE_CAPACITY = 2;
 export type PreparationPolicy = {
   requestedMode: PreparationMode;
   effectiveMode: PreparationMode;
+  automaticallyStreamsLargeSelection: boolean;
   windowSize: number;
   queueCapacity: number;
 };
@@ -14,21 +15,30 @@ export type PreparationPolicy = {
 /**
  * Prepare-first retains every exported PhotoKit component until upload starts.
  * Streaming uses small native windows so terminal files can be released while
- * later Photos assets are prepared. The requested mode is authoritative: a
- * storage tradeoff must never silently change the user's scheduling choice.
+ * later Photos assets are prepared. A native selection larger than one
+ * prepare-first window automatically streams so it cannot retain an unbounded
+ * amount of temporary PhotoKit output before upload begins.
  */
 export function resolvePreparationPolicy({
   requestedMode,
   nativeAvailable,
+  selectedAssetCount,
 }: {
   requestedMode: PreparationMode;
   nativeAvailable: boolean;
+  selectedAssetCount: number;
 }): PreparationPolicy {
-  const boundedNativeStreaming = nativeAvailable && requestedMode === 'streaming';
+  const automaticallyStreamsLargeSelection = nativeAvailable &&
+    requestedMode === 'prepare-first' &&
+    selectedAssetCount > MAX_PREPARE_FIRST_ASSETS;
+  const boundedNativeStreaming = nativeAvailable && (
+    requestedMode === 'streaming' || automaticallyStreamsLargeSelection
+  );
 
   return {
     requestedMode,
-    effectiveMode: requestedMode,
+    effectiveMode: boundedNativeStreaming ? 'streaming' : requestedMode,
+    automaticallyStreamsLargeSelection,
     windowSize: boundedNativeStreaming
       ? STREAMING_PREPARATION_WINDOW_SIZE
       : MAX_PREPARE_FIRST_ASSETS,

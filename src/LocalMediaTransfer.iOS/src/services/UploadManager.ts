@@ -127,6 +127,7 @@ export class UploadManager {
     const preparationPolicy = resolvePreparationPolicy({
       requestedMode: options.preparationMode,
       nativeAvailable: nativeCapabilities.available,
+      selectedAssetCount: assets.length,
     });
     const diagnostics = new TransferDiagnostics(
       sessionRef,
@@ -170,6 +171,7 @@ export class UploadManager {
     let nativeRetryCount = 0;
     let peakNativeResidentMemoryBytes = 0;
     let preparationDurationMs = 0;
+    let preparationCompletedElapsedMs: number | undefined;
     let filenameResolutionDurationMs = 0;
     let preflightDurationMs = 0;
     let filenameResolutionAppleCount = 0;
@@ -237,6 +239,7 @@ export class UploadManager {
       thermalState,
       thermalControl: thermal.controlMode,
       preparationMode: preparationPolicy.effectiveMode,
+      automaticallyStreamsLargeSelection: preparationPolicy.automaticallyStreamsLargeSelection,
     });
 
     const diagnosticTransferValues = (reportedFailedFiles: number) => ({
@@ -378,6 +381,7 @@ export class UploadManager {
                   thermalState,
                   thermalControl: thermal.controlMode,
                   preparationMode: preparationPolicy.effectiveMode,
+                  automaticallyStreamsLargeSelection: preparationPolicy.automaticallyStreamsLargeSelection,
                   preparationActivity,
                 });
               },
@@ -568,6 +572,7 @@ export class UploadManager {
       const finishPreparation = () => {
         if (preparationComplete) return;
         preparationComplete = true;
+        preparationCompletedElapsedMs = Date.now() - startTime;
         preparationActivity = 'complete';
         diagnostics.markPreparationComplete(queue.maxDepth);
       };
@@ -1002,6 +1007,7 @@ export class UploadManager {
         skippedBytes: outcomes.skippedBytes,
         avoidedBytes: outcomes.avoidedBytes,
         finalizationDuplicateBytes: outcomes.finalizationDuplicateBytes,
+        preparationDurationMs: preparationCompletedElapsedMs,
         uploadDurationMs,
         averageMediaMBps: throughput.current.averageMediaMBps,
         peakMediaMBps: throughput.current.peakMediaMBps,
@@ -1101,6 +1107,7 @@ export class UploadManager {
           skippedBytes: outcomes.skippedBytes,
           avoidedBytes: outcomes.avoidedBytes,
           finalizationDuplicateBytes: outcomes.finalizationDuplicateBytes,
+          preparationDurationMs: preparationCompletedElapsedMs,
           uploadDurationMs: Date.now() - startTime,
           averageMediaMBps: throughput.current.averageMediaMBps,
           peakMediaMBps: throughput.current.peakMediaMBps,

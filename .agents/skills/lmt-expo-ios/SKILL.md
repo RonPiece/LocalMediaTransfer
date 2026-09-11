@@ -1,17 +1,18 @@
 ---
 name: lmt-expo-ios
-description: Guidelines and historical context for the Local Media Transfer iOS Expo frontend, including SDK 54 requirements and NativeWind fixes.
+description: Guidelines and historical context for the Local Media Transfer iOS Expo frontend, including SDK 55 requirements and NativeWind fixes.
 ---
 
 # Local Media Transfer iOS Agent Guide
 
 This file contains crucial knowledge and historical fixes for the iOS React Native frontend (`src/LocalMediaTransfer.iOS`).
 
-## 1. Expo SDK 54 Requirement
-The user's physical iPhone runs an older version of Expo Go that strictly requires **Expo SDK 54**. 
-- Always ensure `expo` is pinned to `~54.0.0` in `package.json`.
-- When adding new dependencies, ALWAYS use `npx expo install <package>` so it resolves to the SDK 54 compatible version (e.g. `expo-crypto@~15.0.9`, `react-native@0.81.5`).
-- Never run generic `npm update` or `npm install` for Expo native packages without verifying SDK 54 compatibility.
+## 1. Expo SDK 55 Checkpoint
+The installed TEST development client is the physical-iPhone development path,
+and the project currently uses **Expo SDK 55** as an explicit migration checkpoint.
+- Keep `expo` and all Expo native packages on the SDK 55-resolved versions in `package.json`.
+- When adding new dependencies, ALWAYS use `npx expo install <package>` so it resolves to the SDK 55 compatible version.
+- Never run generic `npm update` or `npm install` for Expo native packages without verifying SDK 55 compatibility.
 - If dependencies drift or crash, use `npx expo install --fix` to strictly realign them.
 
 ## 2. The NativeWind & Tailwind CSS Conflict
@@ -21,9 +22,12 @@ The project uses NativeWind v2 (`^2.0.11`). NativeWind v2 uses synchronous PostC
 - If the async error reappears, check `package.json` to ensure `tailwindcss` hasn't been upgraded.
 
 ## 2a. Reanimated Picker Contract
-- The SDK 54 picker uses `react-native-reanimated ~4.1.1` with
-  `react-native-worklets` at the Expo-resolved version. Install or realign both
+- The SDK 55 picker uses `react-native-reanimated 4.2.1` with
+  `react-native-worklets 0.7.4`. Install or realign both
   with `npx expo install`; do not add a manual Babel plugin for this setup.
+- Jest must mock `react-native-worklets` with its supplied module mock before
+  calling Reanimated's `setUpTests`; otherwise Jest attempts native Worklets
+  initialization.
 - Long-press auto-scroll belongs on the UI thread with a frame-delta-based
   `useFrameCallback` and `scrollTo`. Do not reintroduce JavaScript intervals,
   per-frame React state, or one bridge callback per frame.

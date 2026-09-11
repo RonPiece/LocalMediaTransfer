@@ -10,7 +10,7 @@ ownership, including the native modernization work intentionally kept separate.
 
 ## Purpose
 
-This project is the iPhone client for Local Media Transfer. It uses Expo SDK 54
+This project is the iPhone client for Local Media Transfer. It uses Expo SDK 55
 and React Native for UI/state, plus a Swift native module for installed-app
 features that Expo Go cannot provide.
 
@@ -24,8 +24,10 @@ The installed iOS app is responsible for:
 - native raw file uploads in bounded chunks;
 - trusted reconnect using a Keychain-stored device credential.
 
-Expo Go remains supported for UI development and compatibility testing, but it
-cannot load `LocalMediaTransferNative`.
+The Base64 compatibility path remains available for Expo Go, but the installed
+TEST development client is the physical-iPhone development path because Expo Go
+cannot load `LocalMediaTransferNative` and current iOS Expo Go releases may not
+retain this SDK checkpoint.
 
 ## Source structure
 
@@ -46,14 +48,14 @@ upload, and discovery logic should not be placed in generic UI components.
 
 ## Required constraints
 
-- Keep `expo` pinned to `~54.0.0`.
+- Keep `expo` and `jest-expo` on the Expo SDK 55 line.
 - Keep `expo-dev-client` on the Expo SDK-resolved version. The TEST development
   client is a Debug-only developer tool; do not replace the production IPA with
   it.
 - Use Node.js 24 LTS and npm 11 for local checks and the IPA workflow.
 - Keep `tailwindcss` pinned to exactly `3.3.2` for NativeWind v2.
-- Keep `react-native-reanimated` on `~4.1.1` and
-  `react-native-worklets` at the Expo SDK 54-resolved version. The media picker
+- Keep `react-native-reanimated` at `4.2.1` and
+  `react-native-worklets` at `0.7.4`, the Expo SDK 55-resolved versions. The media picker
   uses UI-thread worklets for frame-rate-independent drag auto-scroll.
 - Use `npx expo install <package>` for Expo/native dependencies.
 - Start Metro with `npx expo start --offline`.
@@ -72,13 +74,13 @@ upload, and discovery logic should not be placed in generic UI components.
 | Browser fallback | No installed app available | Local web upload page from the Windows server |
 
 Installed builds honor the persistent **Transfer while preparing** preference
-for every selection size. When it is off, all PhotoKit components are prepared
-before upload starts; this provides stable totals but can retain substantial
-session-owned temporary storage. When it is on, native preparation uses windows
-of 16 assets and a two-item ready queue so uploaded/skipped files can be released
-while later media is prepared. ETA remains unavailable until preparation
-finishes and the final planned bytes are known. The window and queue values
-bound native work and temporary storage; they are not transfer limits.
+through one 250-item prepare-first window. Larger native selections
+automatically use storage-saving streaming and disclose that adjustment. In
+streaming mode, native preparation uses windows of 16 assets and a two-item
+ready queue so uploaded/skipped files can be released while later media is
+prepared. ETA remains unavailable until preparation finishes and the final
+planned bytes are known. The window and queue values bound native work and
+temporary storage; they are not transfer limits.
 After the first acknowledged upload, the transfer screen keeps the stable
 `Transferring while preparing` headline and shows analyzed media plus
 acknowledged bytes/current speed. A full ready queue remains diagnostic
@@ -145,14 +147,14 @@ npx expo install --fix
 ## Do not break
 
 - Do not upgrade Expo, React Native, Jest Expo, NativeWind, or Tailwind without
-  checking SDK 54 compatibility.
+  checking SDK 55 compatibility.
 - Do not use broadcast or multicast discovery. The app uses bounded UDP unicast
   because multicast requires an Apple entitlement that does not fit the free
   sideloading path.
 - Do not put session tokens or trusted-device credentials in discovery packets.
 - Do not display or copy the trusted-device credential in the UI.
 - Do not create upload `Blob`s from `ArrayBuffer` or `ArrayBufferView` on Expo
-  SDK 54. Keep the bounded Base64 compatibility uploader for Expo Go.
+  SDK 55. Keep the bounded Base64 compatibility uploader for Expo Go.
 - Do not start one native operation per selected asset with unbounded
   `Promise.all`.
 - Keep installed-app Photos filename resolution sequential and capped at 250
@@ -163,9 +165,9 @@ npx expo install --fix
   policy in the Swift catalog before export, and never permit implicit iCloud
   downloads.
 - Do not turn a bounded preparation-window size into a session-wide file-count
-  limit. The active ring always counts analyzed selected assets. Once expansion
-  is complete, terminal expanded-file progress appears separately so the ring
-  never resets to a new denominator. The UI must label the active preparation,
+  limit. The active ring counts analyzed selected assets during preparation,
+  then visibly resets with a `files` unit for terminal transfer progress. The UI
+  must label the active preparation,
   duplicate-checking, or transfer phase and explain that
   edited renditions, Live Photos, and RAW components can make the file total
   larger than the asset total. Do not imply that overlapping phases are a

@@ -43,7 +43,11 @@ The iPhone owns:
 - `Transfer while preparing`.
 - Its own nearby-discovery consent.
 
-`Prepare first` is the default. The setting explains the tradeoff:
+`Prepare first` is the default for selections of at most 250 items. Larger
+installed-app selections automatically use bounded `Transfer while preparing`
+to avoid retaining an unbounded amount of temporary PhotoKit output. The
+transfer screen discloses this safety adjustment. The setting explains the
+tradeoff:
 
 - Off: preparation completes before upload, providing stable totals and ETA.
 - On: upload starts sooner while remaining media is prepared; ETA appears only
@@ -74,11 +78,10 @@ separate monotonic metrics.
 - Duplicate windows use `Checking for duplicates` with `Finding possible
   matches`, `Checking file contents`, or `Verifying matches on Windows` and
   truthful stage-local counts.
-- When preparation and preflight complete, retain the 100% media-analysis ring,
-  begin upload, and show terminal-file progress separately.
-- Honor prepare-first for every selection size. Do not silently replace an
-  explicit off setting with streaming. The setting copy warns that a large
-  prepare-first transfer may retain substantial temporary storage.
+- When preparation and preflight complete, reset the ring for the file-transfer
+  phase so it cannot display 100% while files are still uploading.
+- Honor prepare-first through one 250-item preparation window. Above that bound,
+  switch visibly to streaming and release prepared temporary files continuously.
 
 ### Transfer while preparing
 
@@ -99,12 +102,12 @@ separate monotonic metrics.
 
 ### Progress
 
-- During an active session the ring always represents analyzed Photos assets
-  divided by selected Photos assets. It reaches 100% when media analysis is
-  complete and is never reused with a new denominator.
-- After authoritative expansion, a separate file-transfer bar represents
-  terminal files divided by expanded files. This prevents a visible percentage
-  reset while still showing upload, skip, and failure completion.
+- During preparation the ring represents analyzed Photos assets divided by
+  selected Photos assets.
+- After authoritative expansion, the ring resets for the transfer phase and
+  represents terminal files divided by expanded transfer entries. Its label and
+  unit change with the denominator, so the reset is explicit rather than a false
+  100% completion signal. Skips and failures advance transfer progress.
 - The subtitle keeps `terminal / selected` readable at normal text size and
   places the `files` or `assets` unit on its own line instead of shrinking the
   complete string to fit.
@@ -122,8 +125,8 @@ separate monotonic metrics.
 
 - Per-file errors retain a plain-language message and typed internal stage/code.
   The error sheet groups repeated reasons with an exact affected count and
-  bounded filename examples instead of repeating the same paragraph thousands
-  of times.
+  bounded filename examples, offers a virtualized list of every affected full
+  filename, and puts incomplete-size and recovery guidance at the top.
 - Preparation failures do not block unrelated files.
 - Optional-component failures name the failed role (for example Live Photo
   motion, RAW companion, or original rendition) and explicitly leave a

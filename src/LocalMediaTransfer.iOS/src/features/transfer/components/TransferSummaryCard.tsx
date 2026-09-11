@@ -19,6 +19,7 @@ type TransferSummaryCardProps = {
   transferredBytes: number;
   avoidedBytes: number;
   finalizationDuplicateBytes: number;
+  preparationSeconds?: number;
   elapsedSeconds: number;
   averageMediaMBps: number;
   peakMediaMBps: number;
@@ -40,6 +41,7 @@ export const TransferSummaryCard = React.memo(function TransferSummaryCard({
   transferredBytes,
   avoidedBytes,
   finalizationDuplicateBytes,
+  preparationSeconds,
   elapsedSeconds,
   averageMediaMBps,
   peakMediaMBps,
@@ -107,10 +109,11 @@ export const TransferSummaryCard = React.memo(function TransferSummaryCard({
             <Text className="text-on-surface text-[12px] font-semibold">{formatBytes(finalizationDuplicateBytes)}</Text>
           </View>
         )}
-        {!byteTotalComplete && (
-          <Text className="text-warning text-[11px] leading-4 mt-2">
-            Size excludes media that could not be prepared.
-          </Text>
+        {preparationSeconds !== undefined && (
+          <View className="flex-row justify-between mt-2">
+            <Text className="text-on-surface-variant text-[12px]">Preparation time</Text>
+            <Text className="text-on-surface text-[12px] font-semibold">{formatDuration(preparationSeconds)}</Text>
+          </View>
         )}
         <View className="flex-row justify-between mt-2">
           <Text className="text-on-surface-variant text-[12px]">{transferText.duration}</Text>

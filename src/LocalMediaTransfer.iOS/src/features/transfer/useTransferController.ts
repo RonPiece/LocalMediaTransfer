@@ -43,6 +43,7 @@ export function useTransferController({
   const [readyFiles, setReadyFiles] = React.useState(0);
   const [preparationComplete, setPreparationComplete] = React.useState(false);
   const [activePreparationMode, setActivePreparationMode] = React.useState<PreparationMode>(preparationMode);
+  const [automaticallyStreamsLargeSelection, setAutomaticallyStreamsLargeSelection] = React.useState(false);
   const [totalTransferFiles, setTotalTransferFiles] = React.useState(assets.length);
   const [duplicateCheck, setDuplicateCheck] = React.useState<{
     stage: DuplicateCheckStage;
@@ -120,6 +121,9 @@ export function useTransferController({
       }
       if (prog.preparationComplete === true) setPreparationComplete(true);
       if (prog.preparationMode) setActivePreparationMode(prog.preparationMode);
+      if (prog.automaticallyStreamsLargeSelection === true) {
+        setAutomaticallyStreamsLargeSelection(true);
+      }
       if (prog.thermalState) setThermalState(prog.thermalState);
       const uploadStartedNow = prog.status === 'uploading' && (
         prog.acknowledgedMediaBytes > 0 || prog.currentMediaMBps > 0
@@ -223,6 +227,8 @@ export function useTransferController({
       message,
       mediaRole,
       componentSemantics,
+      stage,
+      errorCode,
     }: FileStatusUpdate) => {
       if (!isActive() || finished) return;
       if (status === 'uploading' && !actualUploadObserved) {
@@ -247,6 +253,8 @@ export function useTransferController({
         msg: message,
         mediaRole,
         componentSemantics,
+        stage,
+        errorCode,
       };
       resultById.current.set(statusId, next);
       recentFilesRef.current = [next, ...recentFilesRef.current.filter(item => item.id !== statusId)].slice(0, 60);
@@ -343,6 +351,7 @@ export function useTransferController({
     readyFiles,
     preparationComplete,
     activePreparationMode,
+    automaticallyStreamsLargeSelection,
     totalTransferFiles,
     duplicateCheck,
     summary,

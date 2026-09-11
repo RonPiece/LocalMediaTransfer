@@ -35,7 +35,7 @@ const userMessages: Record<TransferErrorCode, string> = {
   'asset-info-unavailable': 'The selected item could not be loaded from Photos.',
   'file-missing': 'The selected item is not currently available on this iPhone.',
   'file-size-unavailable': 'The selected item size could not be read.',
-  'temporary-storage-limit': 'This iPhone does not have enough free space to prepare this media item. Free storage and retry; large selections already transfer in storage-saving batches.',
+  'temporary-storage-limit': 'This iPhone does not have enough free space to prepare this media item. Free storage, then retry. For smaller selections, Settings > Transfer while preparing reduces temporary storage use.',
   'invalid-prepared-file': 'The prepared media item could not be registered safely. Try selecting it again.',
   'icloud-resource-unavailable': 'The original is stored in iCloud. Download it in Photos, then retry the transfer.',
   'prepared-file-not-owned': 'The prepared file is no longer part of this transfer. Prepare the selection again.',

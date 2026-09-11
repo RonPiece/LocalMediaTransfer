@@ -28,7 +28,8 @@ telemetry.
   not authoritative. The normal UI shows elapsed time, acknowledged bytes, and
   current speed instead of an ETA. This applies especially to streaming, where
   preparation and upload overlap.
-- ETA warms up for at least 1.5 seconds and one positive rate sample, then
+- ETA warms up across one complete 5-second rolling-rate window, replacing
+  provisional startup estimates before smoothing, then
   smooths the raw estimate with a time-based EWMA using a 5-second half-life.
   It may rise after a sustained slowdown; forcing a monotonic countdown would
   be misleading.
@@ -51,12 +52,12 @@ telemetry.
   replaceable metrics and snapshot messages are coalesced, capacity is
   reserved for important lifecycle messages, and best-effort logs may be
   dropped if the GUI falls behind.
-- During an active iOS transfer, the ring represents analyzed Photos assets
-  divided by selected Photos assets and keeps that denominator after expansion.
-  Once expansion is complete, a separate file-transfer bar represents terminal
-  media components (uploaded, skipped, or failed) divided by the final expanded
-  file count. Neither metric resets or moves backward when the visible phase
-  changes.
+- During iOS preparation, the ring represents analyzed Photos assets divided by
+  selected Photos assets. Once expansion is authoritative, that ring visibly
+  changes label/unit and resets to terminal media components (uploaded,
+  skipped, or failed) divided by the final expanded file count. Preparation or
+  preflight failures that are already terminal may make the new phase start
+  above zero, but preparation's 100% is never presented as transfer completion.
 - Byte acknowledgement is separate from selected-item progress and network
   planning. `acknowledgedMediaBytes`,
   `plannedUploadMediaBytes`, and `rateSampledAt` are explicitly named in the

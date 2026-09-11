@@ -86,7 +86,7 @@ describe('DashboardSettingsModal diagnostics', () => {
     expect(screen.getByText('Include additional media components')).toBeTruthy();
     expect(screen.getByText('Transfer while preparing')).toBeTruthy();
     expect(screen.getByText(
-      'Off waits until all selected media is prepared before uploading and may use substantial temporary storage. On uploads prepared groups while the remaining media is prepared.',
+      'Off prepares up to 250 selected items before uploading. Larger selections automatically use the storage-saving mode. On always uploads prepared groups while the remaining media is prepared.',
     )).toBeTruthy();
   });
 

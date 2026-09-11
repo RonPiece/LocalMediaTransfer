@@ -10,9 +10,15 @@ describe('TransferEtaEstimator', () => {
       sampledAt: 1000,
     });
 
-    expect(estimator.estimateSeconds(2499)).toBeNull();
-    const estimate = estimator.estimateSeconds(2500);
-    expect(estimate).toBeCloseTo(63.5, 5);
+    expect(estimator.estimateSeconds(5999)).toBeNull();
+    estimator.observe({
+      acknowledgedMediaBytes: 50_000_000,
+      plannedUploadMediaBytes: 650_000_000,
+      currentMediaMBps: 10,
+      sampledAt: 6000,
+    });
+    const estimate = estimator.estimateSeconds(6000);
+    expect(estimate).toBeCloseTo(60, 5);
     expect(formatTransferEta({ estimatedSeconds: estimate, hasRemainingBytes: true, isFinished: false })).toBe('About 1 min');
   });
 
@@ -24,15 +30,21 @@ describe('TransferEtaEstimator', () => {
       currentMediaMBps: 40,
       sampledAt: 1000,
     });
-    const fastEstimate = estimator.estimateSeconds(2500);
+    estimator.observe({
+      acknowledgedMediaBytes: 200_000_000,
+      plannedUploadMediaBytes: 400_000_000,
+      currentMediaMBps: 40,
+      sampledAt: 6000,
+    });
+    const fastEstimate = estimator.estimateSeconds(6000);
 
     estimator.observe({
-      acknowledgedMediaBytes: 4_000_000,
+      acknowledgedMediaBytes: 216_000_000,
       plannedUploadMediaBytes: 400_000_000,
       currentMediaMBps: 4,
-      sampledAt: 3000,
+      sampledAt: 8000,
     });
-    const slowedEstimate = estimator.estimateSeconds(3000);
+    const slowedEstimate = estimator.estimateSeconds(8000);
 
     expect(fastEstimate).not.toBeNull();
     expect(slowedEstimate).not.toBeNull();
@@ -48,17 +60,45 @@ describe('TransferEtaEstimator', () => {
       currentMediaMBps: 32,
       sampledAt: 1000,
     });
-
-    expect(estimator.estimateSeconds(2500)).not.toBeNull();
-    expect(estimator.estimateSeconds(6001)).toBeNull();
-
     estimator.observe({
-      acknowledgedMediaBytes: 32_000_000,
+      acknowledgedMediaBytes: 160_000_000,
       plannedUploadMediaBytes: 320_000_000,
       currentMediaMBps: 32,
-      sampledAt: 6500,
+      sampledAt: 6000,
     });
-    expect(estimator.estimateSeconds(6500)).not.toBeNull();
+
+    expect(estimator.estimateSeconds(6000)).not.toBeNull();
+    expect(estimator.estimateSeconds(11001)).toBeNull();
+
+    estimator.observe({
+      acknowledgedMediaBytes: 192_000_000,
+      plannedUploadMediaBytes: 320_000_000,
+      currentMediaMBps: 32,
+      sampledAt: 11500,
+    });
+    expect(estimator.estimateSeconds(11500)).not.toBeNull();
+  });
+
+  it('replaces an inflated startup estimate before smoothing begins', () => {
+    const estimator = new TransferEtaEstimator();
+    estimator.observe({
+      acknowledgedMediaBytes: 50_000,
+      plannedUploadMediaBytes: 3_000_000_000,
+      currentMediaMBps: 0.01,
+      sampledAt: 1000,
+    });
+    estimator.observe({
+      acknowledgedMediaBytes: 150_000_000,
+      plannedUploadMediaBytes: 3_000_000_000,
+      currentMediaMBps: 30,
+      sampledAt: 6000,
+    });
+
+    expect(formatTransferEta({
+      estimatedSeconds: estimator.estimateSeconds(6000),
+      hasRemainingBytes: estimator.hasRemainingBytes(),
+      isFinished: false,
+    })).toBe('About 2 min');
   });
 
   it('formats calculating, finalizing, completion, and bounded long estimates', () => {

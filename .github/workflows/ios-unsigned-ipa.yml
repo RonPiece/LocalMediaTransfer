@@ -53,6 +53,10 @@ jobs:
           cache: npm
           cache-dependency-path: src/LocalMediaTransfer.iOS/package-lock.json
 
+      - name: Select SDK 55-compatible Xcode
+        shell: bash
+        run: sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
+
       - name: Install JavaScript dependencies
         working-directory: src/LocalMediaTransfer.iOS
         run: npm ci

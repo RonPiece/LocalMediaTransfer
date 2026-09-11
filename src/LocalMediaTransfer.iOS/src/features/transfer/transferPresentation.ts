@@ -1,5 +1,6 @@
 import { theme } from '@/theme';
 import type { MediaComponentSemantics, MediaVariantRole } from '@/services/upload/mediaVariants';
+import type { TransferErrorCode, TransferStage } from '@/services/upload/errors';
 
 export type FileStatus = 'pending' | 'uploading' | 'success' | 'error' | 'skipped';
 
@@ -10,6 +11,8 @@ export interface FileState {
   msg?: string;
   mediaRole?: MediaVariantRole;
   componentSemantics?: MediaComponentSemantics;
+  stage?: TransferStage;
+  errorCode?: TransferErrorCode;
 }
 
 export interface TransferFailureGroup {
