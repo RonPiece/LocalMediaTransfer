@@ -17,7 +17,7 @@ export function QrScannerOverlay({
     <SafeAreaView className="flex-1 bg-black">
       <View className="flex-1">
         <CameraView
-          style={StyleSheet.absoluteFillObject}
+          style={StyleSheet.absoluteFill}
           facing="back"
           barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
           onBarcodeScanned={onBarcodeScanned}
@@ -36,7 +36,7 @@ export function QrScannerOverlay({
           </Text>
           <View className="w-11" />
         </View>
-        <View style={StyleSheet.absoluteFillObject} className="items-center justify-center" pointerEvents="none">
+        <View style={StyleSheet.absoluteFill} className="items-center justify-center" pointerEvents="none">
           <View className="w-60 h-60 rounded-2xl border-2 border-primary" />
         </View>
       </View>

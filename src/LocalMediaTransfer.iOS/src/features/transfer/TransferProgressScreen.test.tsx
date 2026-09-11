@@ -348,7 +348,7 @@ describe('TransferProgressScreen', () => {
     );
   });
 
-  it('keeps a stable streaming headline instead of exposing queue capacity as a phase', async () => {
+  it('uses stable compact preparation and transfer rows without exposing window-local counters', async () => {
     (uploadManager.uploadFilesConcurrent as jest.Mock).mockImplementation(
       async (_assets, observer) => {
         observer.onProgress({
@@ -388,6 +388,30 @@ describe('TransferProgressScreen', () => {
           totalFiles: 2,
           preparationComplete: false,
           preparationMode: 'streaming',
+          automaticallyStreamsLargeSelection: true,
+        });
+        observer.onProgress({
+          currentAsset: mockAssets[0],
+          bytesSent: 100,
+          totalBytes: 0,
+          acknowledgedMediaBytes: 100,
+          plannedUploadMediaBytes: 1000,
+          rateSampledAt: 1,
+          status: 'checking',
+          preparationActivity: 'checking',
+          duplicateCheckStage: 'finding-matches',
+          checkedFiles: 0,
+          duplicateCandidates: 16,
+          currentMediaMBps: 1,
+          averageMediaMBps: 1,
+          peakMediaMBps: 1,
+          currentEncodedMBps: 1,
+          preparedFiles: 1,
+          readyFiles: 2,
+          totalFiles: 2,
+          preparationComplete: false,
+          preparationMode: 'streaming',
+          automaticallyStreamsLargeSelection: true,
         });
         return new Promise(() => {});
       },
@@ -402,12 +426,29 @@ describe('TransferProgressScreen', () => {
       />,
     );
 
-    expect(await screen.findByText('Transferring while preparing')).toBeTruthy();
+    expect(await screen.findByText('Transferring while preparing media')).toBeTruthy();
     expect(screen.queryByText('Waiting for upload capacity')).toBeNull();
-    expect(await screen.findByText('1 / 2')).toBeTruthy();
-    expect(screen.getByText('0.0 MB transferred · 0.0 MB/s')).toBeTruthy();
+    expect(await screen.findByTestId('concurrent-transfer-progress')).toBeTruthy();
+    expect(screen.queryByTestId('transfer-progress-ring')).toBeNull();
+    expect(screen.getByText('Preparing media')).toBeTruthy();
+    expect(screen.getByText('Transferring files')).toBeTruthy();
+    expect(await screen.findByText('1 of 2 media items analyzed')).toBeTruthy();
+    expect(screen.getByText('Media left to analyze')).toBeTruthy();
+    expect(screen.getByText('Transferred')).toBeTruthy();
+    expect(screen.getByText('Speed')).toBeTruthy();
+    expect(screen.getByText('0.0 MB')).toBeTruthy();
+    expect(screen.queryByText(/0 of 16 checked/)).toBeNull();
+    expect(screen.queryByText(/transferred ·/)).toBeNull();
     expect(screen.getByText('Elapsed')).toBeTruthy();
     expect(screen.queryByText('Time remaining')).toBeNull();
+
+    fireEvent.press(screen.getByLabelText('Transferring while preparing media. Show details'));
+    expect(screen.getByText(
+      'To protect iPhone storage, this large selection automatically uses Transfer while preparing. Prepared files upload and release while later items are analyzed.',
+    )).toBeTruthy();
+    expect(screen.getByText(
+      'Possible matches are checked before upload. Windows makes the final duplicate decision.',
+    )).toBeTruthy();
   });
 
   it('shows truthful duplicate-check stages before upload without technical hash wording', async () => {

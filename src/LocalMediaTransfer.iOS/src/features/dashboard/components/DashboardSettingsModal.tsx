@@ -67,6 +67,9 @@ export function DashboardSettingsModal({
 
   React.useEffect(() => {
     if (!visible) return;
+    // Loading is an external file-system synchronization triggered by opening
+    // the modal; its asynchronous state updates are intentional.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadDiagnostics();
     return () => {
       diagnosticsLoadRequest.current += 1;

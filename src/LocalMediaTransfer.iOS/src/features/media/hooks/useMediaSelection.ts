@@ -1,7 +1,7 @@
 import React from 'react';
 import { Alert, FlatList, useWindowDimensions } from 'react-native';
 import { Gesture } from 'react-native-gesture-handler';
-import * as MediaLibrary from 'expo-media-library';
+import * as MediaLibrary from 'expo-media-library/legacy';
 import * as Haptics from 'expo-haptics';
 import {
   scrollTo,

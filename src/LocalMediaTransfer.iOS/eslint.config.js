@@ -28,4 +28,13 @@ module.exports = [
       '@typescript-eslint/no-unused-vars': 'off',
     },
   },
+  {
+    files: ['src/features/media/hooks/useMediaSelection.ts'],
+    rules: {
+      // Reanimated SharedValue writes run on the UI thread and are the intended
+      // mutable worklet API, not React render-state mutation.
+      'react-hooks/immutability': 'off',
+      'react-hooks/refs': 'off',
+    },
+  },
 ];

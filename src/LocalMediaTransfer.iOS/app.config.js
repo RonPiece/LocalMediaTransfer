@@ -12,6 +12,7 @@ module.exports = ({ config }) => {
     plugins: [
       ...(config.plugins ?? []),
       'expo-image',
+      'expo-status-bar',
     ],
     ios: {
       ...config.ios,

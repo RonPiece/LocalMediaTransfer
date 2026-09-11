@@ -1,7 +1,7 @@
-import * as MediaLibrary from 'expo-media-library';
+import * as MediaLibrary from 'expo-media-library/legacy';
 import { MediaScanner } from './MediaScanner';
 
-jest.mock('expo-media-library', () => ({
+jest.mock('expo-media-library/legacy', () => ({
   requestPermissionsAsync: jest.fn(), getAssetsAsync: jest.fn(),
   SortBy: { creationTime: 'creationTime' }, MediaType: { photo: 'photo', video: 'video' },
 }));

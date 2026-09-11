@@ -28,18 +28,19 @@ export function DashboardHistoryModal({
   onClear: () => void;
 }) {
   const [details, setDetails] = React.useState<{ files: NonNullable<HistoryItem['files']>; total: number } | null>(null);
-  React.useEffect(() => {
-    if (!visible) setDetails(null);
-  }, [visible]);
+  const closeModal = React.useCallback(() => {
+    setDetails(null);
+    onClose();
+  }, [onClose]);
   if (!visible) return null;
   return (
-    <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
+    <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={closeModal}>
       <SafeAreaProvider>
         <View className="flex-1 bg-background">
           <SafeAreaView edges={['top']} className="bg-surface">
             <AppHeader
               title="Transfer History"
-              onClose={onClose}
+              onClose={closeModal}
               closeStyle="back"
               onDone={historyData.length > 0 ? onClear : undefined}
               doneText="Clear"

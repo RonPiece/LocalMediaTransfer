@@ -4,7 +4,6 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { theme } from '@/theme';
 import { DuplicateCheckStage, PreparationMode } from '@/services/upload/types';
-import { formatBytes } from '../transferPresentation';
 
 type TransferPhaseBannerProps = {
   isFinished: boolean;
@@ -17,9 +16,6 @@ type TransferPhaseBannerProps = {
   automaticallyStreamsLargeSelection: boolean;
   phase: 'preparing' | 'checking' | 'waiting' | 'uploading';
   hasUploadStarted: boolean;
-  queueCatchUpVisible: boolean;
-  acknowledgedMediaBytes: number;
-  currentMediaMBps: number;
   duplicateCheck: {
     stage: DuplicateCheckStage;
     checked: number;
@@ -51,9 +47,6 @@ export const TransferPhaseBanner = React.memo(function TransferPhaseBanner({
   automaticallyStreamsLargeSelection,
   phase,
   hasUploadStarted,
-  queueCatchUpVisible,
-  acknowledgedMediaBytes,
-  currentMediaMBps,
   duplicateCheck,
   processedFiles,
 }: TransferPhaseBannerProps) {
@@ -70,42 +63,45 @@ export const TransferPhaseBanner = React.memo(function TransferPhaseBanner({
   const title = !preparationComplete && phase === 'checking' && !streamingTransferActive
     ? 'Checking for duplicates'
     : streamingTransferActive && !preparationComplete
-      ? 'Transferring while preparing'
+      ? 'Transferring while preparing media'
       : !preparationComplete
         ? 'Preparing media'
         : 'Transferring files';
-  const status = !preparationComplete && phase === 'checking' && !streamingTransferActive
+  const status = streamingTransferActive && !preparationComplete
+    ? undefined
+    : !preparationComplete && phase === 'checking'
     ? duplicateStatus
     : !preparationComplete
       ? `${preparedFiles.toLocaleString()} of ${totalAssets.toLocaleString()} media items analyzed`
       : remainingFiles > 0
         ? `${remainingFiles.toLocaleString()} files remaining`
         : 'Finalizing transfer';
-  const transferStatus = streamingTransferActive
-    ? `${formatBytes(acknowledgedMediaBytes)} transferred · ${currentMediaMBps.toFixed(1)} MB/s`
-    : undefined;
-  const secondaryStatus = streamingTransferActive && phase === 'checking'
-    ? duplicateStatus
-    : queueCatchUpVisible
-      ? 'Transfer is catching up with prepared files'
-      : undefined;
-  const details = !preparationComplete && phase === 'checking'
-    ? 'Possible matches are checked before upload. Windows makes the final duplicate decision.'
-    : !preparationComplete && automaticallyStreamsLargeSelection
-      ? 'To protect iPhone storage, this large selection automatically uses Transfer while preparing. Prepared files upload and release while later items are analyzed.'
-      : !preparationComplete && preparationMode === 'prepare-first'
-      ? 'Media selected ✓ · Prepare and check · Transfer. Upload begins after all selected media is ready, which can require significant free device storage.'
-      : !preparationComplete
-        ? 'Media selected ✓ · Prepare and check · Transfer. In this mode, preparation and transfer overlap while the final size is determined.'
-        : expandedFiles > totalAssets
-          ? `${totalAssets.toLocaleString()} selected Photos items produced ${expandedFiles.toLocaleString()} transfer entries. ${readyFiles.toLocaleString()} files were prepared${preparationFailureCount > 0 ? `; ${preparationFailureCount.toLocaleString()} could not be prepared` : ''}.`
-          : `${totalAssets.toLocaleString()} selected Photos items analyzed. ${readyFiles.toLocaleString()} files were prepared${preparationFailureCount > 0 ? `; ${preparationFailureCount.toLocaleString()} could not be prepared` : ''}.`;
+  const details = streamingTransferActive && !preparationComplete
+    ? [
+      automaticallyStreamsLargeSelection
+        ? 'To protect iPhone storage, this large selection automatically uses Transfer while preparing. Prepared files upload and release while later items are analyzed.'
+        : 'Preparation and transfer run together while the final size is determined. Prepared files upload and release while later items are analyzed.',
+      'Possible matches are checked before upload. Windows makes the final duplicate decision.',
+    ]
+    : [
+      !preparationComplete && phase === 'checking'
+        ? 'Possible matches are checked before upload. Windows makes the final duplicate decision.'
+        : !preparationComplete && automaticallyStreamsLargeSelection
+          ? 'To protect iPhone storage, this large selection automatically uses Transfer while preparing. Prepared files upload and release while later items are analyzed.'
+          : !preparationComplete && preparationMode === 'prepare-first'
+            ? 'Media selected ✓ · Prepare and check · Transfer. Upload begins after all selected media is ready, which can require significant free device storage.'
+            : !preparationComplete
+              ? 'Media selected ✓ · Prepare and check · Transfer. In this mode, preparation and transfer overlap while the final size is determined.'
+              : expandedFiles > totalAssets
+                ? `${totalAssets.toLocaleString()} selected Photos items produced ${expandedFiles.toLocaleString()} transfer entries. ${readyFiles.toLocaleString()} files were prepared${preparationFailureCount > 0 ? `; ${preparationFailureCount.toLocaleString()} could not be prepared` : ''}.`
+                : `${totalAssets.toLocaleString()} selected Photos items analyzed. ${readyFiles.toLocaleString()} files were prepared${preparationFailureCount > 0 ? `; ${preparationFailureCount.toLocaleString()} could not be prepared` : ''}.`,
+    ];
 
   return (
     <View className="mb-4">
       <TouchableOpacity
         accessibilityRole="button"
-        accessibilityLabel={`${title}. ${status}. ${expanded ? 'Hide details' : 'Show details'}`}
+        accessibilityLabel={`${title}.${status ? ` ${status}.` : ''} ${expanded ? 'Hide details' : 'Show details'}`}
         accessibilityState={{ expanded }}
         activeOpacity={0.75}
         onPress={() => setExpanded(value => !value)}
@@ -118,28 +114,19 @@ export const TransferPhaseBanner = React.memo(function TransferPhaseBanner({
             color={theme.colors.primary}
           />
           <View className="flex-1 ml-3">
-            <Text className="text-on-surface text-[16px] font-semibold" numberOfLines={1}>
+            <Text
+              className={`text-on-surface font-semibold ${streamingTransferActive && !preparationComplete ? 'text-[15px]' : 'text-[16px]'}`}
+              numberOfLines={1}
+            >
               {title}
             </Text>
-            <Text
-              className={preparationComplete ? 'text-on-surface-variant text-[13px] mt-0.5' : 'text-primary text-[13px] font-semibold mt-0.5'}
-              numberOfLines={phase === 'checking' && !streamingTransferActive ? 2 : 1}
-              style={{ fontVariant: ['tabular-nums'] }}
-            >
-              {status}
-            </Text>
-            {transferStatus && (
+            {status && (
               <Text
-                className="text-on-surface-variant text-[12px] mt-0.5"
+                className={preparationComplete ? 'text-on-surface-variant text-[13px] mt-0.5' : 'text-primary text-[13px] font-semibold mt-0.5'}
+                numberOfLines={phase === 'checking' ? 2 : 1}
                 style={{ fontVariant: ['tabular-nums'] }}
-                numberOfLines={1}
               >
-                {transferStatus}
-              </Text>
-            )}
-            {secondaryStatus && (
-              <Text className="text-on-surface-variant text-[12px] mt-0.5" numberOfLines={2}>
-                {secondaryStatus}
+                {status}
               </Text>
             )}
           </View>
@@ -150,9 +137,16 @@ export const TransferPhaseBanner = React.memo(function TransferPhaseBanner({
           />
         </View>
         {expanded && (
-          <Text className="text-on-surface-variant text-[13px] leading-5 mt-2 ml-[34px] mr-5">
-            {details}
-          </Text>
+          <View className="mt-2 ml-[34px] mr-5">
+            {details.map((paragraph, index) => (
+              <Text
+                key={paragraph}
+                className={`text-on-surface-variant text-[13px] leading-5 ${index > 0 ? 'mt-3' : ''}`}
+              >
+                {paragraph}
+              </Text>
+            ))}
+          </View>
         )}
       </TouchableOpacity>
     </View>

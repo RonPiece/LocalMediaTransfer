@@ -1,20 +1,18 @@
 import { act, renderHook, waitFor } from '@testing-library/react-native';
+import { AppState } from 'react-native';
 
 import { api } from '@/api/ApiClient';
 import { useConnectionHealth } from './useConnectionHealth';
-
-jest.mock('react-native', () => ({
-  AppState: {
-    addEventListener: jest.fn(() => ({ remove: jest.fn() })),
-  },
-}));
 
 jest.mock('@/api/ApiClient', () => ({
   api: { pingServer: jest.fn().mockResolvedValue(true) },
 }));
 
 describe('useConnectionHealth', () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.spyOn(AppState, 'addEventListener').mockReturnValue({ remove: jest.fn() });
+  });
   afterEach(() => {
     jest.useRealTimers();
     jest.restoreAllMocks();

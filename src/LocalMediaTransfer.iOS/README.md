@@ -10,7 +10,7 @@ ownership, including the native modernization work intentionally kept separate.
 
 ## Purpose
 
-This project is the iPhone client for Local Media Transfer. It uses Expo SDK 55
+This project is the iPhone client for Local Media Transfer. It uses Expo SDK 56
 and React Native for UI/state, plus a Swift native module for installed-app
 features that Expo Go cannot provide.
 
@@ -48,14 +48,14 @@ upload, and discovery logic should not be placed in generic UI components.
 
 ## Required constraints
 
-- Keep `expo` and `jest-expo` on the Expo SDK 55 line.
+- Keep `expo` and `jest-expo` on the Expo SDK 56 line.
 - Keep `expo-dev-client` on the Expo SDK-resolved version. The TEST development
   client is a Debug-only developer tool; do not replace the production IPA with
   it.
 - Use Node.js 24 LTS and npm 11 for local checks and the IPA workflow.
 - Keep `tailwindcss` pinned to exactly `3.3.2` for NativeWind v2.
-- Keep `react-native-reanimated` at `4.2.1` and
-  `react-native-worklets` at `0.7.4`, the Expo SDK 55-resolved versions. The media picker
+- Keep `react-native-reanimated` at `4.3.1` and
+  `react-native-worklets` at `0.8.3`, the Expo SDK 56-resolved versions. The media picker
   uses UI-thread worklets for frame-rate-independent drag auto-scroll.
 - Use `npx expo install <package>` for Expo/native dependencies.
 - Start Metro with `npx expo start --offline`.
@@ -82,10 +82,13 @@ prepared. ETA remains unavailable until preparation finishes and the final
 planned bytes are known. The window and queue values bound native work and
 temporary storage; they are not transfer limits.
 After the first acknowledged upload, the transfer screen keeps the stable
-`Transferring while preparing` headline and shows analyzed media plus
-acknowledged bytes/current speed. A full ready queue remains diagnostic
-backpressure; only a sustained wait produces the quiet catch-up note, rather
-than a new top-level phase. Preparation progress events cross the React Native
+`Transferring while preparing media` headline and replaces the large combined
+ring with two compact rows for preparation and transfer. A separate three-column
+row shows media left, acknowledged bytes, and current speed. Window-local
+duplicate counters and queue-capacity transitions remain diagnostic so the
+visible layout does not jump. The expanded headline disclosure always shows
+its storage-protection and Windows duplicate-decision explanations as two fixed
+paragraphs rather than switching with the active native window. Preparation progress events cross the React Native
 bridge at most about every 100 ms, with an immediate first and guaranteed final
 update.
 
@@ -147,14 +150,14 @@ npx expo install --fix
 ## Do not break
 
 - Do not upgrade Expo, React Native, Jest Expo, NativeWind, or Tailwind without
-  checking SDK 55 compatibility.
+  checking SDK 56 compatibility.
 - Do not use broadcast or multicast discovery. The app uses bounded UDP unicast
   because multicast requires an Apple entitlement that does not fit the free
   sideloading path.
 - Do not put session tokens or trusted-device credentials in discovery packets.
 - Do not display or copy the trusted-device credential in the UI.
 - Do not create upload `Blob`s from `ArrayBuffer` or `ArrayBufferView` on Expo
-  SDK 55. Keep the bounded Base64 compatibility uploader for Expo Go.
+  SDK 56. Keep the bounded Base64 compatibility uploader for Expo Go.
 - Do not start one native operation per selected asset with unbounded
   `Promise.all`.
 - Keep installed-app Photos filename resolution sequential and capped at 250
@@ -165,8 +168,10 @@ npx expo install --fix
   policy in the Swift catalog before export, and never permit implicit iCloud
   downloads.
 - Do not turn a bounded preparation-window size into a session-wide file-count
-  limit. The active ring counts analyzed selected assets during preparation,
-  then visibly resets with a `files` unit for terminal transfer progress. The UI
+  limit. Before overlap begins, the active ring counts analyzed selected assets.
+  During streaming overlap, compact preparation and transfer rows replace the
+  ring without exposing window-local denominators. After preparation finishes,
+  the ring visibly resets with a `files` unit for terminal transfer progress. The UI
   must label the active preparation,
   duplicate-checking, or transfer phase and explain that
   edited renditions, Live Photos, and RAW components can make the file total

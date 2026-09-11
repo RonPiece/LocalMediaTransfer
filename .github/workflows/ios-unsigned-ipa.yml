@@ -34,7 +34,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 45
     env:
       EXPO_PUBLIC_LMT_ENVIRONMENT: ${{ (inputs.build_profile == 'development' && 'test') || inputs.environment || 'production' }}
@@ -53,9 +53,9 @@ jobs:
           cache: npm
           cache-dependency-path: src/LocalMediaTransfer.iOS/package-lock.json
 
-      - name: Select SDK 55-compatible Xcode
+      - name: Select SDK 56-compatible Xcode
         shell: bash
-        run: sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
+        run: sudo xcode-select -s /Applications/Xcode_26.4.app/Contents/Developer
 
       - name: Install JavaScript dependencies
         working-directory: src/LocalMediaTransfer.iOS

@@ -8,6 +8,7 @@ import AppHeader from '@/components/AppHeader';
 import { MediaAsset } from '@/services/MediaScanner';
 import { theme } from '@/theme';
 import { RecentActivityPanel } from './components/RecentActivityPanel';
+import { ConcurrentTransferProgress } from './components/ConcurrentTransferProgress';
 import { TransferPhaseBanner } from './components/TransferPhaseBanner';
 import { TransferProgressRing } from './components/TransferProgressRing';
 import { TransferResultsModal } from './components/TransferResultsModal';
@@ -57,7 +58,6 @@ export default function TransferProgressScreen({
     isFinished,
     phase,
     hasUploadStarted,
-    queueCatchUpVisible,
     preparedFiles,
     readyFiles,
     preparationComplete,
@@ -96,6 +96,10 @@ export default function TransferProgressScreen({
     ? Math.max(0, displayedTotalFiles - processedCount)
     : Math.max(0, assets.length - preparedFiles);
   const progressBytes = currentProgress?.acknowledgedMediaBytes || 0;
+  const streamingOverlapActive = !isFinished
+    && !preparationComplete
+    && activePreparationMode === 'streaming'
+    && hasUploadStarted;
   const selectedBytes = completionSummary?.selectedBytes ?? currentProgress?.totalBytes ?? 0;
   const transferredBytes = completionSummary?.uploadedBytes ?? progressBytes;
   const showRemainingTime = preparationComplete && hasUploadStarted;
@@ -137,32 +141,39 @@ export default function TransferProgressScreen({
           automaticallyStreamsLargeSelection={automaticallyStreamsLargeSelection}
           phase={phase}
           hasUploadStarted={hasUploadStarted}
-          queueCatchUpVisible={queueCatchUpVisible}
-          acknowledgedMediaBytes={progressBytes}
-          currentMediaMBps={currentMediaMBps}
           duplicateCheck={duplicateCheck}
           processedFiles={processedCount}
         />
 
-        <TransferProgressRing
-          size={ringSize}
-          compactHeight={compactHeight}
-          isFinished={isFinished}
-          finalColor={finalColor}
-          completedItems={ringCompleted}
-          totalItems={ringTotal}
-          unit={transferPhaseActive ? 'files' : 'assets'}
-          phaseLabel={isFinished
-            ? 'Transfer complete'
-            : preparationComplete
-              ? 'Files processed'
-              : 'Analyzing media'}
-        />
+        {streamingOverlapActive ? (
+          <ConcurrentTransferProgress
+            preparedAssets={preparedFiles}
+            totalAssets={assets.length}
+            processedFiles={processedCount}
+            compact={compactHeight}
+          />
+        ) : (
+          <TransferProgressRing
+            size={ringSize}
+            compactHeight={compactHeight}
+            isFinished={isFinished}
+            finalColor={finalColor}
+            completedItems={ringCompleted}
+            totalItems={ringTotal}
+            unit={transferPhaseActive ? 'files' : 'assets'}
+            phaseLabel={isFinished
+              ? 'Transfer complete'
+              : preparationComplete
+                ? 'Files processed'
+                : 'Analyzing media'}
+          />
+        )}
 
         {!isFinished && (
           <TransferStatsBar
             itemsRemaining={itemsRemaining}
             remainingLabel={preparationComplete ? transferText.filesLeft : 'Media left to analyze'}
+            transferredBytes={streamingOverlapActive ? progressBytes : undefined}
             currentMediaMBps={currentMediaMBps}
             timeLabel={timeLabel}
             timeText={timeText}

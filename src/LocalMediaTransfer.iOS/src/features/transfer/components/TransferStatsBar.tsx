@@ -2,6 +2,7 @@ import React from 'react';
 import { LayoutChangeEvent, Text, useWindowDimensions, View } from 'react-native';
 
 import { transferText } from '../content/transferText';
+import { formatBytes } from '../transferPresentation';
 
 const SCREEN_HORIZONTAL_PADDING = 48;
 const CARD_HORIZONTAL_INSET = 18;
@@ -9,6 +10,7 @@ const CARD_HORIZONTAL_INSET = 18;
 type TransferStatsBarProps = {
   itemsRemaining: number;
   remainingLabel: string;
+  transferredBytes?: number;
   currentMediaMBps: number;
   timeLabel: string;
   timeText: string;
@@ -22,6 +24,7 @@ export function shouldUseCompactStatsLayout(availableWidth: number, fontScale: n
 export function TransferStatsBar({
   itemsRemaining,
   remainingLabel,
+  transferredBytes,
   currentMediaMBps,
   timeLabel,
   timeText,
@@ -37,18 +40,36 @@ export function TransferStatsBar({
   const measureContent = React.useCallback((event: LayoutChangeEvent) => {
     setMeasuredContentWidth(event.nativeEvent.layout.width);
   }, []);
+  const hasTransferredColumn = transferredBytes !== undefined;
+  const statHorizontalPadding = hasTransferredColumn ? 'px-2' : 'px-3';
+  const valueTextSize = hasTransferredColumn ? 'text-[16px]' : 'text-[18px]';
+  const labelTextSize = hasTransferredColumn ? 'text-[9px]' : 'text-[10px]';
 
   const filesStat = (
-    <View className="flex-1 min-w-0 items-start px-3">
-      <Text className="text-on-surface-variant text-[10px] font-bold uppercase tracking-wider">{remainingLabel}</Text>
-      <Text className="text-on-surface text-[18px] font-semibold mt-1" style={{ fontVariant: ['tabular-nums'] }}>{itemsRemaining.toLocaleString()}</Text>
+    <View className={`flex-1 min-w-0 items-start ${statHorizontalPadding}`}>
+      <Text className={`text-on-surface-variant ${labelTextSize} font-bold uppercase tracking-wider`}>{remainingLabel}</Text>
+      <Text className={`text-on-surface ${valueTextSize} font-semibold mt-1`} style={{ fontVariant: ['tabular-nums'] }}>{itemsRemaining.toLocaleString()}</Text>
     </View>
   );
   const speedStat = (
-    <View className="flex-1 min-w-0 items-start px-3 border-l border-border">
-      <Text className="text-on-surface-variant text-[10px] font-bold uppercase tracking-wider">{transferText.currentSpeed}</Text>
-      <Text className="text-on-surface text-[18px] font-semibold mt-1" style={{ fontVariant: ['tabular-nums'] }}>
-        {currentMediaMBps.toFixed(1)} <Text className="text-[11px]">MB/s</Text>
+    <View className={`flex-1 min-w-0 items-start ${statHorizontalPadding} border-l border-border`}>
+      <Text className={`text-on-surface-variant ${labelTextSize} font-bold uppercase tracking-wider`}>{transferText.currentSpeed}</Text>
+      <Text className={`text-on-surface ${valueTextSize} font-semibold mt-1`} style={{ fontVariant: ['tabular-nums'] }}>
+        {currentMediaMBps.toFixed(1)} <Text className={hasTransferredColumn ? 'text-[10px]' : 'text-[11px]'}>MB/s</Text>
+      </Text>
+    </View>
+  );
+  const transferredStat = transferredBytes === undefined ? null : (
+    <View className={`flex-1 min-w-0 items-start ${statHorizontalPadding} border-l border-border`}>
+      <Text className={`text-on-surface-variant ${labelTextSize} font-bold uppercase tracking-wider`}>Transferred</Text>
+      <Text
+        className={`text-on-surface ${valueTextSize} font-semibold mt-1`}
+        style={{ fontVariant: ['tabular-nums'] }}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.82}
+      >
+        {formatBytes(transferredBytes)}
       </Text>
     </View>
   );
@@ -72,6 +93,7 @@ export function TransferStatsBar({
       <View testID="transfer-stats-content" onLayout={measureContent}>
         <View className="flex-row">
           {filesStat}
+          {transferredStat}
           {speedStat}
           {!compact && timeStat}
         </View>

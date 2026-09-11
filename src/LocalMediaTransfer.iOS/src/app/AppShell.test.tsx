@@ -89,7 +89,7 @@ jest.mock('react-native-safe-area-context', () => {
   };
 });
 
-jest.mock('expo-media-library', () => ({
+jest.mock('expo-media-library/legacy', () => ({
   requestPermissionsAsync: jest.fn().mockResolvedValue({ status: 'granted' }),
   getAssetsAsync: jest.fn().mockResolvedValue({ assets: [], hasNextPage: false, endCursor: '' }),
   getAlbumsAsync: jest.fn().mockResolvedValue([{ id: '1', title: 'Favorites' }]),

@@ -6,8 +6,34 @@ import { NATIVE_FILENAME_BATCH_SIZE, prepareAssetsForUpload } from './upload/pre
 import { api } from '@/api/ApiClient';
 import { nativeCapabilities } from './NativeCapabilities';
 import * as FileSystem from 'expo-file-system/legacy';
-import * as MediaLibrary from 'expo-media-library';
+import * as MediaLibrary from 'expo-media-library/legacy';
 import * as http from 'http';
+
+function loopbackFetch(
+  input: string | URL | Request,
+  init?: RequestInit,
+): Promise<Response> {
+  return new Promise((resolve, reject) => {
+    const request = http.request(String(input), {
+      method: init?.method,
+      headers: init?.headers as http.OutgoingHttpHeaders | undefined,
+    }, response => {
+      const chunks: Buffer[] = [];
+      response.on('data', chunk => chunks.push(Buffer.from(chunk)));
+      response.on('end', () => {
+        const body = Buffer.concat(chunks).toString('utf8');
+        resolve({
+          ok: (response.statusCode ?? 0) >= 200 && (response.statusCode ?? 0) < 300,
+          status: response.statusCode ?? 0,
+          text: async () => body,
+        } as Response);
+      });
+    });
+    request.on('error', reject);
+    if (init?.body) request.write(String(init.body));
+    request.end();
+  });
+}
 
 type UploadManagerHarness = {
   uploadEncodedChunk: jest.Mock;
@@ -98,7 +124,7 @@ jest.mock('@/api/ApiClient', () => ({
   }
 }));
 
-jest.mock('expo-media-library', () => ({
+jest.mock('expo-media-library/legacy', () => ({
   getAssetInfoAsync: jest.fn().mockResolvedValue(null),
   requestPermissionsAsync: jest.fn().mockResolvedValue({ status: 'granted' }),
   getAssetsAsync: jest.fn(),
@@ -167,6 +193,11 @@ describe('UploadManager Integration', () => {
   let failedChunkResponses = 0;
 
   beforeAll((done) => {
+    Object.defineProperty(globalThis, 'fetch', {
+      configurable: true,
+      writable: true,
+      value: loopbackFetch,
+    });
     server = http.createServer((req, res) => {
       if (req.url === '/upload_chunk') {
         receivedChunks++;
@@ -241,7 +272,6 @@ describe('UploadManager Integration', () => {
     const onError = jest.fn();
 
     await manager.uploadFilesConcurrent(assets, { onProgress, onComplete, onError });
-
     expect(onComplete).toHaveBeenCalled();
     expect(receivedChunks).toBe(2);
     expect(FileSystem.readAsStringAsync).toHaveBeenNthCalledWith(1, 'file://real.mp4', expect.objectContaining({ position: 0, length: 4 * 1024 * 1024 }));

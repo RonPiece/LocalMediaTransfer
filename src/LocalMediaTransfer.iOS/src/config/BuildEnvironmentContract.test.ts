@@ -10,6 +10,11 @@ const workflowSource = readFileSync(
   resolve(projectRoot, '../../.github/workflows/ios-unsigned-ipa.yml'),
   'utf8',
 );
+const packageSource = readFileSync(resolve(projectRoot, 'package.json'), 'utf8');
+const nativePodspecSource = readFileSync(
+  resolve(projectRoot, 'modules/local-media-transfer-native/ios/LocalMediaTransferNative.podspec'),
+  'utf8',
+);
 
 describe('iOS build environment contract', () => {
   it('uses the same public environment value for app config and bundled code', () => {
@@ -64,5 +69,14 @@ describe('iOS build environment contract', () => {
     expect(workflowSource).toMatch(
       /if \[\[ "\$LMT_IOS_BUILD_PROFILE" == release \]\]; then\s+if \[\[ ! -f "\$app\/main\.jsbundle" \]\]/,
     );
+  });
+
+  it('uses the SDK 56 native toolchain and deployment floor', () => {
+    expect(packageSource).toContain('"expo": "~56.0.21"');
+    expect(packageSource).toContain('"react-native": "0.85.3"');
+    expect(appConfigSource).toContain("'expo-status-bar'");
+    expect(workflowSource).toContain('runs-on: macos-26');
+    expect(workflowSource).toContain('/Applications/Xcode_26.4.app/Contents/Developer');
+    expect(nativePodspecSource).toContain("s.platforms      = { :ios => '16.4' }");
   });
 });

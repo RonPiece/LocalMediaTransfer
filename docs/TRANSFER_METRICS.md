@@ -52,9 +52,12 @@ telemetry.
   replaceable metrics and snapshot messages are coalesced, capacity is
   reserved for important lifecycle messages, and best-effort logs may be
   dropped if the GUI falls behind.
-- During iOS preparation, the ring represents analyzed Photos assets divided by
-  selected Photos assets. Once expansion is authoritative, that ring visibly
-  changes label/unit and resets to terminal media components (uploaded,
+- Before iOS streaming upload begins, the preparation ring represents analyzed
+  Photos assets divided by selected Photos assets. While preparation and upload
+  overlap, two compact rows keep asset analysis and transfer activity separate;
+  the stats row groups media left, acknowledged bytes, and current speed without
+  exposing bounded-window counters. Once expansion is authoritative, the ring
+  visibly returns, changes label/unit, and resets to terminal media components (uploaded,
   skipped, or failed) divided by the final expanded file count. Preparation or
   preflight failures that are already terminal may make the new phase start
   above zero, but preparation's 100% is never presented as transfer completion.

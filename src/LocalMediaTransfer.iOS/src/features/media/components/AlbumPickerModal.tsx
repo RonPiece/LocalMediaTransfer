@@ -3,7 +3,7 @@ import { FlatList, ListRenderItemInfo, Modal, Text, TouchableOpacity, View } fro
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
-import * as MediaLibrary from 'expo-media-library';
+import * as MediaLibrary from 'expo-media-library/legacy';
 
 import type { IconName } from '@/components/ui';
 import { theme } from '@/theme';

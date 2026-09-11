@@ -88,10 +88,18 @@ separate monotonic metrics.
 - Before the first acknowledged upload, show `Preparing media` or `Checking for
   duplicates` as appropriate.
 - After upload starts, keep the top-level headline stable as `Transferring while
-  preparing`. Show analyzed media count and acknowledged bytes/current speed as
-  simultaneous facts underneath it.
-- Duplicate work remains a secondary staged status while the stable streaming
-  headline is active.
+  preparing media`. Do not place bytes or speed in that headline card.
+- Replace the large preparation ring with two compact, fixed-height rows:
+  preparation shows analyzed selected media and its session-wide percentage;
+  transfer shows its active state and monotonic terminal-file count.
+- Put media left to analyze, acknowledged bytes transferred, and current speed
+  together in the stats row. Do not expose a streaming window's `0 of 16`
+  duplicate counter or other window-local denominator in the normal UI.
+- Duplicate work and queue-capacity transitions remain diagnostic while the
+  stable streaming headline is active so they cannot make the layout jump.
+- When the streaming disclosure is expanded, keep both the storage-protection
+  explanation and the Windows duplicate-decision explanation visible as two
+  stable paragraphs. Do not swap the body when an internal phase changes.
 - Do not expose `Waiting for upload capacity` as a normal phase. If queue
   saturation persists for about one second, show the quiet secondary message
   `Transfer is catching up with prepared files`; hold it briefly on clear to
@@ -102,8 +110,9 @@ separate monotonic metrics.
 
 ### Progress
 
-- During preparation the ring represents analyzed Photos assets divided by
-  selected Photos assets.
+- Before overlapping upload begins, the preparation ring represents analyzed
+  Photos assets divided by selected Photos assets. During overlap, the two
+  compact phase rows carry preparation and transfer separately.
 - After authoritative expansion, the ring resets for the transfer phase and
   represents terminal files divided by expanded transfer entries. Its label and
   unit change with the denominator, so the reset is explicit rather than a false

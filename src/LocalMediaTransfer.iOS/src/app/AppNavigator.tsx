@@ -1,5 +1,5 @@
 import React from 'react';
-import { Animated, Easing } from 'react-native';
+import { Animated, Easing, useAnimatedValue } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -113,7 +113,7 @@ export default function AppNavigator({ navigation, connection, preferences, disc
     onEnableNearbyDiscovery,
     onRefreshDiscovery,
   } = discovery;
-  const transition = React.useRef(new Animated.Value(1)).current;
+  const transition = useAnimatedValue(1);
   const previousState = React.useRef(appState);
 
   React.useLayoutEffect(() => {

@@ -1,19 +1,23 @@
 ---
 name: lmt-expo-ios
-description: Guidelines and historical context for the Local Media Transfer iOS Expo frontend, including SDK 55 requirements and NativeWind fixes.
+description: Guidelines and historical context for the Local Media Transfer iOS Expo frontend, including SDK 56 requirements and NativeWind fixes.
 ---
 
 # Local Media Transfer iOS Agent Guide
 
 This file contains crucial knowledge and historical fixes for the iOS React Native frontend (`src/LocalMediaTransfer.iOS`).
 
-## 1. Expo SDK 55 Checkpoint
+## 1. Expo SDK 56 Checkpoint
 The installed TEST development client is the physical-iPhone development path,
-and the project currently uses **Expo SDK 55** as an explicit migration checkpoint.
-- Keep `expo` and all Expo native packages on the SDK 55-resolved versions in `package.json`.
-- When adding new dependencies, ALWAYS use `npx expo install <package>` so it resolves to the SDK 55 compatible version.
-- Never run generic `npm update` or `npm install` for Expo native packages without verifying SDK 55 compatibility.
+and the project currently uses **Expo SDK 56** as an explicit migration checkpoint.
+- Keep `expo` and all Expo native packages on the SDK 56-resolved versions in `package.json`.
+- When adding new dependencies, ALWAYS use `npx expo install <package>` so it resolves to the SDK 56 compatible version.
+- Never run generic `npm update` or `npm install` for Expo native packages without verifying SDK 56 compatibility.
 - If dependencies drift or crash, use `npx expo install --fix` to strictly realign them.
+- SDK 56 uses React Native 0.85/Hermes V1 and has a known memory regression
+  when importing Worklets/Reanimated. Treat SDK 56 as a short checkpoint and
+  move to SDK 57 after native/device acceptance; do not use a large-media soak
+  run as the first SDK 56 device check.
 
 ## 2. The NativeWind & Tailwind CSS Conflict
 The project uses NativeWind v2 (`^2.0.11`). NativeWind v2 uses synchronous PostCSS plugins.
@@ -22,8 +26,8 @@ The project uses NativeWind v2 (`^2.0.11`). NativeWind v2 uses synchronous PostC
 - If the async error reappears, check `package.json` to ensure `tailwindcss` hasn't been upgraded.
 
 ## 2a. Reanimated Picker Contract
-- The SDK 55 picker uses `react-native-reanimated 4.2.1` with
-  `react-native-worklets 0.7.4`. Install or realign both
+- The SDK 56 picker uses `react-native-reanimated 4.3.1` with
+  `react-native-worklets 0.8.3`. Install or realign both
   with `npx expo install`; do not add a manual Babel plugin for this setup.
 - Jest must mock `react-native-worklets` with its supplied module mock before
   calling Reanimated's `setUpTests`; otherwise Jest attempts native Worklets

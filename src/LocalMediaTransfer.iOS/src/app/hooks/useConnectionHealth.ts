@@ -36,7 +36,6 @@ export function useConnectionHealth({
 
   React.useEffect(() => {
     if (appState !== 'dashboard') {
-      setStatus('idle');
       return;
     }
     let stopped = false;
@@ -72,6 +71,8 @@ export function useConnectionHealth({
       schedule(HEALTH_RETRY_INTERVAL_MS);
     }
 
+    // Entering the dashboard deliberately begins external connection validation.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setStatus('checking');
     void validateConnection();
     const subscription = NativeAppState.addEventListener('change', state => {
@@ -95,5 +96,5 @@ export function useConnectionHealth({
     setManualRetryId(value => value + 1);
   }, []);
 
-  return { status, retryConnection };
+  return { status: appState === 'dashboard' ? status : 'idle', retryConnection };
 }
