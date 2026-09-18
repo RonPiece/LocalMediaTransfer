@@ -128,8 +128,8 @@ export default function MediaPickerScreen({ onTransfer, onDisconnect }: MediaPic
   }, [onTransfer, selectedAssets]);
 
   return (
-    <View className="flex-1 bg-background">
-      <SafeAreaView edges={['top']} className="bg-surface">
+    <View className="flex-1 bg-background dark:bg-background-dark">
+      <SafeAreaView edges={['top']} className="bg-surface dark:bg-surface-dark">
         <AppHeader title="Media Picker" onClose={onDisconnect} closeStyle="back" />
       </SafeAreaView>
 
@@ -160,7 +160,7 @@ export default function MediaPickerScreen({ onTransfer, onDisconnect }: MediaPic
       <GestureDetector gesture={rangePan}>
         <View className="flex-1" collapsable={false}>
           {loading && (
-            <Text className="text-on-surface-variant text-center py-2">Loading media…</Text>
+            <Text className="text-on-surface-variant dark:text-on-surface-variant-dark text-center py-2">Loading media…</Text>
           )}
           <GestureDetector gesture={nativeScrollGesture}>
             <Animated.FlatList
@@ -179,7 +179,7 @@ export default function MediaPickerScreen({ onTransfer, onDisconnect }: MediaPic
               contentContainerStyle={gridContentStyle}
               {...MEDIA_GRID_VIRTUALIZATION}
               ListFooterComponent={loadingMore ? (
-                <Text className="text-on-surface-variant text-center py-4">Loading more…</Text>
+                <Text className="text-on-surface-variant dark:text-on-surface-variant-dark text-center py-4">Loading more…</Text>
               ) : null}
             />
           </GestureDetector>

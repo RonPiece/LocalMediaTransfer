@@ -128,6 +128,7 @@ $OutputDir = Join-Path $ScriptDir "output"
 $StagingRoot = Join-Path $ScriptDir "staging"
 $AppStage = Join-Path $StagingRoot "app"
 $ServerStage = Join-Path $AppStage "server"
+$UninstallSupportStage = Join-Path $AppStage "uninstall-support"
 $SetupScript = Join-Path $ScriptDir "setup.iss"
 
 New-Item -ItemType Directory -Path $OutputDir -Force | Out-Null
@@ -182,6 +183,7 @@ Write-Host "[2/4] Creating clean installer staging folder..." -ForegroundColor C
 New-CleanDirectory -Path $StagingRoot
 New-Item -ItemType Directory -Path $AppStage -Force | Out-Null
 New-Item -ItemType Directory -Path $ServerStage -Force | Out-Null
+New-Item -ItemType Directory -Path $UninstallSupportStage -Force | Out-Null
 Write-Host "OK: Staging folder prepared" -ForegroundColor Green
 Write-Host ""
 
@@ -204,21 +206,15 @@ if (-not $SkipBuild) {
 }
 else {
     Write-Host "[3/4] GUI publish skipped; copying existing Release publish output..." -ForegroundColor Yellow
-    $ExistingGuiExe = Get-ChildItem `
-        -Path (Join-Path $RepoRoot "src\LocalMediaTransfer.GUI\bin\x64\Release") `
-        -Recurse `
-        -Filter "LocalMediaTransfer.GUI.exe" `
-        -File `
-        -ErrorAction SilentlyContinue |
-        Sort-Object LastWriteTime -Descending |
-        Select-Object -First 1
-
-    if (-not $ExistingGuiExe) {
+    $ExistingGuiExe = Join-Path $GuiReleaseRuntime "LocalMediaTransfer.GUI.exe"
+    if (-not (Test-Path -LiteralPath $ExistingGuiExe -PathType Leaf)) {
         throw "No existing Release GUI executable found. Run without -SkipBuild first."
     }
 
-    Copy-Item -Path (Join-Path $ExistingGuiExe.DirectoryName "*") -Destination $AppStage -Recurse -Force
-    Write-Host "Copied GUI output from: $($ExistingGuiExe.DirectoryName)"
+    Get-ChildItem -LiteralPath $GuiReleaseRuntime -Force |
+        Where-Object { $_.Name -ne "publish" } |
+        Copy-Item -Destination $AppStage -Recurse -Force
+    Write-Host "Copied GUI output from: $GuiReleaseRuntime"
 }
 
 $GuiExe = Join-Path $AppStage "LocalMediaTransfer.GUI.exe"
@@ -251,6 +247,17 @@ Copy-Item -Path (Join-Path $ServerBin "*") -Destination $ServerStage -Recurse -F
 Assert-File -Path (Join-Path $ServerStage "LocalMediaTransferServer.exe") -Description "Staged server executable"
 Assert-File -Path (Join-Path $ServerStage "static\index.html") -Description "Staged web UI"
 Write-Host "OK: Server runtime staged" -ForegroundColor Green
+Write-Host ""
+
+$InstalledProcessShutdown = Join-Path $ScriptDir "InstalledProcessShutdown.cs"
+$StopInstalledProcesses = Join-Path $ScriptDir "stop-installed-processes.ps1"
+Assert-File -Path $InstalledProcessShutdown -Description "Installed-process shutdown helper"
+Assert-File -Path $StopInstalledProcesses -Description "Installed-process shutdown script"
+Copy-Item -LiteralPath $InstalledProcessShutdown -Destination $UninstallSupportStage -Force
+Copy-Item -LiteralPath $StopInstalledProcesses -Destination $UninstallSupportStage -Force
+Assert-File -Path (Join-Path $UninstallSupportStage "InstalledProcessShutdown.cs") -Description "Staged installed-process shutdown helper"
+Assert-File -Path (Join-Path $UninstallSupportStage "stop-installed-processes.ps1") -Description "Staged installed-process shutdown script"
+Write-Host "OK: Uninstall support staged" -ForegroundColor Green
 Write-Host ""
 
 $LicenseBundleScript = Join-Path $ScriptDir "New-ThirdPartyLicenseBundle.ps1"

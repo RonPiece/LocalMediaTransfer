@@ -73,6 +73,31 @@ describe('ApiClient dashboard contracts', () => {
     expect(onUnauthorized).toHaveBeenCalledTimes(1);
   });
 
+  it('parses cancellation status and detailed receiver-history metrics', async () => {
+    jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: jest.fn().mockResolvedValue([{
+        sessionId: 'cancelled-session',
+        completionStatus: 'cancelled',
+        checkDurationMs: 8_000,
+        uploadDurationMs: 380_000,
+        retries: 2,
+      }]),
+    } as unknown as Response);
+    const client = new ApiClient('http://192.168.1.2:8080', 'secret', 'production');
+
+    await expect(client.getHistory()).resolves.toEqual([
+      expect.objectContaining({
+        sessionId: 'cancelled-session',
+        completionStatus: 'cancelled',
+        checkDurationMs: 8_000,
+        uploadDurationMs: 380_000,
+        retries: 2,
+      }),
+    ]);
+  });
+
   it('does not treat pairing request denial as a saved-credential auth failure', async () => {
     jest.spyOn(global, 'fetch').mockResolvedValue({
       ok: false,

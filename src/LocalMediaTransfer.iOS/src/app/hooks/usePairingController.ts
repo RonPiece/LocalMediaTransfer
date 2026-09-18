@@ -57,7 +57,8 @@ export function parseSavedConnection(value: string | null): SavedConnection | nu
       typeof candidate.httpsUrl !== 'string' || !candidate.httpsUrl.startsWith('https://') ||
       typeof candidate.certificateFingerprint !== 'string' ||
       normalizeFingerprint(candidate.certificateFingerprint).length !== 64 ||
-      (candidate.httpUrl !== undefined && !candidate.httpUrl.startsWith('http://'))
+      (candidate.httpUrl !== undefined && !candidate.httpUrl.startsWith('http://')) ||
+      (candidate.name !== undefined && typeof candidate.name !== 'string')
     ) {
       return null;
     }
@@ -116,7 +117,7 @@ export function usePairingController({
 
   const openQrScanner = React.useCallback(() => {
     connectionAttemptRef.current = false;
-    setAppState('connection');
+    setAppState('connect');
     setIsConnecting(false);
     setPairingDesktopName(null);
     setTimeout(requestQrScan, 500);
@@ -195,6 +196,7 @@ export function usePairingController({
             httpsUrl: url,
             httpUrl: pairing.httpUrl,
             certificateFingerprint: normalizeFingerprint(pairing.certificateFingerprint),
+            name: pairing.name,
           };
           await AsyncStorage.setItem(connectionStorageKeys.lastServer(), JSON.stringify(saved));
           const state = await nativeCapabilities.securityState();
@@ -205,7 +207,7 @@ export function usePairingController({
       } else {
         markHttpConnected();
       }
-      setAppState('dashboard');
+      setAppState('home');
       return true;
     } catch (error) {
       api.setConfig('', '');
@@ -308,7 +310,7 @@ export function usePairingController({
       api.setConfig('', '');
       nativeCapabilities.clearSecureConnection();
       markDisconnected();
-      setAppState('connection');
+      setAppState('connect');
       showAlertOnce('HTTP connection closed', 'Unencrypted HTTP was turned off, so the current HTTP desktop connection was disconnected. Reconnect with encrypted HTTPS or enable HTTP again for compatibility.');
     }
   }, [confirmOnce, connectionSecurity.mode, markDisconnected, nativeHttpsAvailable, persistAllowInsecureHttp, setAppState, showAlertOnce]);

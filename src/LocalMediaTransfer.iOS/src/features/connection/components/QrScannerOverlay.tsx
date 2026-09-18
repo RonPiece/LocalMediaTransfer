@@ -1,29 +1,42 @@
 import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Modal, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { CameraView } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { initialWindowMetrics } from 'react-native-safe-area-context';
 import { connectionText } from '../content/connectionText';
 import { theme } from '@/theme';
 
-export function QrScannerOverlay({
+export function qrScannerControlsTop(
+  initialTopInset = initialWindowMetrics?.insets.top ?? 0,
+  platform = Platform.OS,
+): number {
+  return Math.max(initialTopInset, platform === 'ios' ? 44 : 0) + 12;
+}
+
+function QrScannerContent({
   onClose,
   onBarcodeScanned,
 }: {
   onClose: () => void;
   onBarcodeScanned: ({ data }: { data: string }) => void;
 }) {
+  const controlsTop = qrScannerControlsTop();
+
   return (
-    <SafeAreaView className="flex-1 bg-black">
-      <View className="flex-1">
+    <View className="flex-1 bg-black">
         <CameraView
           style={StyleSheet.absoluteFill}
           facing="back"
           barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
           onBarcodeScanned={onBarcodeScanned}
         />
-        <View className="absolute top-4 left-4 right-4 flex-row justify-between items-center z-10">
+        <View
+          testID="qr-scanner-controls"
+          className="absolute left-4 right-4 flex-row justify-between items-center z-10"
+          style={{ top: controlsTop }}
+        >
           <TouchableOpacity
+            testID="qr-scanner-close"
             accessibilityRole="button"
             accessibilityLabel="Close QR scanner"
             onPress={onClose}
@@ -39,7 +52,20 @@ export function QrScannerOverlay({
         <View style={StyleSheet.absoluteFill} className="items-center justify-center" pointerEvents="none">
           <View className="w-60 h-60 rounded-2xl border-2 border-primary" />
         </View>
-      </View>
-    </SafeAreaView>
+    </View>
+  );
+}
+
+export function QrScannerOverlay({
+  onClose,
+  onBarcodeScanned,
+}: {
+  onClose: () => void;
+  onBarcodeScanned: ({ data }: { data: string }) => void;
+}) {
+  return (
+    <Modal visible animationType="fade" presentationStyle="fullScreen" statusBarTranslucent onRequestClose={onClose}>
+      <QrScannerContent onClose={onClose} onBarcodeScanned={onBarcodeScanned} />
+    </Modal>
   );
 }

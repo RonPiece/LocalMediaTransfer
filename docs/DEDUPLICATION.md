@@ -113,7 +113,10 @@ Normal user history is stored separately from benchmark telemetry at:
 ```
 
 The latest 200 sessions retain selected assets, expanded files, outcome/byte
-totals, phase timing, retries, average/peak payload rate, and per-file outcomes.
+totals, phase timing, retries, average/peak payload rate, explicit completion
+status (`completed`, `mixed`, `cancelled`, or `fatal`), and per-file outcomes.
+An iPhone cancellation records the real partial aggregates reached before
+cleanup rather than disappearing from history.
 Skipped records include incoming name, matched filename, preflight/outgoing/
 finalization stage, and actually avoided bytes. A finalization duplicate records
 zero avoided bytes because its payload already crossed the network. Session

@@ -64,6 +64,7 @@ export type TransferHistoryPayload = {
   averageSpeedMBps: number;
   peakSpeedMBps: number;
   retries: number;
+  completionStatus: 'completed' | 'mixed' | 'cancelled' | 'fatal';
   files: TransferHistoryFile[];
 };
 
@@ -75,6 +76,8 @@ export type TransferHistoryItem = {
   failedFiles?: number;
   averageSpeedMBps?: number;
   peakSpeedMBps?: number;
+  selectedFiles?: number;
+  totalDurationMs?: number;
   selectedAssets?: number;
   expandedFiles?: number;
   selectedBytes?: number;
@@ -86,6 +89,10 @@ export type TransferHistoryItem = {
   skippedBytes?: number;
   avoidedBytes?: number;
   finalizationDuplicateBytes?: number;
+  checkDurationMs?: number;
+  uploadDurationMs?: number;
+  retries?: number;
+  completionStatus?: 'completed' | 'mixed' | 'cancelled' | 'fatal';
   files?: TransferHistoryFile[];
 };
 

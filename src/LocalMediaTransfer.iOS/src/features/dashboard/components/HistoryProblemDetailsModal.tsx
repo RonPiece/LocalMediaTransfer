@@ -17,19 +17,19 @@ function formatBytes(value = 0): string {
 function HistoryProblemFile({ file }: { file: TransferHistoryFile }) {
   const skipped = file.outcome === 'skipped';
   return (
-    <View className="flex-row py-3 border-b border-border">
+    <View className="flex-row py-3 border-b border-border dark:border-border-dark">
       <Ionicons
         name={skipped ? 'play-skip-forward-outline' : 'alert-circle-outline'}
         size={20}
         color={skipped ? theme.colors.warning : theme.colors.error}
       />
       <View className="ml-3 flex-1">
-        <Text className="text-[14px] text-on-surface" numberOfLines={2}>
+        <Text className="text-[14px] text-on-surface dark:text-on-surface-dark" numberOfLines={2}>
           {skipped
             ? `${file.name} matched ${file.matchedName || file.savedName || 'an existing file'}`
             : file.name}
         </Text>
-        <Text className="text-[12px] text-on-surface-variant mt-1">
+        <Text className="text-[12px] text-on-surface-variant dark:text-on-surface-variant-dark mt-1">
           {skipped
             ? `${formatBytes(file.avoidedBytes)} avoided · ${file.duplicateStage === 'finalization' ? 'verified after upload' : 'found before upload'}`
             : `Failed${file.error ? ` · ${file.error}` : ''}`}
@@ -53,8 +53,8 @@ export function HistoryProblemDetailsModal({
   return (
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <SafeAreaProvider>
-        <View className="flex-1 bg-background">
-          <SafeAreaView edges={['top']} className="bg-surface">
+        <View className="flex-1 bg-background dark:bg-background-dark">
+          <SafeAreaView edges={['top']} className="bg-surface dark:bg-surface-dark">
             <AppHeader title="Problem Files" onClose={onClose} closeStyle="back" />
           </SafeAreaView>
           <FlatList
@@ -66,8 +66,8 @@ export function HistoryProblemDetailsModal({
             windowSize={7}
             contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 28 }}
             ListHeaderComponent={omitted > 0 ? (
-              <View className="my-3 rounded-xl border border-border bg-surface p-3">
-                <Text className="text-[13px] text-on-surface-variant">
+              <View className="my-3 rounded-xl border border-border dark:border-border-dark bg-surface dark:bg-surface-dark p-3">
+                <Text className="text-[13px] text-on-surface-variant dark:text-on-surface-variant-dark">
                   Showing {files.length.toLocaleString()} of {totalProblems.toLocaleString()} problem files. The transfer totals above remain complete.
                 </Text>
               </View>

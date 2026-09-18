@@ -2,7 +2,7 @@ import React from 'react';
 import { Text, View } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 
-import { theme } from '@/theme';
+import { useThemePalette } from '@/theme';
 
 type TransferProgressRingProps = {
   size: number;
@@ -25,6 +25,7 @@ export function TransferProgressRing({
   phaseLabel,
   compactHeight = false,
 }: TransferProgressRingProps) {
+  const palette = useThemePalette();
   const strokeWidth = 10;
   const radius = (size - strokeWidth) / 2;
   const circumference = radius * 2 * Math.PI;
@@ -53,13 +54,13 @@ export function TransferProgressRing({
           width: size,
           height: size,
           borderRadius: size / 2,
-          backgroundColor: theme.colors.surface,
+          backgroundColor: palette.surface,
         }}
       >
         <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-          <Circle stroke={theme.colors.progressTrack} fill="transparent" cx={size / 2} cy={size / 2} r={radius} strokeWidth={strokeWidth} />
+          <Circle stroke={palette.progressTrack} fill="transparent" cx={size / 2} cy={size / 2} r={radius} strokeWidth={strokeWidth} />
           <Circle
-            stroke={isFinished ? finalColor : theme.colors.success}
+            stroke={isFinished ? finalColor : palette.success}
             fill="transparent"
             cx={size / 2}
             cy={size / 2}
@@ -75,15 +76,15 @@ export function TransferProgressRing({
           className="absolute items-center justify-center"
           style={{ width: Math.max(0, size - strokeWidth * 5) }}
         >
-          <Text className="text-on-surface-variant text-[11px] font-semibold mb-1" numberOfLines={1}>
+          <Text className="text-on-surface-variant dark:text-on-surface-variant-dark text-[11px] font-semibold mb-1" numberOfLines={1}>
             {phaseLabel}
           </Text>
-          <Text className="text-on-surface text-4xl font-bold tracking-tighter">
+          <Text className="text-on-surface dark:text-on-surface-dark text-4xl font-bold tracking-tighter">
             {isFinished ? '100' : Math.floor(progressPercent)}%
           </Text>
           <Text
             testID="transfer-progress-count"
-            className="text-on-surface-variant font-mono mt-1 text-center"
+            className="text-on-surface-variant dark:text-on-surface-variant-dark font-mono mt-1 text-center"
             style={{
               fontSize: countFontSize,
               lineHeight: countFontSize + 3,
@@ -95,7 +96,7 @@ export function TransferProgressRing({
           </Text>
           <Text
             testID="transfer-progress-unit"
-            className="text-on-surface-variant text-[11px] font-semibold leading-4 text-center"
+            className="text-on-surface-variant dark:text-on-surface-variant-dark text-[11px] font-semibold leading-4 text-center"
           >
             {unit}
           </Text>

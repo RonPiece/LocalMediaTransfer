@@ -35,7 +35,7 @@ export function useConnectionHealth({
   const [manualRetryId, setManualRetryId] = React.useState(0);
 
   React.useEffect(() => {
-    if (appState !== 'dashboard') {
+    if (appState === 'connect' || appState === 'picker' || appState === 'transfer') {
       return;
     }
     let stopped = false;
@@ -96,5 +96,8 @@ export function useConnectionHealth({
     setManualRetryId(value => value + 1);
   }, []);
 
-  return { status: appState === 'dashboard' ? status : 'idle', retryConnection };
+  return {
+    status: appState === 'connect' || appState === 'picker' || appState === 'transfer' ? 'idle' : status,
+    retryConnection,
+  };
 }

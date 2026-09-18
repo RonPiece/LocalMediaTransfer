@@ -1464,6 +1464,11 @@ describe('UploadManager Integration', () => {
     expect(api.cancelUploadSession).toHaveBeenCalledWith(
       expect.stringMatching(/^ios-\d+$/),
     );
+    expect(api.transferHistory).toHaveBeenCalledWith(expect.objectContaining({
+      completionStatus: 'cancelled',
+      selectedAssets: 1,
+      uploadedFiles: 0,
+    }));
     const sessionRef = (nativeCapabilities.beginTransfer as jest.Mock).mock.calls[0][0];
     expect(nativeCapabilities.endTransfer).toHaveBeenCalledWith(sessionRef);
   });

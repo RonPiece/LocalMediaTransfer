@@ -146,6 +146,23 @@ describe('TransferProgressScreen', () => {
     expect(screen.getByText('Average speed')).toBeTruthy();
     expect(screen.getByText('Peak speed')).toBeTruthy();
     expect(screen.getByText('1.0 MB')).toBeTruthy();
+    expect(screen.queryByTestId('transfer-progress-ring')).toBeNull();
+    expect(screen.getByLabelText('Done')).toBeTruthy();
+  });
+
+  it('leaves protected-navigation copy to the tab bar and explains optional file expansion', async () => {
+    (uploadManager.uploadFilesConcurrent as jest.Mock).mockImplementation(() => new Promise(() => {}));
+    const screen = render(
+      <TransferProgressScreen
+        assets={mockAssets}
+        includeAdditionalMediaComponents
+        onCancel={jest.fn()}
+        onComplete={jest.fn()}
+      />,
+    );
+
+    expect(screen.queryByText('Other screens are unavailable while this transfer is active.')).toBeNull();
+    expect(screen.getByText('Extra files may be added as additional media components are discovered.')).toBeTruthy();
   });
 
   it('moves incomplete-size guidance into errors and exposes every affected filename', async () => {
@@ -284,8 +301,8 @@ describe('TransferProgressScreen', () => {
 
     expect(await screen.findByText('Preparing media')).toBeTruthy();
     await waitFor(() => expect(screen.getByText('1 of 2 media items analyzed')).toBeTruthy());
-    fireEvent.press(screen.getByLabelText('Preparing media. 1 of 2 media items analyzed. Show details'));
-    expect(screen.getByText(/Upload begins after all selected media is ready/)).toBeTruthy();
+    expect(screen.getByText('Transferring files')).toBeTruthy();
+    expect(screen.getByText('Waiting for prepared media')).toBeTruthy();
     expect(screen.getByText('1 / 2')).toBeTruthy();
     expect(screen.getByText('assets')).toBeTruthy();
 
@@ -308,10 +325,8 @@ describe('TransferProgressScreen', () => {
     });
 
     expect(await screen.findByText('Transferring files')).toBeTruthy();
-    expect(screen.getByText('3 files remaining')).toBeTruthy();
-    fireEvent.press(screen.getByLabelText('Transferring files. 3 files remaining. Hide details'));
-    fireEvent.press(screen.getByLabelText('Transferring files. 3 files remaining. Show details'));
-    expect(screen.getByText('2 selected Photos items produced 3 transfer entries. 3 files were prepared.')).toBeTruthy();
+    await waitFor(() => expect(screen.getByText('2 media items analyzed')).toBeTruthy());
+    expect(screen.getByText('Waiting for prepared media')).toBeTruthy();
     expect(screen.getByText('Files processed')).toBeTruthy();
     expect(screen.getByText('0 / 3')).toBeTruthy();
     expect(screen.getByText('files')).toBeTruthy();
@@ -332,10 +347,9 @@ describe('TransferProgressScreen', () => {
     );
 
     expect(await screen.findByText('Preparing media')).toBeTruthy();
-    fireEvent.press(screen.getByLabelText('Preparing media. 0 of 2 media items analyzed. Show details'));
-    expect(screen.getByText(
-      'Media selected ✓ · Prepare and check · Transfer. In this mode, preparation and transfer overlap while the final size is determined.',
-    )).toBeTruthy();
+    expect(screen.getByText('0 of 2 media items analyzed')).toBeTruthy();
+    expect(screen.getByText('Transferring files')).toBeTruthy();
+    expect(screen.getByText('Waiting for prepared media')).toBeTruthy();
     expect(uploadManager.uploadFilesConcurrent).toHaveBeenCalledWith(
       mockAssets,
       expect.any(Object),
@@ -426,13 +440,12 @@ describe('TransferProgressScreen', () => {
       />,
     );
 
-    expect(await screen.findByText('Transferring while preparing media')).toBeTruthy();
     expect(screen.queryByText('Waiting for upload capacity')).toBeNull();
     expect(await screen.findByTestId('concurrent-transfer-progress')).toBeTruthy();
     expect(screen.queryByTestId('transfer-progress-ring')).toBeNull();
     expect(screen.getByText('Preparing media')).toBeTruthy();
     expect(screen.getByText('Transferring files')).toBeTruthy();
-    expect(await screen.findByText('1 of 2 media items analyzed')).toBeTruthy();
+    expect(await screen.findByText('Finding possible matches')).toBeTruthy();
     expect(screen.getByText('Media left to analyze')).toBeTruthy();
     expect(screen.getByText('Transferred')).toBeTruthy();
     expect(screen.getByText('Speed')).toBeTruthy();
@@ -442,13 +455,7 @@ describe('TransferProgressScreen', () => {
     expect(screen.getByText('Elapsed')).toBeTruthy();
     expect(screen.queryByText('Time remaining')).toBeNull();
 
-    fireEvent.press(screen.getByLabelText('Transferring while preparing media. Show details'));
-    expect(screen.getByText(
-      'To protect iPhone storage, this large selection automatically uses Transfer while preparing. Prepared files upload and release while later items are analyzed.',
-    )).toBeTruthy();
-    expect(screen.getByText(
-      'Possible matches are checked before upload. Windows makes the final duplicate decision.',
-    )).toBeTruthy();
+    expect(screen.getByText('0 of 2 files completed')).toBeTruthy();
   });
 
   it('shows truthful duplicate-check stages before upload without technical hash wording', async () => {
@@ -484,8 +491,9 @@ describe('TransferProgressScreen', () => {
       <TransferProgressScreen assets={mockAssets} onCancel={jest.fn()} onComplete={jest.fn()} />,
     );
 
-    expect(await screen.findByText('Checking for duplicates')).toBeTruthy();
-    expect(screen.getByText('Verifying matches on Windows · 200 of 388 checked · 188 remaining')).toBeTruthy();
+    expect(await screen.findByText('Preparing media')).toBeTruthy();
+    await waitFor(() => expect(screen.getByText('Verifying matches on Windows')).toBeTruthy());
+    expect(screen.getByText('Waiting for prepared media')).toBeTruthy();
     expect(screen.queryByText(/SHA-256/)).toBeNull();
   });
 

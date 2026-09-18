@@ -56,13 +56,12 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Name: "firewall"; Description: "Add private-network firewall exceptions for local-device transfers"; GroupDescription: "{cm:AdditionalIcons}"
 
 [Files]
-Source: "InstalledProcessShutdown.cs"; DestDir: "{app}\uninstall-support"; Flags: ignoreversion
-Source: "stop-installed-processes.ps1"; DestDir: "{app}\uninstall-support"; Flags: ignoreversion
 ; Staged layout:
 ;   {app}\LocalMediaTransfer.GUI.exe
 ;   {app}\Assets\...
 ;   {app}\server\LocalMediaTransferServer.exe
 ;   {app}\server\static\...
+;   {app}\uninstall-support\...
 Source: "{#StagingDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]

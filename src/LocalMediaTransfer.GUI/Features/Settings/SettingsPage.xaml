@@ -49,7 +49,7 @@
 
                 <StackPanel Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" Spacing="2">
                     <TextBlock Text="Storage" Style="{StaticResource LmtSectionTitleTextStyle}" />
-                    <TextBlock Text="Choose where files are saved and how duplicate names are handled."
+                    <TextBlock Text="Choose where files are saved and how same-name conflicts are handled."
                                Style="{StaticResource LmtSectionSubtitleTextStyle}" />
                 </StackPanel>
 

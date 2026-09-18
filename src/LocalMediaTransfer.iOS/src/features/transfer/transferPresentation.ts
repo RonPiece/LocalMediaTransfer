@@ -6,8 +6,12 @@ export type FileStatus = 'pending' | 'uploading' | 'success' | 'error' | 'skippe
 
 export interface FileState {
   id: string;
+  assetId?: string;
   filename: string;
   status: FileStatus;
+  thumbnailUri?: string;
+  mediaType?: 'photo' | 'video';
+  sizeBytes?: number;
   msg?: string;
   mediaRole?: MediaVariantRole;
   componentSemantics?: MediaComponentSemantics;

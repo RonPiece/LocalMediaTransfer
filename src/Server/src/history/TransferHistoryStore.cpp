@@ -92,7 +92,8 @@ void TransferHistoryStore::open(const std::string& dbPath) {
             " peak_speed_mbps REAL NOT NULL,"
             " retries INTEGER NOT NULL,"
             " selected_assets INTEGER NOT NULL DEFAULT 0,"
-            " expanded_files INTEGER NOT NULL DEFAULT 0"
+            " expanded_files INTEGER NOT NULL DEFAULT 0,"
+            " completion_status TEXT NOT NULL DEFAULT 'completed'"
             ");"
             "CREATE TABLE IF NOT EXISTS session_files("
             " session_id TEXT NOT NULL,"
@@ -108,7 +109,7 @@ void TransferHistoryStore::open(const std::string& dbPath) {
             " FOREIGN KEY(session_id) REFERENCES sessions(session_id)"
             " ON DELETE CASCADE"
             ");"
-            "PRAGMA user_version=4;")) {
+            "PRAGMA user_version=5;")) {
         throw std::runtime_error("Unable to initialize transfer history schema");
     }
     if (!historyColumnExists(m_db, "sessions", "selected_assets")) {
@@ -143,6 +144,10 @@ void TransferHistoryStore::open(const std::string& dbPath) {
         execHistorySql(m_db,
             "ALTER TABLE sessions ADD COLUMN additional_components_files INTEGER NOT NULL DEFAULT 0;");
     }
+    if (!historyColumnExists(m_db, "sessions", "completion_status")) {
+        execHistorySql(m_db,
+            "ALTER TABLE sessions ADD COLUMN completion_status TEXT NOT NULL DEFAULT 'completed';");
+    }
     if (!historyColumnExists(m_db, "session_files", "matched_name")) {
         execHistorySql(m_db,
             "ALTER TABLE session_files ADD COLUMN matched_name TEXT NOT NULL DEFAULT '';" );
@@ -155,7 +160,7 @@ void TransferHistoryStore::open(const std::string& dbPath) {
         execHistorySql(m_db,
             "ALTER TABLE session_files ADD COLUMN avoided_bytes INTEGER NOT NULL DEFAULT 0;" );
     }
-    execHistorySql(m_db, "PRAGMA user_version=4;");
+    execHistorySql(m_db, "PRAGMA user_version=5;");
 }
 
 void TransferHistoryStore::recordSession(
@@ -182,8 +187,9 @@ void TransferHistoryStore::recordSession(
         "selected_media_files,additional_components_files,"
         "avoided_bytes,finalization_duplicate_bytes,"
         "check_duration_ms,upload_duration_ms,total_duration_ms,"
-        "average_speed_mbps,peak_speed_mbps,retries,selected_assets,expanded_files)"
-        " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);",
+        "average_speed_mbps,peak_speed_mbps,retries,selected_assets,expanded_files,"
+        "completion_status)"
+        " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);",
         -1,
         &session,
         nullptr);
@@ -224,6 +230,9 @@ void TransferHistoryStore::recordSession(
     sqlite3_bind_int(session, column++, payload.value("selectedAssets", 0));
     sqlite3_bind_int(session, column++, payload.value(
         "expandedFiles", payload.value("selectedFiles", 0)));
+    const std::string completionStatus = payload.value("completionStatus", "completed");
+    sqlite3_bind_text(
+        session, column++, completionStatus.c_str(), -1, SQLITE_TRANSIENT);
     if (sqlite3_step(session) != SQLITE_DONE) {
         sqlite3_finalize(session);
         execHistorySql(m_db, "ROLLBACK;");
@@ -287,7 +296,7 @@ std::string TransferHistoryStore::recentSessionsJson(int limit) const {
         "uploaded_bytes,skipped_bytes,avoided_bytes,finalization_duplicate_bytes,"
         "check_duration_ms,upload_duration_ms,"
         "total_duration_ms,average_speed_mbps,peak_speed_mbps,retries,"
-        "selected_assets,expanded_files "
+        "selected_assets,expanded_files,completion_status "
         "FROM sessions ORDER BY completed_at DESC LIMIT ?;",
         -1,
         &statement,
@@ -346,6 +355,7 @@ std::string TransferHistoryStore::recentSessionsJson(int limit) const {
             {"retries", sqlite3_column_int(statement, 21)},
             {"selectedAssets", sqlite3_column_int(statement, 22)},
             {"expandedFiles", sqlite3_column_int(statement, 23)},
+            {"completionStatus", reinterpret_cast<const char*>(sqlite3_column_text(statement, 24))},
             {"files", files}
         });
     }

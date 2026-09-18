@@ -2,7 +2,7 @@ import React from 'react';
 import { Modal, Pressable, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-import { theme } from '@/theme';
+import { useThemePalette } from '@/theme';
 
 export const LARGE_TRANSFER_ITEM_THRESHOLD = 2000;
 export const largeTransferGuidance =
@@ -20,6 +20,7 @@ export const FloatingTransferBar = React.memo(function FloatingTransferBar({
   onTransfer,
 }: FloatingTransferBarProps) {
   const [informationOpen, setInformationOpen] = React.useState(false);
+  const palette = useThemePalette();
   if (selectedCount === 0) return null;
   const isLargeTransfer = selectedCount >= LARGE_TRANSFER_ITEM_THRESHOLD;
 
@@ -39,9 +40,9 @@ export const FloatingTransferBar = React.memo(function FloatingTransferBar({
             disabled={disabled}
             onPress={onTransfer}
             className="flex-1 rounded-2xl h-14 flex-row items-center justify-center px-5 shadow-lg shadow-black/40"
-            style={{ backgroundColor: disabled ? theme.colors.onSurfaceVariant : theme.colors.primary }}
+            style={{ backgroundColor: disabled ? palette.disabledFill : palette.primary }}
           >
-            <Ionicons name="arrow-forward-outline" size={20} color={theme.colors.white} />
+            <Ionicons name="arrow-forward-outline" size={20} color={palette.white} />
             <Text className="text-on-primary text-lg font-semibold ml-2">
               {disabled ? 'Preparing…' : `Transfer ${selectedCount.toLocaleString()} Files`}
             </Text>
@@ -50,9 +51,9 @@ export const FloatingTransferBar = React.memo(function FloatingTransferBar({
             accessibilityRole="button"
             accessibilityLabel="Large transfer information"
             onPress={() => setInformationOpen(true)}
-            className="ml-2 h-14 w-14 rounded-2xl bg-surface border border-border items-center justify-center"
+            className="ml-2 h-14 w-14 rounded-2xl bg-surface dark:bg-surface-dark border border-border dark:border-border-dark items-center justify-center"
           >
-            <Ionicons name="information-circle-outline" size={25} color={theme.colors.primary} />
+            <Ionicons name="information-circle-outline" size={25} color={palette.primary} />
           </TouchableOpacity>
         </View>
       </View>
@@ -69,14 +70,14 @@ export const FloatingTransferBar = React.memo(function FloatingTransferBar({
         >
           <Pressable
             accessibilityViewIsModal
-            className="bg-surface rounded-3xl p-6"
+            className="bg-surface dark:bg-surface-dark rounded-3xl p-6"
             onPress={event => event.stopPropagation()}
           >
             <View className="flex-row items-center mb-3">
-              <Ionicons name="thermometer-outline" size={24} color={theme.colors.warning} />
-              <Text className="text-on-surface text-xl font-bold ml-2">Large transfers</Text>
+              <Ionicons name="thermometer-outline" size={24} color={palette.warning} />
+              <Text className="text-on-surface dark:text-on-surface-dark text-xl font-bold ml-2">Large transfers</Text>
             </View>
-            <Text className="text-on-surface-variant text-[15px] leading-6">
+            <Text className="text-on-surface-variant dark:text-on-surface-variant-dark text-[15px] leading-6">
               {largeTransferGuidance}
             </Text>
             <TouchableOpacity

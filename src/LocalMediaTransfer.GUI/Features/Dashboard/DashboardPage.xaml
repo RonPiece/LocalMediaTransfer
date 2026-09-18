@@ -52,6 +52,11 @@
                                 Content="Pair a Windows computer"
                                 Click="PairWindows_Click"
                                 AutomationProperties.Name="Open Windows computer pairing for two minutes" />
+                        <Button x:Name="CloseWindowsPairingButton"
+                                Content="Close pairing"
+                                Click="CloseWindowsPairing_Click"
+                                Visibility="Collapsed"
+                                AutomationProperties.Name="Close Windows computer pairing now" />
                         <ToggleSwitch x:Name="NearbyReceiverToggle"
                                       Header="Allow nearby Windows discovery"
                                       Toggled="NearbyReceiverToggle_Toggled"

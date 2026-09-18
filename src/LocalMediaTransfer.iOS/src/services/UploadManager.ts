@@ -194,6 +194,50 @@ export class UploadManager {
     const startTime = Date.now();
     const throughput = new ThroughputTracker(startTime);
 
+    const recordTransferHistory = async (
+      completionStatus: UploadSummary['completionStatus'],
+      reportedFailedFiles: number,
+      uploadDurationMs: number,
+    ) => {
+      const expandedFiles = readyFiles + outcomes.preparationFailedFiles;
+      const historyPayload = {
+        sessionId,
+        completedAt: Date.now(),
+        selectedAssets: assets.length,
+        expandedFiles,
+        selectedFiles: expandedFiles,
+        uploadedFiles: outcomes.uploadedFiles,
+        skippedFiles: outcomes.skippedFiles,
+        failedFiles: reportedFailedFiles,
+        selectedBytes: discoveredBytes,
+        selectedMediaBytes,
+        additionalComponentsBytes,
+        selectedMediaFiles,
+        additionalComponentsFiles,
+        uploadedBytes: outcomes.successfulUploadedBytes,
+        skippedBytes: outcomes.skippedBytes,
+        avoidedBytes: outcomes.avoidedBytes,
+        finalizationDuplicateBytes: outcomes.finalizationDuplicateBytes,
+        checkDurationMs: preparationDurationMs + preflightDurationMs,
+        uploadDurationMs,
+        totalDurationMs: uploadDurationMs,
+        averageSpeedMBps: throughput.current.averageMediaMBps,
+        peakSpeedMBps: throughput.current.peakMediaMBps,
+        retries: nativeRetryCount,
+        completionStatus,
+        files: historyFiles,
+      };
+      try {
+        await api.transferHistory(historyPayload);
+      } catch {
+        try {
+          await api.transferHistory({ ...historyPayload, files: [] });
+        } catch {
+          // Transfer completion and cancellation must not depend on optional history reporting.
+        }
+      }
+    };
+
     const currentAllUploadWorkersIdleMs = () => workerActivity.idleMilliseconds();
     const markUploadWorkerBusy = () => diagnostics.recordUploadWorkerStarted(workerActivity.busy());
     const markUploadWorkerIdle = () => workerActivity.idle();
@@ -1015,41 +1059,7 @@ export class UploadManager {
         diagnosticReportAvailable: diagnostics.reportAvailable,
       };
 
-      const historyPayload = {
-          sessionId,
-          completedAt: Date.now(),
-          selectedAssets: assets.length,
-          expandedFiles,
-          selectedFiles: expandedFiles,
-          uploadedFiles: outcomes.uploadedFiles,
-          skippedFiles: outcomes.skippedFiles,
-          failedFiles: reportedFailedFiles,
-          selectedBytes: discoveredBytes,
-          selectedMediaBytes,
-          additionalComponentsBytes,
-          selectedMediaFiles,
-          additionalComponentsFiles,
-          uploadedBytes: outcomes.successfulUploadedBytes,
-          skippedBytes: outcomes.skippedBytes,
-          avoidedBytes: outcomes.avoidedBytes,
-          finalizationDuplicateBytes: outcomes.finalizationDuplicateBytes,
-          checkDurationMs: preparationDurationMs + preflightDurationMs,
-          uploadDurationMs: summary.uploadDurationMs,
-          totalDurationMs: summary.uploadDurationMs,
-          averageSpeedMBps: throughput.current.averageMediaMBps,
-          peakSpeedMBps: throughput.current.peakMediaMBps,
-          retries: nativeRetryCount,
-          files: historyFiles,
-        };
-      try {
-        await api.transferHistory(historyPayload);
-      } catch {
-        try {
-          await api.transferHistory({ ...historyPayload, files: [] });
-        } catch {
-          // Transfer completion must not depend on optional history reporting.
-        }
-      }
+      await recordTransferHistory(completionStatus, reportedFailedFiles, summary.uploadDurationMs);
 
       await api.logClientEvent(
         reportedFailedFiles > 0 ? 'ERROR' : 'INFO',
@@ -1081,6 +1091,9 @@ export class UploadManager {
         : transferFailure(error, 'upload', 'unexpected');
       diagnostics.updateTransfer(diagnosticTransferValues(outcomes.failedFiles));
       await diagnostics.finish(this.isCancelled && !failure.fatal ? 'cancelled' : 'fatal');
+      if (this.isCancelled && !failure.fatal) {
+        await recordTransferHistory('cancelled', outcomes.failedFiles, Date.now() - startTime);
+      }
       await api.logClientEvent('ERROR', 'transfer_exception', 'iPhone transfer stopped unexpectedly', {
         sessionId,
         errorType: failure.code,

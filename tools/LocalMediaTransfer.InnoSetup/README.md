@@ -98,6 +98,9 @@ Program Files\Local Media Transfer\
     static\
       index.html
       ...
+  uninstall-support\
+    InstalledProcessShutdown.cs
+    stop-installed-processes.ps1
 ```
 
 Native third-party libraries are linked with the `x64-windows-static-md`

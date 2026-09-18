@@ -67,6 +67,10 @@ export function useTransferController({
     () => new Map(assets.map(asset => [asset.id, asset.filename])),
     [assets],
   );
+  const assetById = React.useMemo(
+    () => new Map(assets.map(asset => [asset.id, asset])),
+    [assets],
+  );
   const queueNoticeRef = React.useRef<QueueNotice | null>(null);
 
   const markUnfinishedAsFailed = React.useCallback((message: string) => {
@@ -77,7 +81,15 @@ export function useTransferController({
         continue;
       }
       statusById.current.set(asset.id, 'error');
-      const next: FileState = { id: asset.id, filename: filenameById.get(asset.id) || asset.filename, status: 'error', msg: message };
+      const next: FileState = {
+        id: asset.id,
+        assetId: asset.id,
+        filename: filenameById.get(asset.id) || asset.filename,
+        status: 'error',
+        msg: message,
+        thumbnailUri: asset.uri,
+        mediaType: asset.type,
+      };
       resultById.current.set(asset.id, next);
       recentFilesRef.current = [next, ...recentFilesRef.current.filter(item => item.id !== asset.id)].slice(0, 60);
       newlyFailed++;
@@ -116,8 +128,12 @@ export function useTransferController({
       if (typeof prog.readyFiles === 'number') {
         setReadyFiles(previous => Math.max(previous, prog.readyFiles ?? 0));
       }
-      if (typeof prog.totalFiles === 'number' && prog.totalFiles > 0) {
-        setTotalTransferFiles(prog.totalFiles);
+      if (typeof prog.totalFiles === 'number' || typeof prog.readyFiles === 'number') {
+        setTotalTransferFiles(previous => Math.max(
+          previous,
+          prog.totalFiles ?? 0,
+          prog.readyFiles ?? 0,
+        ));
       }
       if (prog.preparationComplete === true) setPreparationComplete(true);
       if (prog.preparationMode) setActivePreparationMode(prog.preparationMode);
@@ -213,6 +229,10 @@ export function useTransferController({
       setResultList(Array.from(resultById.current.values()));
       if (uploadSummary) {
         setCompletionSummary(uploadSummary);
+        setTotalTransferFiles(previous => Math.max(
+          previous,
+          uploadSummary.expandedFiles ?? uploadSummary.selectedFiles,
+        ));
       }
       finishMetrics(uploadSummary);
       setIsFinished(true);
@@ -239,6 +259,9 @@ export function useTransferController({
       const statusId = itemId || assetId;
       const previous = statusById.current.get(statusId);
       statusById.current.set(statusId, status);
+      if (previous === undefined) {
+        setTotalTransferFiles(current => Math.max(current, statusById.current.size));
+      }
       const isTerminal = status === 'success' || status === 'error' || status === 'skipped';
       const wasTerminal = previous === 'success' || previous === 'error' || previous === 'skipped';
       if (isTerminal && !wasTerminal) {
@@ -248,8 +271,11 @@ export function useTransferController({
       }
       const next: FileState = {
         id: statusId,
+        assetId,
         filename: transferFilename || filenameById.get(assetId) || assetId,
         status,
+        thumbnailUri: assetById.get(assetId)?.uri,
+        mediaType: assetById.get(assetId)?.type,
         msg: message,
         mediaRole,
         componentSemantics,
@@ -319,6 +345,7 @@ export function useTransferController({
       uploadManager.cancel();
     };
   }, [
+    assetById,
     assets,
     filenameById,
     beginMetrics, observeMetrics, finishMetrics, stopMetrics,

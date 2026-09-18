@@ -11,11 +11,11 @@ export function Card({
   children: React.ReactNode;
   className?: string;
 }) {
-  return <View className={`bg-surface rounded-xl overflow-hidden ${className}`}>{children}</View>;
+  return <View className={`bg-surface dark:bg-surface-dark rounded-xl overflow-hidden ${className}`}>{children}</View>;
 }
 
 export function Divider({ inset = true, className = '' }: { inset?: boolean; className?: string }) {
-  return <View className={`h-[0.5px] bg-border ${inset ? 'ml-4' : ''} ${className}`} />;
+  return <View className={`h-[0.5px] bg-border dark:bg-border-dark ${inset ? 'ml-4' : ''} ${className}`} />;
 }
 
 export function InlineBanner({
@@ -41,8 +41,8 @@ export function InlineBanner({
     >
       <Ionicons name={icon} size={22} color={color} />
       <View className="ml-3 flex-1">
-        <Text className="text-on-surface font-semibold">{title}</Text>
-        <Text className="text-on-surface-variant mt-1 leading-5">{message}</Text>
+        <Text className="text-on-surface dark:text-on-surface-dark font-semibold">{title}</Text>
+        <Text className="text-on-surface-variant dark:text-on-surface-variant-dark mt-1 leading-5">{message}</Text>
       </View>
     </View>
   );
@@ -56,7 +56,7 @@ export function SectionLabel({
   className?: string;
 }) {
   return (
-    <Text className={`text-[13px] font-semibold text-on-surface-variant uppercase tracking-wide ${className}`}>
+    <Text className={`text-[13px] font-semibold text-on-surface-variant dark:text-on-surface-variant-dark uppercase tracking-wide ${className}`}>
       {children}
     </Text>
   );

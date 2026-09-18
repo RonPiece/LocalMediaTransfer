@@ -6,7 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as MediaLibrary from 'expo-media-library/legacy';
 
 import type { IconName } from '@/components/ui';
-import { theme } from '@/theme';
+import { theme, useThemePalette } from '@/theme';
 
 type AlbumListItem = Pick<MediaLibrary.Album, 'title'> & {
   id?: string;
@@ -29,6 +29,7 @@ const AlbumGridItem = React.memo(function AlbumGridItem({
   onSelectAlbum: (albumId?: string) => void;
   onClose: () => void;
 }) {
+  const palette = useThemePalette();
   const iconName = albumIcon(item.title);
   const imageSource = React.useMemo(() => coverUri ? { uri: coverUri } : undefined, [coverUri]);
   const selectAlbum = React.useCallback(() => {
@@ -38,15 +39,15 @@ const AlbumGridItem = React.memo(function AlbumGridItem({
 
   return (
     <TouchableOpacity
-      className={`w-[48%] bg-surface rounded-[16px] overflow-hidden border mb-4 ${selected ? 'border-primary border-2' : 'border-border'}`}
+      className={`w-[48%] bg-surface dark:bg-surface-dark rounded-[16px] overflow-hidden border mb-4 ${selected ? 'border-primary border-2' : 'border-border dark:border-border-dark'}`}
       onPress={selectAlbum}
     >
-      <View className="h-32 bg-background relative">
+      <View className="h-32 bg-background dark:bg-background-dark relative">
         {imageSource ? (
           <Image source={imageSource} className="w-full h-full" contentFit="cover" />
         ) : (
-          <View className="w-full h-full items-center justify-center bg-background">
-            <Ionicons name="image-outline" size={32} color={theme.colors.border} />
+          <View className="w-full h-full items-center justify-center bg-background dark:bg-background-dark">
+            <Ionicons name="image-outline" size={32} color={palette.border} />
           </View>
         )}
         <View className="absolute bottom-0 left-0 right-0 h-16 bg-black/40 justify-end pb-2 px-3">
@@ -115,11 +116,11 @@ export const AlbumPickerModal = React.memo(function AlbumPickerModal({
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <SafeAreaView className="flex-1 bg-background">
-        <View className="h-16 px-5 flex-row items-center justify-between border-b border-border bg-surface">
-          <Text className="text-on-surface text-xl font-bold">Albums</Text>
-          <TouchableOpacity onPress={onClose} className="h-10 px-4 rounded-full bg-background items-center justify-center">
-            <Text className="text-primary font-semibold">Close</Text>
+      <SafeAreaView className="flex-1 bg-background dark:bg-background-dark">
+        <View className="h-16 px-5 flex-row items-center justify-between border-b border-border dark:border-border-dark bg-surface dark:bg-surface-dark">
+          <Text className="text-on-surface dark:text-on-surface-dark text-xl font-bold">Albums</Text>
+          <TouchableOpacity onPress={onClose} className="h-10 px-4 rounded-full bg-background dark:bg-background-dark items-center justify-center">
+            <Text className="text-primary dark:text-primary-dark font-semibold">Close</Text>
           </TouchableOpacity>
         </View>
         <FlatList

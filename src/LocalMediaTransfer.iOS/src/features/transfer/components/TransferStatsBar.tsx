@@ -47,23 +47,23 @@ export function TransferStatsBar({
 
   const filesStat = (
     <View className={`flex-1 min-w-0 items-start ${statHorizontalPadding}`}>
-      <Text className={`text-on-surface-variant ${labelTextSize} font-bold uppercase tracking-wider`}>{remainingLabel}</Text>
-      <Text className={`text-on-surface ${valueTextSize} font-semibold mt-1`} style={{ fontVariant: ['tabular-nums'] }}>{itemsRemaining.toLocaleString()}</Text>
+      <Text className={`text-on-surface-variant dark:text-on-surface-variant-dark ${labelTextSize} font-bold uppercase tracking-wider`}>{remainingLabel}</Text>
+      <Text className={`text-on-surface dark:text-on-surface-dark ${valueTextSize} font-semibold mt-1`} style={{ fontVariant: ['tabular-nums'] }}>{itemsRemaining.toLocaleString()}</Text>
     </View>
   );
   const speedStat = (
-    <View className={`flex-1 min-w-0 items-start ${statHorizontalPadding} border-l border-border`}>
-      <Text className={`text-on-surface-variant ${labelTextSize} font-bold uppercase tracking-wider`}>{transferText.currentSpeed}</Text>
-      <Text className={`text-on-surface ${valueTextSize} font-semibold mt-1`} style={{ fontVariant: ['tabular-nums'] }}>
+    <View className={`flex-1 min-w-0 items-start ${statHorizontalPadding} border-l border-border dark:border-border-dark`}>
+      <Text className={`text-on-surface-variant dark:text-on-surface-variant-dark ${labelTextSize} font-bold uppercase tracking-wider`}>{transferText.currentSpeed}</Text>
+      <Text className={`text-on-surface dark:text-on-surface-dark ${valueTextSize} font-semibold mt-1`} style={{ fontVariant: ['tabular-nums'] }}>
         {currentMediaMBps.toFixed(1)} <Text className={hasTransferredColumn ? 'text-[10px]' : 'text-[11px]'}>MB/s</Text>
       </Text>
     </View>
   );
   const transferredStat = transferredBytes === undefined ? null : (
-    <View className={`flex-1 min-w-0 items-start ${statHorizontalPadding} border-l border-border`}>
-      <Text className={`text-on-surface-variant ${labelTextSize} font-bold uppercase tracking-wider`}>Transferred</Text>
+    <View className={`flex-1 min-w-0 items-start ${statHorizontalPadding} border-l border-border dark:border-border-dark`}>
+      <Text className={`text-on-surface-variant dark:text-on-surface-variant-dark ${labelTextSize} font-bold uppercase tracking-wider`}>Transferred</Text>
       <Text
-        className={`text-on-surface ${valueTextSize} font-semibold mt-1`}
+        className={`text-on-surface dark:text-on-surface-dark ${valueTextSize} font-semibold mt-1`}
         style={{ fontVariant: ['tabular-nums'] }}
         numberOfLines={1}
         adjustsFontSizeToFit
@@ -76,20 +76,20 @@ export function TransferStatsBar({
   const timeStat = (
     <View
       testID={compact ? 'transfer-eta-compact' : 'transfer-eta-wide'}
-      className={compact ? 'min-w-0 items-start px-3 pt-3 mt-3 border-t border-border' : 'flex-1 min-w-0 items-start px-3 border-l border-border'}
+      className={compact ? 'min-w-0 items-start px-3 pt-3 mt-3 border-t border-border dark:border-border-dark' : 'flex-1 min-w-0 items-start px-3 border-l border-border dark:border-border-dark'}
     >
-      <Text className="text-on-surface-variant text-[10px] font-bold uppercase tracking-wider">{timeLabel}</Text>
+      <Text className="text-on-surface-variant dark:text-on-surface-variant-dark text-[10px] font-bold uppercase tracking-wider">{timeLabel}</Text>
       <Text className="text-[14px] leading-5 font-semibold mt-1 text-primary">
         {timeText}
       </Text>
       {timeHint && (
-        <Text className="text-on-surface-variant text-[11px] leading-4 mt-1">{timeHint}</Text>
+        <Text className="text-on-surface-variant dark:text-on-surface-variant-dark text-[11px] leading-4 mt-1">{timeHint}</Text>
       )}
     </View>
   );
 
   return (
-    <View testID="transfer-stats-card" className="bg-surface rounded-[18px] px-2 py-4 mb-4 border border-border">
+    <View testID="transfer-stats-card" className="bg-surface dark:bg-surface-dark rounded-[18px] px-2 py-4 mb-4 border border-border dark:border-border-dark">
       <View testID="transfer-stats-content" onLayout={measureContent}>
         <View className="flex-row">
           {filesStat}

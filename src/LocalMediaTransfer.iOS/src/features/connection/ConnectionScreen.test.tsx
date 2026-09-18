@@ -3,6 +3,9 @@ import { Alert } from 'react-native';
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
 import ConnectionScreen from './ConnectionScreen';
 import { useCameraPermissions } from 'expo-camera';
+import { qrScannerControlsTop } from './components/QrScannerOverlay';
+import { nearbyHeaderUsesIconOnlyActions } from './components/NearbyDesktopSection';
+import * as Haptics from 'expo-haptics';
 
 jest.mock('@expo/vector-icons', () => {
   const React = require('react');
@@ -101,12 +104,67 @@ describe('ConnectionScreen QR Logic', () => {
     expect(getByText("Approve this iPhone in Local Media Transfer on Ron's PC. Keep this screen open.")).toBeTruthy();
   });
 
+  it('keeps rounded nearby actions in one row and uses icons only when space is constrained', () => {
+    expect(nearbyHeaderUsesIconOnlyActions(390, 1)).toBe(false);
+    expect(nearbyHeaderUsesIconOnlyActions(350, 1)).toBe(true);
+    expect(nearbyHeaderUsesIconOnlyActions(500, 1.3)).toBe(true);
+    const onRefresh = jest.fn();
+    const onDisconnect = jest.fn();
+    const screen = render(
+      <ConnectionScreen
+        onConnect={jest.fn()}
+        nativeHttpsAvailable
+        nearbyDiscoveryEnabled
+        onRefreshDiscovery={onRefresh}
+        onDisconnect={onDisconnect}
+      />,
+    );
+
+    const refresh = screen.getByLabelText('Refresh nearby receivers');
+    fireEvent(refresh, 'pressIn');
+    fireEvent(refresh, 'pressOut');
+    fireEvent.press(refresh);
+    expect(onRefresh).toHaveBeenCalledTimes(1);
+    expect(Haptics.impactAsync).toHaveBeenCalledWith(Haptics.ImpactFeedbackStyle.Light);
+
+    const disconnect = screen.getByLabelText('Disconnect');
+    expect(disconnect.props.accessibilityState).toEqual({ disabled: true });
+    expect(onDisconnect).not.toHaveBeenCalled();
+  });
+
+  it('does not repeat security marketing on the connection screen', () => {
+    const screen = render(<ConnectionScreen onConnect={jest.fn()} nativeHttpsAvailable />);
+
+    expect(screen.queryByText('Secure & Private')).toBeNull();
+    expect(screen.queryByText('No cloud')).toBeNull();
+  });
+
+  it('places the QR close control below the iPhone status area', async () => {
+    const screen = render(<ConnectionScreen onConnect={jest.fn()} />);
+
+    fireEvent.press(screen.getByText('Scan Receiver QR'));
+    expect(await screen.findByTestId('qr-scanner-close')).toBeTruthy();
+    const controls = screen.getByTestId('qr-scanner-controls');
+
+    expect(controls).toHaveStyle({ top: qrScannerControlsTop() });
+    expect(qrScannerControlsTop(59, 'ios')).toBe(71);
+  });
+
+  it('uses a readable grouped-surface style for the disabled QR action', () => {
+    const screen = render(<ConnectionScreen onConnect={jest.fn()} isConnected nativeHttpsAvailable />);
+
+    const qrAction = screen.getByLabelText('Scan Receiver QR');
+    expect(qrAction.props.accessibilityState?.disabled ?? qrAction.props.disabled).toBeTruthy();
+    expect(qrAction).toHaveStyle({ backgroundColor: '#FFFFFF' });
+    expect(screen.getByText('Scan Receiver QR')).toHaveStyle({ color: '#000000' });
+  });
+
   it('extracts URL base and token from a QR code scan', async () => {
     const mockOnConnect = jest.fn();
     const { getByText, getByTestId } = render(<ConnectionScreen onConnect={mockOnConnect} />);
 
-    // Tap "Scan QR Code" button
-    fireEvent.press(getByText('Scan QR Code'));
+    // Tap the redesigned QR action row.
+    fireEvent.press(getByText('Scan Receiver QR'));
 
     // Find the mock camera we created and trigger the fake scan
     const mockCamera = await waitFor(() => getByTestId('mock-camera'));
@@ -120,7 +178,7 @@ describe('ConnectionScreen QR Logic', () => {
     const mockOnConnect = jest.fn();
     const { getByText, getByTestId } = render(<ConnectionScreen onConnect={mockOnConnect} />);
 
-    fireEvent.press(getByText('Scan QR Code'));
+    fireEvent.press(getByText('Scan Receiver QR'));
     const mockCamera = await waitFor(() => getByTestId('mock-camera'));
     fireEvent.press(mockCamera);
     fireEvent.press(mockCamera);
@@ -150,7 +208,7 @@ describe('ConnectionScreen QR Logic', () => {
     const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
     const { getByText, getByTestId } = render(<ConnectionScreen onConnect={jest.fn()} />);
 
-    fireEvent.press(getByText('Scan QR Code'));
+    fireEvent.press(getByText('Scan Receiver QR'));
     const mockCamera = await waitFor(() => getByTestId('mock-camera'));
     fireEvent.press(mockCamera);
     fireEvent.press(mockCamera);
@@ -168,13 +226,13 @@ describe('ConnectionScreen QR Logic', () => {
       .mockResolvedValueOnce(true);
     const { getByText, getByTestId } = render(<ConnectionScreen onConnect={mockOnConnect} />);
 
-    fireEvent.press(getByText('Scan QR Code'));
+    fireEvent.press(getByText('Scan Receiver QR'));
     const mockCamera = await waitFor(() => getByTestId('mock-camera'));
     fireEvent.press(mockCamera);
 
     await waitFor(() => expect(mockOnConnect).toHaveBeenCalledTimes(1));
 
-    fireEvent.press(getByText('Scan QR Code'));
+    fireEvent.press(getByText('Scan Receiver QR'));
     fireEvent.press(await waitFor(() => getByTestId('mock-camera')));
 
     await waitFor(() => expect(mockOnConnect).toHaveBeenCalledTimes(2));
@@ -187,13 +245,13 @@ describe('ConnectionScreen QR Logic', () => {
       .mockResolvedValueOnce(undefined);
     const { getByText, getByTestId } = render(<ConnectionScreen onConnect={mockOnConnect} />);
 
-    fireEvent.press(getByText('Scan QR Code'));
+    fireEvent.press(getByText('Scan Receiver QR'));
     const mockCamera = await waitFor(() => getByTestId('mock-camera'));
     fireEvent.press(mockCamera);
 
     await waitFor(() => expect(mockOnConnect).toHaveBeenCalledTimes(1));
 
-    fireEvent.press(getByText('Scan QR Code'));
+    fireEvent.press(getByText('Scan Receiver QR'));
     fireEvent.press(await waitFor(() => getByTestId('mock-camera')));
 
     await waitFor(() => expect(mockOnConnect).toHaveBeenCalledTimes(2));
@@ -212,7 +270,7 @@ describe('ConnectionScreen QR Logic', () => {
     const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
     const { getByText, getByTestId } = render(<ConnectionScreen onConnect={jest.fn()} />);
 
-    fireEvent.press(getByText('Scan QR Code'));
+    fireEvent.press(getByText('Scan Receiver QR'));
     fireEvent.press(await waitFor(() => getByTestId('mock-camera')));
 
     expect(alertSpy).toHaveBeenCalledWith(
@@ -234,7 +292,7 @@ describe('ConnectionScreen QR Logic', () => {
     fireEvent.changeText(input, '192.168.1.100');
 
     // Press manual connect
-    fireEvent.press(getByText('Connect'));
+    fireEvent.press(getByText('Connect Manually'));
 
     expect(queryByPlaceholderText('SHA-256 fingerprint from Windows')).toBeNull();
     expect(mockOnConnect).toHaveBeenCalledWith('http://192.168.1.100:8080', '', undefined);
@@ -248,7 +306,7 @@ describe('ConnectionScreen QR Logic', () => {
     const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
     const { getByText } = render(<ConnectionScreen onConnect={jest.fn()} />);
 
-    fireEvent.press(getByText('Scan QR Code'));
+    fireEvent.press(getByText('Scan Receiver QR'));
 
     await waitFor(() => expect(alertSpy).toHaveBeenCalledWith(
       'Camera unavailable',
@@ -264,7 +322,7 @@ describe('ConnectionScreen QR Logic', () => {
 
     fireEvent.press(getByText('Enter Address Manually'));
     fireEvent.changeText(getByPlaceholderText('192.168.1.x'), '192.168.1.100');
-    fireEvent.press(getByText('Connect'));
+    fireEvent.press(getByText('Connect Manually'));
 
     expect(mockOnConnect).toHaveBeenCalledWith('https://192.168.1.100:8443', '', undefined);
   });
@@ -278,7 +336,7 @@ describe('ConnectionScreen QR Logic', () => {
 
     fireEvent.press(getByText('Enter Address Manually'));
     fireEvent.changeText(getByPlaceholderText('192.168.1.x'), '192.168.1.100');
-    fireEvent.press(getByText('Connect'));
+    fireEvent.press(getByText('Connect Manually'));
 
     await waitFor(() => expect(alertSpy).toHaveBeenCalledWith(
       'Connection failed',
@@ -294,7 +352,7 @@ describe('ConnectionScreen QR Logic', () => {
 
     fireEvent.press(getByText('Enter Address Manually'));
     fireEvent.changeText(getByPlaceholderText('192.168.1.x'), 'https://192.168.1.100:8443');
-    fireEvent.press(getByText('Connect'));
+    fireEvent.press(getByText('Connect Manually'));
 
     expect(Alert.alert).toHaveBeenCalledWith(
       'Expo Go requires HTTP',

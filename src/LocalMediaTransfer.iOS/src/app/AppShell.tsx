@@ -1,5 +1,6 @@
 import React from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 
 import { api } from '@/api/ApiClient';
 import { connectionStorageKeys } from '@/config/storageKeys';
@@ -11,14 +12,15 @@ import { useConnectionController } from './hooks/useConnectionController';
 import { useConnectionHealth } from './hooks/useConnectionHealth';
 import { useConnectionPreferences } from './hooks/useConnectionPreferences';
 import { useDiscoveryController } from './hooks/useDiscoveryController';
-import { usePairingController } from './hooks/usePairingController';
+import { parseSavedConnection, usePairingController } from './hooks/usePairingController';
 import { useTrustedConnection } from './hooks/useTrustedConnection';
 import { useTransferPreferences } from './hooks/useTransferPreferences';
-import { ScreenState } from './types';
+import { SavedConnection, ScreenState } from './types';
 import { PreparationMode } from '@/services/upload/types';
+import { useReceiverHistory } from '@/features/history/useReceiverHistory';
 
 export default function AppShell() {
-  const [appState, setAppState] = React.useState<ScreenState>('connection');
+  const [appState, setAppState] = React.useState<ScreenState>('connect');
   const [selectedAssets, setSelectedAssets] = React.useState<MediaAsset[]>([]);
   const [qrScanRequestId, setQrScanRequestId] = React.useState(0);
   const [activeTransferPreferences, setActiveTransferPreferences] = React.useState<{
@@ -31,6 +33,7 @@ export default function AppShell() {
     includeAdditionalMediaComponents: false,
   });
   const connectionAttemptRef = React.useRef(false);
+  const [savedReceiver, setSavedReceiver] = React.useState<SavedConnection | null>(null);
 
   const {
     isServerConnected,
@@ -80,7 +83,7 @@ export default function AppShell() {
   } = useDiscoveryController({ enabled: nearbyDiscoveryEnabled });
 
   const requestQrScan = React.useCallback(() => {
-    setAppState('connection');
+    setAppState('connect');
     setTimeout(() => setQrScanRequestId(value => value + 1), 0);
   }, []);
   const resetConnectionAttempt = React.useCallback(() => {
@@ -126,7 +129,7 @@ export default function AppShell() {
   });
 
   React.useEffect(() => {
-    if (appState === 'connection' && nearbyDiscoveryEnabled) performDiscovery();
+    if (appState === 'connect' && nearbyDiscoveryEnabled) performDiscovery();
   }, [appState, nearbyDiscoveryEnabled, performDiscovery]);
 
   React.useEffect(() => {
@@ -136,7 +139,7 @@ export default function AppShell() {
       markDisconnected();
       AsyncStorage.removeItem(connectionStorageKeys.lastServer()).catch(() => undefined);
       setQrScanRequestId(0);
-      setAppState('connection');
+      setAppState('connect');
     });
     return () => api.setAuthenticationFailureHandler(null);
   }, [markDisconnected]);
@@ -145,6 +148,47 @@ export default function AppShell() {
     appState,
     setIsServerConnected,
   });
+  const {
+    items: historyItems,
+    loading: historyLoading,
+    error: historyError,
+    refresh: refreshHistory,
+    confirmClear: confirmClearHistory,
+  } = useReceiverHistory({ isConnected: isServerConnected });
+
+  React.useEffect(() => {
+    if (appState !== 'home' && appState !== 'connect') return;
+    let active = true;
+    AsyncStorage.getItem(connectionStorageKeys.lastServer())
+      .catch(() => null)
+      .then(value => {
+        if (active) setSavedReceiver(parseSavedConnection(value));
+      });
+    return () => { active = false; };
+  }, [appState]);
+
+  React.useEffect(() => {
+    if (isServerConnected && (appState === 'home' || appState === 'history')) {
+      void refreshHistory();
+    }
+  }, [appState, isServerConnected, refreshHistory]);
+
+  const handleTrustedReconnect = React.useCallback(async () => {
+    if (!savedReceiver || connectionAttemptRef.current) return;
+    const credential = await SecureStore.getItemAsync(connectionStorageKeys.deviceCredential()).catch(() => null);
+    if (!credential) {
+      showAlertOnce('Pairing required', 'The approved-device credential is missing. Scan the Windows QR code again.');
+      return;
+    }
+    connectionAttemptRef.current = true;
+    setIsConnecting(true);
+    try {
+      await connectTrusted(savedReceiver, credential, false);
+    } finally {
+      connectionAttemptRef.current = false;
+      setIsConnecting(false);
+    }
+  }, [connectTrusted, savedReceiver, setIsConnecting, showAlertOnce]);
 
   const handleTransfer = React.useCallback((assets: MediaAsset[]) => {
     setActiveTransferPreferences({
@@ -179,7 +223,7 @@ export default function AppShell() {
     resetHttpSessionApproval();
     markDisconnected();
     setQrScanRequestId(0);
-    setAppState('connection');
+    setAppState('connect');
   }, [markDisconnected, resetHttpSessionApproval]);
 
   return (
@@ -190,9 +234,14 @@ export default function AppShell() {
         scanRequestId: qrScanRequestId,
         onOpenPicker: () => setAppState('picker'),
         onTransfer: handleTransfer,
-        onCancelPicker: () => setAppState('dashboard'),
-        onCancelTransfer: () => setAppState('dashboard'),
-        onCompleteTransfer: () => setAppState('dashboard'),
+        onCancelPicker: () => setAppState('home'),
+        onCancelTransfer: () => setAppState('home'),
+        onCompleteTransfer: () => {
+          setSelectedAssets([]);
+          setAppState('home');
+          void refreshHistory();
+        },
+        onSelectTab: setAppState,
       }}
       connection={{
         isServerConnected: isServerConnected,
@@ -204,6 +253,8 @@ export default function AppShell() {
         onConnectDiscovered: handleDiscoveredServer,
         onDisconnect: handleDisconnect,
         onRetryConnection: retryConnection,
+        savedReceiver,
+        onConnectTrusted: handleTrustedReconnect,
       }}
       preferences={{
         nearbyDiscoveryEnabled: nearbyDiscoveryEnabled,
@@ -232,6 +283,13 @@ export default function AppShell() {
         discoveryFailed: discoveryFailed,
         onEnableNearbyDiscovery: () => updateNearbyDiscovery(true),
         onRefreshDiscovery: discoverServers,
+      }}
+      history={{
+        items: historyItems,
+        loading: historyLoading,
+        error: historyError,
+        onRefresh: refreshHistory,
+        onClear: confirmClearHistory,
       }}
     />
   );

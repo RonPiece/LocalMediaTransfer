@@ -1291,6 +1291,7 @@ internal static class TestHarness
                 averageSpeedMBps = 1.0,
                 peakSpeedMBps = 2.0,
                 retries = 0,
+                completionStatus = "cancelled",
                 files = new object[]
                 {
                     new
@@ -1348,6 +1349,7 @@ internal static class TestHarness
             historyItem.GetProperty("additionalComponentsBytes").GetInt64() != content.Length - content.Length / 2 ||
             historyItem.GetProperty("selectedMediaFiles").GetInt32() != 1 ||
             historyItem.GetProperty("additionalComponentsFiles").GetInt32() != 2 ||
+            historyItem.GetProperty("completionStatus").GetString() != "cancelled" ||
             historyItem.GetProperty("avoidedBytes").GetInt64() != content.Length ||
             historyItem.GetProperty("finalizationDuplicateBytes").GetInt64() != content.Length ||
             skippedHistory.GetProperty("matchedName").GetString() != filename ||

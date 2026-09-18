@@ -3,7 +3,7 @@ import { FlatList, ListRenderItemInfo, Modal, Text, TouchableOpacity, View } fro
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
-import { theme } from '@/theme';
+import { useThemePalette } from '@/theme';
 import { FileState } from '../transferPresentation';
 import { TransferFileItem } from './TransferFileItem';
 
@@ -19,40 +19,41 @@ export const RecentActivityPanel = React.memo(function RecentActivityPanel({
   compact: boolean;
 }) {
   const [expanded, setExpanded] = React.useState(false);
+  const palette = useThemePalette();
   const label = `Recent activity, ${items.length.toLocaleString()} recent items`;
 
   return (
     <>
       <View
-        className={`flex-1 bg-surface rounded-2xl border border-border overflow-hidden ${compact ? 'min-h-[72px] max-h-[104px]' : 'min-h-[96px] max-h-[138px]'}`}
+        className={`flex-1 bg-surface dark:bg-surface-dark rounded-2xl border border-border dark:border-border-dark overflow-hidden ${compact ? 'min-h-[72px] max-h-[104px]' : 'min-h-[96px] max-h-[138px]'}`}
       >
         <TouchableOpacity
           accessibilityRole="button"
           accessibilityLabel={`${label}. Open full list`}
           accessibilityState={{ expanded }}
           onPress={() => setExpanded(true)}
-          className="bg-surface px-4 py-2.5 border-b border-border flex-row items-center justify-between"
+          className="bg-surface dark:bg-surface-dark px-4 py-2.5 border-b border-border dark:border-border-dark flex-row items-center justify-between"
         >
           <View className="flex-row items-center flex-1">
-            <Text className="text-on-surface-variant text-xs font-bold uppercase tracking-wider">
+            <Text className="text-on-surface-variant dark:text-on-surface-variant-dark text-xs font-bold uppercase tracking-wider">
               Recent activity
             </Text>
             {items.length > 0 && (
-              <View className="ml-2 px-2 py-0.5 rounded-full bg-background">
-                <Text className="text-on-surface-variant text-[11px] font-semibold">
+              <View className="ml-2 px-2 py-0.5 rounded-full bg-background dark:bg-background-dark">
+                <Text className="text-on-surface-variant dark:text-on-surface-variant-dark text-[11px] font-semibold">
                   {items.length.toLocaleString()}
                 </Text>
               </View>
             )}
           </View>
           <View className="flex-row items-center">
-            <Text className="text-primary text-[12px] font-semibold mr-1">Expand</Text>
-            <Ionicons name="chevron-up" size={17} color={theme.colors.primary} />
+            <Text className="text-primary dark:text-primary-dark text-[12px] font-semibold mr-1">Expand</Text>
+            <Ionicons name="chevron-up" size={17} color={palette.primary} />
           </View>
         </TouchableOpacity>
         {items.length === 0 ? (
           <View className="flex-1 items-center justify-center px-4">
-            <Text className="text-on-surface-variant text-[13px]">File activity will appear here.</Text>
+            <Text className="text-on-surface-variant dark:text-on-surface-variant-dark text-[13px]">File activity will appear here.</Text>
           </View>
         ) : (
           <FlatList
@@ -72,15 +73,15 @@ export const RecentActivityPanel = React.memo(function RecentActivityPanel({
         onRequestClose={() => setExpanded(false)}
       >
         <SafeAreaView
-          className="flex-1 bg-background"
+          className="flex-1 bg-background dark:bg-background-dark"
           accessibilityViewIsModal
         >
-          <View className="h-16 px-5 flex-row items-center justify-between border-b border-border bg-surface">
+          <View className="h-16 px-5 flex-row items-center justify-between border-b border-border dark:border-border-dark bg-surface dark:bg-surface-dark">
             <View>
-              <Text accessibilityRole="header" className="text-on-surface text-lg font-bold">
+              <Text accessibilityRole="header" className="text-on-surface dark:text-on-surface-dark text-lg font-bold">
                 Recent activity
               </Text>
-              <Text className="text-on-surface-variant text-xs">
+              <Text className="text-on-surface-variant dark:text-on-surface-variant-dark text-xs">
                 {items.length.toLocaleString()} most recent items
               </Text>
             </View>
@@ -88,10 +89,10 @@ export const RecentActivityPanel = React.memo(function RecentActivityPanel({
               accessibilityRole="button"
               accessibilityLabel="Collapse recent activity"
               onPress={() => setExpanded(false)}
-              className="h-10 px-4 rounded-full bg-background items-center justify-center flex-row"
+              className="h-10 px-4 rounded-full bg-background dark:bg-background-dark items-center justify-center flex-row"
             >
-              <Ionicons name="chevron-down" size={17} color={theme.colors.primary} />
-              <Text className="text-primary font-semibold ml-1">Collapse</Text>
+              <Ionicons name="chevron-down" size={17} color={palette.primary} />
+              <Text className="text-primary dark:text-primary-dark font-semibold ml-1">Collapse</Text>
             </TouchableOpacity>
           </View>
           <FlatList

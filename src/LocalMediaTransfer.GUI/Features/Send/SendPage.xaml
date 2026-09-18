@@ -77,8 +77,15 @@
                             </DataTemplate>
                         </ListView.ItemTemplate>
                     </ListView>
-                    <CheckBox x:Name="SkipDuplicatesCheckBox" Content="Skip identical files"
-                              IsChecked="True" />
+                    <StackPanel Spacing="2">
+                        <CheckBox x:Name="SkipDuplicatesCheckBox"
+                                  Content="Skip exact duplicate files"
+                                  IsChecked="True" />
+                        <TextBlock Text="Compares file content, not just the name. The receiver's same-name setting applies only when file contents differ."
+                                   TextWrapping="Wrap"
+                                   FontSize="12"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    </StackPanel>
                 </StackPanel>
             </Border>
 
