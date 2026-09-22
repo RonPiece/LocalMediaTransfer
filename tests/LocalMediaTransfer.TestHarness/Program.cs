@@ -119,8 +119,16 @@ internal static class TestHarness
             string unrelatedTemporaryFile = Path.Combine(
                 uploadDirectory,
                 ".user-notes.tmp");
+            string legacyMetadataDirectory = Path.Combine(
+                uploadDirectory,
+                "_dont_delete");
+            string metadataMigrationMarker = Path.Combine(
+                legacyMetadataDirectory,
+                "migration-marker.txt");
             await File.WriteAllBytesAsync(managedOrphan, [1, 2, 3, 4]);
             await File.WriteAllBytesAsync(unrelatedTemporaryFile, [5, 6, 7, 8]);
+            Directory.CreateDirectory(legacyMetadataDirectory);
+            await File.WriteAllTextAsync(metadataMigrationMarker, "legacy metadata");
 
             server = await StartServerAsync(context, benchmarkMode: false, allowInsecureHttp: false);
             if (File.Exists(managedOrphan))
@@ -132,6 +140,17 @@ internal static class TestHarness
             {
                 throw new InvalidOperationException(
                     "Server startup removed an unrelated user temporary file.");
+            }
+            string professionalMetadataDirectory = Path.Combine(
+                uploadDirectory,
+                "Local Media Transfer Data");
+            if (Directory.Exists(legacyMetadataDirectory) ||
+                !File.Exists(Path.Combine(
+                    professionalMetadataDirectory,
+                    "migration-marker.txt")))
+            {
+                throw new InvalidOperationException(
+                    "Legacy upload metadata was not migrated to the professional data folder.");
             }
             File.Delete(unrelatedTemporaryFile);
             await VerifyHttpsAsync(context);
@@ -1848,11 +1867,33 @@ internal static class TestHarness
         pending.EnsureSuccessStatusCode();
         using JsonDocument pendingBody = JsonDocument.Parse(await pending.Content.ReadAsStringAsync());
         string requestId = pendingBody.RootElement.GetProperty("requestId").GetString()!;
+        JsonElement receiverPrompt = await pipe.WaitForNativePairingRequestAsync(
+            TimeSpan.FromSeconds(5));
+        AssertEqual(requestId,
+            receiverPrompt.GetProperty("requestId").GetString(),
+            "Receiver did not receive the pairing prompt when the request was created.");
+        AssertEqual(9,
+            receiverPrompt.GetProperty("securityCode").GetString()?.Length ?? 0,
+            "Receiver pairing prompt omitted the formatted security code.");
+
+        // Either computer may confirm first. The credential is trusted only
+        // after both sides have independently accepted the same code.
+        await pipe.SendAcknowledgedCommandAsync("approve_native_pairing", requestId);
+        using HttpResponseMessage waitingForSender = await http.PostAsJsonAsync(
+            $"/native/v1/pairing/requests/{requestId}/status",
+            new { clientId, credential }, JsonOptions);
+        waitingForSender.EnsureSuccessStatusCode();
+        using (JsonDocument waitingBody = JsonDocument.Parse(
+            await waitingForSender.Content.ReadAsStringAsync()))
+        {
+            AssertEqual("pending", waitingBody.RootElement.GetProperty("status").GetString(),
+                "Receiver-only confirmation trusted the sender prematurely.");
+        }
+
         string proof = ComputeNativePairingProof(credential, requestId, nonce);
         using HttpResponseMessage confirmed = await http.PostAsJsonAsync(
             $"/native/v1/pairing/requests/{requestId}/confirm", new { proof }, JsonOptions);
         confirmed.EnsureSuccessStatusCode();
-        await pipe.SendAcknowledgedCommandAsync("approve_native_pairing", requestId);
         using HttpResponseMessage approved = await http.PostAsJsonAsync(
             $"/native/v1/pairing/requests/{requestId}/status",
             new { clientId, credential }, JsonOptions);
@@ -2976,6 +3017,8 @@ internal sealed class PipeConnection : IAsyncDisposable
     private readonly Task _drainTask;
     private readonly ConcurrentQueue<JsonElement> _metrics = new();
     private readonly SemaphoreSlim _browserLinkConsumed = new(0, 1);
+    private readonly ConcurrentQueue<JsonElement> _nativePairingRequests = new();
+    private readonly SemaphoreSlim _nativePairingRequestReceived = new(0);
     private readonly ConcurrentDictionary<string,
         TaskCompletionSource<PipeCommandResult>> _pendingCommands = new();
     private readonly SemaphoreSlim _writeLock = new(1, 1);
@@ -3025,6 +3068,7 @@ internal sealed class PipeConnection : IAsyncDisposable
         {
             _writeLock.Dispose();
             _browserLinkConsumed.Dispose();
+            _nativePairingRequestReceived.Dispose();
             _cancellation.Dispose();
         }
     }
@@ -3053,6 +3097,17 @@ internal sealed class PipeConnection : IAsyncDisposable
         if (!await _browserLinkConsumed.WaitAsync(timeout))
             throw new TimeoutException(
                 "Expected browser-link consumption notification was not received.");
+    }
+
+    public async Task<JsonElement> WaitForNativePairingRequestAsync(TimeSpan timeout)
+    {
+        if (!await _nativePairingRequestReceived.WaitAsync(timeout) ||
+            !_nativePairingRequests.TryDequeue(out JsonElement request))
+        {
+            throw new TimeoutException(
+                "Expected immediate native pairing prompt was not received.");
+        }
+        return request;
     }
 
     public async Task SendAcknowledgedCommandAsync(
@@ -3155,6 +3210,11 @@ internal sealed class PipeConnection : IAsyncDisposable
                     {
                         if (_browserLinkConsumed.CurrentCount == 0)
                             _browserLinkConsumed.Release();
+                    }
+                    else if (messageType == "native_pairing_request")
+                    {
+                        _nativePairingRequests.Enqueue(messageData.Clone());
+                        _nativePairingRequestReceived.Release();
                     }
                     else if (messageType == "command_result")
                     {

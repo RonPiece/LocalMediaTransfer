@@ -55,7 +55,10 @@ The first 32 digest bits modulo 100,000,000 are formatted as `1234 5678`. The
 server never returns this code over HTTP. Sender confirmation supplies
 HMAC-SHA-256 using the candidate credential over the length-prefixed domain
 `LMT-WINDOWS-PAIR-CONFIRM-V1`, request ID, and client nonce. Trust is finalized
-only after the proof and the receiver's explicit approval.
+only after the proof and the receiver's explicit approval. The server sends the
+receiver's local named-pipe prompt when the request is created, before sender
+confirmation, so both computers display the code concurrently. The two
+confirmations are order-independent; neither one alone establishes trust.
 
 The receiver stores only the credential hash with `clientType=windows` and
 `authorizationMode=approval_required`. Older schema records migrate as

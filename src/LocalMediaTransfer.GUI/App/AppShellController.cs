@@ -206,16 +206,16 @@ namespace LocalMediaTransfer.GUI.AppServices
             {
                 bool approved = await DialogService.ConfirmAsync(
                     xamlRoot,
-                    "Pair this Windows computer?",
-                    $"{request.DeviceName}\n{request.IpAddress}\n\nSecurity code: {request.SecurityCode}\n\nCompare this code with the sender. Approve only when both codes match.",
-                    "Codes Match — Pair",
+                    "Compare the Windows pairing code",
+                    $"{request.DeviceName}\n{request.IpAddress}\n\nSecurity code: {request.SecurityCode}\n\nThis code is shown on both computers. Continue only when both codes match.",
+                    "Codes Match",
                     "Deny",
                     ContentDialogButton.Primary);
                 PipeCommandAcknowledgement result = approved
                     ? await PipeClient.ApproveNativePairingAcknowledgedAsync(request.RequestId)
                     : await PipeClient.DenyNativePairingAcknowledgedAsync(request.RequestId);
                 AddNetworkLog(result.Success
-                    ? $"Windows pairing {(approved ? "approved" : "denied")}: {request.DeviceName} ({request.IpAddress})"
+                    ? $"Windows pairing {(approved ? "code confirmed" : "denied")}: {request.DeviceName} ({request.IpAddress})"
                     : "Windows pairing decision was not applied: " + result.Error);
             });
         }

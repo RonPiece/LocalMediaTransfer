@@ -631,11 +631,16 @@ body {
     padding: 1.5rem;
     margin-bottom: 1rem;
     box-shadow: var(--shadow-sm);
-    transition: all var(--transition-normal);
+    transition: background-color var(--transition-fast), border-color var(--transition-fast);
     border-left: 4px solid transparent;
     border: 1px solid var(--gray-100);
-    will-change: transform, box-shadow;
-    transform: translateZ(0);
+    content-visibility: auto;
+    contain-intrinsic-size: 4.5rem;
+}
+
+.file-item .progress-bar-modern::after {
+    content: none;
+    animation: none;
 }
 
 .file-item.uploading {
@@ -886,6 +891,8 @@ body {
     border-radius: var(--radius-md);
     margin-bottom: 0.75rem;
     overflow: hidden;
+    background: var(--gray-50);
+    contain: layout paint style;
 }
 
 .file-group-summary {
@@ -909,6 +916,7 @@ body {
 
 .file-group-inner {
     padding: 0.5rem;
+    background: var(--gray-100);
 }
 
 .file-item-top {
@@ -1287,8 +1295,7 @@ body {
     }
 
     .file-item:hover {
-        transform: translateX(8px);
-        box-shadow: var(--shadow-md);
+        border-color: var(--gray-300);
     }
 
     .speed-display:hover {

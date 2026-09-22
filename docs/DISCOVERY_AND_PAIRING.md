@@ -82,7 +82,10 @@ is disabled.
 Native first pairing requires the receiver to open a two-minute pairing window.
 Both PCs compare an independently computed eight-digit security code that binds
 the environment, server ID, observed certificate, client ID, nonce, and request
-ID. A confirmation HMAC and receiver approval must both succeed. Later
+ID. The receiver prompt is emitted as soon as the request is created so both
+computers show the code at the same time. Either person may confirm first; the
+server records trust only after the sender's confirmation HMAC and the receiver's
+explicit matching-code approval have both succeeded. Later
 connections use an exact certificate pin and a DPAPI-protected sender
 credential. The credential may request transfer approval but cannot upload;
 every Windows transfer receives a separate exact-manifest grant. See

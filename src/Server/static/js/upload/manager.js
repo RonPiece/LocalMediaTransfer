@@ -24,7 +24,6 @@ window.UploadManager = {
     displaySpeedEMA: 0,
     lastSpeedReportTs: 0,
     speedInterval: null,
-    heartbeatInterval: null,
     stallWatchInterval: null,
     lastProgressTs: 0,
     sessionId: null,
@@ -77,32 +76,14 @@ window.UploadManager = {
             this.resetFiles();
         };
 
-        console.log('Upload manager initialized');
         this.logClientEvent('INFO', 'ui_initialized', 'Upload manager initialized', {
             frontendVersion: window.LMT_FRONTEND_VERSION || 'unknown',
-            userAgent: navigator.userAgent,
-            platform: navigator.platform || '',
-            maxTouchPoints: navigator.maxTouchPoints || 0,
             iosLike: window.Utils?.isIOSLike?.() || false,
-            path: window.location.pathname,
             mobile: this.isMobile
         });
-
-        this.startHeartbeat();
     },
 
     installRuntimeTelemetry() {
-        document.addEventListener('visibilitychange', () => {
-            this.logClientEvent('INFO', 'visibility_changed', 'Document visibility changed', {
-                visibilityState: document.visibilityState,
-                hidden: document.hidden
-            });
-        });
-
-        window.addEventListener('pagehide', () => {
-            this.logClientEvent('WARN', 'pagehide', 'Page hidden/unloaded by browser');
-        });
-
         window.addEventListener('offline', () => {
             this.logClientEvent('WARN', 'network_offline', 'Browser reported offline state');
         });
@@ -110,21 +91,6 @@ window.UploadManager = {
         window.addEventListener('online', () => {
             this.logClientEvent('INFO', 'network_online', 'Browser reported online state');
         });
-    },
-
-    startHeartbeat() {
-        if (this.heartbeatInterval) {
-            clearInterval(this.heartbeatInterval);
-        }
-
-        this.heartbeatInterval = setInterval(() => {
-            this.logClientEvent('INFO', 'heartbeat', 'Client heartbeat', {
-                running: this.running,
-                pending: this.pendingCount,
-                successCount: this.successCount,
-                errorCount: this.errorCount
-            });
-        }, 20000);
     },
 
     startStallWatchdog() {
@@ -185,9 +151,7 @@ window.UploadManager = {
                 body: JSON.stringify(payload),
                 keepalive: true
             });
-        } catch (error) {
-            console.warn('client_log failed', error);
-        }
+        } catch (error) {}
     },
 
     reportSpeedSample(bytesPerSecond, force = false) {
@@ -302,9 +266,7 @@ window.UploadManager = {
                 this.chunkSizeBytes = cfg?.desktop?.chunkSizeBytes || defaultChunk;
                 this.CONCURRENCY = cfg?.desktop?.parallelFiles || this.CONCURRENCY;
             }
-        } catch (error) {
-            console.warn('Failed to load /config, using defaults', error);
-        }
+        } catch (error) {}
     },
 
     initElements() {
@@ -807,5 +769,3 @@ window.UploadManager = {
         }
     }
 };
-
-console.log('🚀 Upload manager loaded');

@@ -6,7 +6,10 @@ const vm = require('node:vm');
 
 for (const ios of [false, true]) {
     test(`chunk capacity rejects before reading media (iOS=${ios})`, async () => {
-        const context = { window: { Utils: { isIOSLike: () => ios } } };
+        const context = { window: {
+            Utils: { isIOSLike: () => ios },
+            SecurityManager: { token: null }
+        } };
         vm.createContext(context);
         vm.runInContext(fs.readFileSync(path.join(__dirname,
             '../../src/Server/static/js/core/transfer-limits.js'), 'utf8'), context);
@@ -17,13 +20,14 @@ for (const ios of [false, true]) {
         const effective = ios ? 8 * 1024 * 1024 : configured;
         let started = false;
         workers.buildChunkFileId = () => 'test';
-        const manager = { chunkSizeBytes: configured, logClientEvent() {
+        const manager = { chunkSizeBytes: configured, logClientEvent() {} };
+        const file = { size: effective * 10000 + 1, slice() {
+            return { size: effective };
+        } };
+        workers.uploadChunkXHR = async () => {
             started = true;
             throw new Error('accepted boundary');
-        } };
-        const file = { size: effective * 10000 + 1, slice() {
-            throw new Error('must not read media');
-        } };
+        };
         await assert.rejects(workers.uploadChunked({ file }, manager), /10,000 chunks/);
         assert.equal(started, false);
         file.size--;

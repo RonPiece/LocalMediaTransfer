@@ -59,24 +59,48 @@
                     </StackPanel>
                     <TextBlock x:Name="SelectionSummary" Text="No files selected"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                    <ListView x:Name="FilesList" MaxHeight="250" SelectionMode="None"
-                              AutomationProperties.Name="Selected files">
-                        <ListView.ItemTemplate>
-                            <DataTemplate>
-                                <Grid Padding="4" ColumnSpacing="12">
-                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                    <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
-                                    <TextBlock Grid.Column="1" Text="{Binding SizeText}"
-                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                    <TextBlock Grid.Column="2" Text="{Binding StateText}"
-                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                    <Button Grid.Column="3" Content="Remove" Tag="{Binding FileId}"
-                                            Click="RemoveFile_Click"
-                                            AutomationProperties.Name="Remove selected file" />
-                                </Grid>
-                            </DataTemplate>
-                        </ListView.ItemTemplate>
-                    </ListView>
+                    <Border Background="{ThemeResource LayerFillColorDefaultBrush}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Padding="8">
+                        <ListView x:Name="FilesList" MaxHeight="250" SelectionMode="None"
+                                  Background="Transparent"
+                                  AutomationProperties.Name="Selected files">
+                            <ListView.ItemContainerStyle>
+                                <Style TargetType="ListViewItem">
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                    <Setter Property="Padding" Value="0" />
+                                    <Setter Property="Margin" Value="0,0,0,6" />
+                                    <Setter Property="CornerRadius" Value="6" />
+                                </Style>
+                            </ListView.ItemContainerStyle>
+                            <ListView.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="{ThemeResource ControlFillColorDefaultBrush}"
+                                            BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="6"
+                                            Padding="10,8">
+                                        <Grid ColumnSpacing="12">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                            <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis"
+                                                       VerticalAlignment="Center" />
+                                            <TextBlock Grid.Column="1" Text="{Binding SizeText}"
+                                                       VerticalAlignment="Center"
+                                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                            <TextBlock Grid.Column="2" Text="{Binding StateText}"
+                                                       VerticalAlignment="Center"
+                                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                            <Button Grid.Column="3" Content="Remove" Tag="{Binding FileId}"
+                                                    Click="RemoveFile_Click"
+                                                    AutomationProperties.Name="Remove selected file" />
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+                    </Border>
                     <StackPanel Spacing="2">
                         <CheckBox x:Name="SkipDuplicatesCheckBox"
                                   Content="Skip exact duplicate files"

@@ -20,6 +20,16 @@ repository.
   the first device.
 - Clarified browser-link security text and Windows pairing availability in the
   desktop interface.
+- Windows pairing codes now appear on both computers as soon as the request is
+  created. Either user may confirm first, but trust is stored only after both
+  computers independently confirm the matching code.
+- Improved selected-file contrast on the Windows Send page with separate page,
+  section, list, and file-row surfaces.
+- Reduced browser upload UI stalls for large selections by removing per-row GPU
+  layers and shimmer animations, throttling whole-file progress rendering, and
+  eliminating per-file and heartbeat diagnostic requests.
+- Replaced the `_dont_delete` upload metadata folder with the clearer
+  `Local Media Transfer Data` name. Existing folders migrate in place.
 
 ## [2.0.0] - 2026-09-04
 

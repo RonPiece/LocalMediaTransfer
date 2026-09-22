@@ -598,6 +598,8 @@ Test-Feature "Security" "Authenticated client logs redact secrets and neutralize
         message = "probe`tmessage"
         data = @{
             token = $secretMarker
+            file = $secretMarker
+            existingName = $secretMarker
             selectedFiles = 3
         }
     } | ConvertTo-Json
@@ -1089,8 +1091,8 @@ Test-Feature "CORS" "OPTIONS preflight returns allowed methods" `
 Write-Host ""
 Write-Host "--- 8. Metadata & File Persistence ---" -ForegroundColor White
 
-Test-Feature "Metadata" "Upload metadata is logged to _dont_delete/_index.txt" `
-    "Legacy: appends timestamp, original name, saved name, IP to _index.txt" {
+Test-Feature "Metadata" "Upload metadata is logged to Local Media Transfer Data/_index.txt" `
+    "Appends timestamp, original name, saved name, IP to the app-managed index" {
     $marker = "metadata_test_" + [guid]::NewGuid().ToString("N").Substring(0,8)
     $content = [System.Text.Encoding]::UTF8.GetBytes("Metadata tracking test: $marker")
     $mp = Build-MultipartBody -FileName "$marker.txt" -FileContent $content
@@ -1099,7 +1101,7 @@ Test-Feature "Metadata" "Upload metadata is logged to _dont_delete/_index.txt" `
         -ContentType $mp.ContentType -Body $mp.Body -Headers $headers -TimeoutSec 10
     if ($r.success -ne $true) { throw "Upload failed" }
 
-    $indexPath = Join-Path $uploadRootDir "_dont_delete\_index.txt"
+    $indexPath = Join-Path $uploadRootDir "Local Media Transfer Data\_index.txt"
     if (Test-Path $indexPath) {
         $indexContent = Get-Content $indexPath -Tail 5 -ErrorAction SilentlyContinue
         $found = $indexContent | Where-Object { $_ -match $marker }
@@ -1113,9 +1115,9 @@ Test-Feature "Metadata" "Upload metadata is logged to _dont_delete/_index.txt" `
     }
 }
 
-Test-Feature "Metadata" "File hash persisted in _dont_delete/hashes.db" `
+Test-Feature "Metadata" "File hash persisted in Local Media Transfer Data/hashes.db" `
     "Current engine stores duplicate hashes in SQLite (hashes.db)" {
-    $dbPath = Join-Path $uploadRootDir "_dont_delete\hashes.db"
+    $dbPath = Join-Path $uploadRootDir "Local Media Transfer Data\hashes.db"
     if (-not (Test-Path $dbPath)) {
         throw "hashes.db not found at $dbPath"
     }

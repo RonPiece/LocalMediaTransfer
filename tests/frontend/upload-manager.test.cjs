@@ -883,6 +883,11 @@ test('frontend loader cache key matches its module asset version', () => {
         true,
         'index.html should invalidate the loader when its module version changes'
     );
+    assert.equal(
+        html.includes(`/static/style.css?v=${version}`),
+        true,
+        'index.html should invalidate the stylesheet with the same release asset version'
+    );
 });
 
 test('loaded frontend scripts avoid icon-font dependencies', () => {

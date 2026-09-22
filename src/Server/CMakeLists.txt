@@ -32,6 +32,7 @@ set(SOURCES
 set(HEADERS
     include/server/HttpServer.hpp
     include/config/RuntimeEnvironment.hpp
+    include/config/StoragePaths.hpp
     include/io/FileWriter.hpp
     include/io/HashEngine.hpp
     include/ipc/PipeServer.hpp

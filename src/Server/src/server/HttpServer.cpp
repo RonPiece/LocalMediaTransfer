@@ -7,6 +7,7 @@
 
 #include "server/HttpServer.hpp"
 #include "common/TransferLimits.hpp"
+#include "config/StoragePaths.hpp"
 #include "security/PairingStore.hpp"
 #include "security/NativeSessionStore.hpp"
 #include "io/FileWriter.hpp"
@@ -158,8 +159,10 @@ static bool isSensitiveLogDataKey(const std::string& key) {
     return normalized == "token" || normalized == "credential" ||
         normalized == "password" || normalized == "secret" ||
         normalized == "url" || normalized == "path" ||
-        normalized == "filename" || normalized == "transferfilename" ||
-        normalized == "savedfilename" || normalized == "assetid" ||
+        normalized == "file" || normalized == "filename" ||
+        normalized == "transferfilename" ||
+        normalized == "savedfilename" || normalized == "existingname" ||
+        normalized == "assetid" ||
         normalized == "deviceid" || normalized == "serverid" ||
         normalized == "certificatefingerprint";
 }
@@ -191,22 +194,22 @@ static std::string computeFileSha256(const fs::path& path) {
 // Serializes the final append only; timestamp and line construction happen outside it.
 static std::mutex g_metadataMutex;
 
-// ─── Helper: ensure _dont_delete metadata folder exists ───
+// ─── Helper: ensure the app-managed upload metadata folder exists ───
 static std::string ensureMetadataFolder(const std::string& uploadDir) {
-    fs::path metaDir = fs::path(uploadDir) / "_dont_delete";
+    fs::path metaDir = fs::u8path(uploadDir) /
+        lmt::StoragePaths::MetadataDirectoryName;
     fs::create_directories(metaDir);
 
-    // Create README if it doesn't exist
+    // Keep the app-owned explanation current after legacy-folder migration.
     fs::path readmePath = metaDir / "README.txt";
-    if (!fs::exists(readmePath)) {
-        std::ofstream readme(readmePath);
-        if (readme.is_open()) {
-            readme << "Local Network Media Transfer - Metadata Files\n"
-                   << "===============================================\n\n"
-                   << "hashes.db    - SQLite database for duplicate detection (SHA-256 hashes)\n"
-                   << "_index.txt   - Upload history log\n\n"
-                   << "DO NOT DELETE these files.\n";
-        }
+    std::ofstream readme(readmePath, std::ios::trunc);
+    if (readme.is_open()) {
+        readme << "Local Media Transfer - Application Data\n"
+               << "=======================================\n\n"
+               << "hashes.db    - SQLite database for duplicate detection (SHA-256 hashes)\n"
+               << "_index.txt   - Upload history log\n\n"
+               << "These files are managed by Local Media Transfer. Removing this folder\n"
+               << "does not remove transferred media, but resets local duplicate metadata.\n";
     }
     return metaDir.string();
 }
@@ -235,7 +238,9 @@ static void appendUploadMetadata(const std::string& uploadDir,
         // A short lock is still required so concurrent append operations cannot
         // interleave bytes in the shared history file.
         std::lock_guard<std::mutex> lock(g_metadataMutex);
-        fs::path indexPath = fs::path(uploadDir) / "_dont_delete" / "_index.txt";
+        fs::path indexPath = fs::u8path(uploadDir) /
+            lmt::StoragePaths::MetadataDirectoryName /
+            lmt::StoragePaths::UploadIndexName;
         std::ofstream f(indexPath, std::ios::app);
         if (f.is_open()) {
             f << line.str();

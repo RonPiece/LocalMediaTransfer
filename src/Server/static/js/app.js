@@ -6,7 +6,7 @@
 (async function initApp() {
     'use strict';
 
-    const assetVersion = '20260922.1';
+    const assetVersion = '20260922.2';
     window.LMT_FRONTEND_VERSION = assetVersion;
 
     // Module loading configuration
@@ -39,16 +39,13 @@
         // Load all modules sequentially to respect dependencies
         for (const module of modules) {
             await loadScript(`${basePath}${module}?v=${assetVersion}`);
-            console.log(`✅ Loaded: ${module}`);
         }
         
         // Initialize application after all modules are loaded
         await initializeApplication();
         
-        console.log('✅ File Transfer Hub initialized successfully');
-        
     } catch (error) {
-        console.error('❌ Failed to initialize application:', error);
+        console.error('Local Media Transfer could not initialize.');
         showFallbackError();
     }
 
@@ -128,22 +125,22 @@
      * Global error handlers
      */
     function handleGlobalError(event) {
-        console.error('Global error:', event.error);
+        console.error('Local Media Transfer encountered an unexpected browser error.');
         if (window.UploadManager && typeof window.UploadManager.logClientEvent === 'function') {
             window.UploadManager.logClientEvent('ERROR', 'global_error', 'Unhandled browser error', {
-                message: event?.error?.message || event?.message || 'unknown',
                 filename: event?.filename || '',
                 line: event?.lineno || 0,
-                column: event?.colno || 0
+                column: event?.colno || 0,
+                errorType: event?.error?.name || 'Error'
             });
         }
     }
 
     function handleUnhandledRejection(event) {
-        console.error('Unhandled promise rejection:', event.reason);
+        console.error('Local Media Transfer encountered an unexpected asynchronous error.');
         if (window.UploadManager && typeof window.UploadManager.logClientEvent === 'function') {
             window.UploadManager.logClientEvent('ERROR', 'unhandled_rejection', 'Unhandled promise rejection', {
-                reason: String(event?.reason || 'unknown')
+                errorType: event?.reason?.name || 'Error'
             });
         }
         event.preventDefault();

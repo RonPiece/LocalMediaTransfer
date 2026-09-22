@@ -92,6 +92,24 @@ Browser/static frontend tests:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\test_frontend.ps1
 ```
 
+The browser frontend is dependency-free vanilla JavaScript, not React. For a
+physical desktop-browser performance investigation, use Chrome or Edge DevTools:
+
+- **Performance** records main-thread scripting, layout, paint, and long tasks.
+- **Performance monitor** shows live CPU, JavaScript heap, DOM-node, and layout
+  counts while files are selected and transferred.
+- **Memory > Heap snapshot** identifies retained file metadata or detached DOM
+  nodes after Reset.
+- The browser task manager (`Shift+Esc`) separates tab memory from GPU and
+  network-process memory.
+- **Network** can confirm that diagnostics remain session-level rather than
+  generating requests for every successful file.
+
+Normal browser operation keeps the console quiet. Expected access-link failures
+are presented in the UI; the console retains only generic initialization or
+unexpected-error messages. Server-side client diagnostics are authenticated,
+bounded, and redact credential, path, device, and filename-like fields.
+
 Full dispatcher:
 
 ```powershell

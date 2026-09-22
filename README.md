@@ -41,7 +41,9 @@ pinned-HTTPS flow, and Browser transfer remains a compatibility option.
 
 1. On a receiving Windows PC, open **Receive**.
 2. For another Windows PC, open pairing for two minutes; on the sender open
-   **Send**, scan or enter the private IPv4 address, and compare the security code.
+   **Send**, scan or enter the private IPv4 address, and compare the security
+   code shown immediately on both computers. Either person may confirm first;
+   pairing completes only after both confirm the same code.
 3. Choose up to 1,000 files and request transfer approval.
 4. For iPhone, scan the separate iPhone QR code and approve the device.
 5. Use **Browser transfer (compatibility)** only when a native client is
@@ -77,6 +79,10 @@ After opening the Windows app:
 - keep HTTPS enabled for normal use;
 - scan the QR code from the iPhone app;
 - approve new iPhones before they can transfer files.
+
+The destination contains a `Local Media Transfer Data` folder for the local
+duplicate index and legacy upload metadata. It is application data rather than
+transferred media. Upgrades rename the older `_dont_delete` folder in place.
 
 ### iPhone
 

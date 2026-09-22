@@ -41,6 +41,9 @@ and maintainer availability.
   and binds it to the exact GUI/server process identities and environment.
   Security commands are acknowledged and desired policy is replayed after a
   reconnect instead of being treated as successfully delivered on write.
+- Windows first-pairing prompts display the same derived code concurrently on
+  both computers. Sender and receiver confirmations may arrive in either order,
+  but neither side alone creates trust.
 - The browser receives a random, upload-capable browser credential through an
   explicitly created five-minute, single-use fragment bootstrap. Creating a
   replacement invalidates the previous unused link. Successful exchange

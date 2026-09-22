@@ -29,9 +29,6 @@ window.SecurityManager = {
 
         if (!this.token) {
             this.failureReason = bootstrap ? 'invalid' : 'missing';
-            console.error(bootstrap
-                ? 'One-time browser link is invalid, expired, or already used'
-                : 'Secure browser link is missing');
             this.showAccessError(this.failureReason);
             this.disableControls();
             return;
@@ -42,7 +39,6 @@ window.SecurityManager = {
         if (!valid) {
             this.clearBrowserAuthorization(this.token);
             this.failureReason = 'invalid';
-            console.error('Token rejected by server');
             this.showAccessError('invalid');
             this.disableControls();
             return;
@@ -89,7 +85,6 @@ window.SecurityManager = {
             this.persistBrowserAuthorization(payload.token);
             return payload.token;
         } catch (e) {
-            console.warn('Bootstrap exchange failed');
             return null;
         }
     },
@@ -109,7 +104,6 @@ window.SecurityManager = {
             if (typeof localStorage !== 'undefined')
                 localStorage.setItem(this.storageKey, token);
         } catch (e) {
-            console.warn('Browser authorization could not be retained');
         }
     },
 
@@ -140,7 +134,6 @@ window.SecurityManager = {
             const j = await resp.json();
             return !!j.valid;
         } catch (e) {
-            console.warn('Token verification failed:', e);
             return false;
         }
     },
@@ -191,5 +184,3 @@ window.SecurityManager = {
         if (banner) banner.remove();
     }
 };
-
-console.log('🔐 Security manager loaded');

@@ -68,7 +68,13 @@ public:
         const std::string& requestId, const std::string& clientNonce);
 
 private:
-    enum class PairState { Pending, Confirmed, Approved, Denied };
+    enum class PairState {
+        Pending,
+        SenderConfirmed,
+        ReceiverConfirmed,
+        Approved,
+        Denied
+    };
     enum class TransferState { Pending, Approved, Denied, Cancelled };
 
     struct PairingRequest {

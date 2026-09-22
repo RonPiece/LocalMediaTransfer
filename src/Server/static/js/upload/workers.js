@@ -93,11 +93,6 @@ window.UploadWorkers = {
         return new Promise(async (resolve) => {
             let wasFailedBefore = false;
             try {
-                manager.logClientEvent('INFO', 'file_started', 'File upload started', {
-                    file: meta.name,
-                    size: meta.size,
-                    id: meta.id
-                });
                 wasFailedBefore = !!meta.failed;
                 meta.failed = false;
                 this.clearFileSpeed(manager, meta);
@@ -110,18 +105,7 @@ window.UploadWorkers = {
                     : this.uploadWholeFile(meta, manager);
 
                 if (this.isIOSLike() && meta.size > manager.SINGLE_FILE_MAX_BYTES) {
-                    manager.logClientEvent('INFO', 'ios_large_file_wait', 'Large iOS transfer queued for serialized access', {
-                        file: meta.name,
-                        id: meta.id,
-                        size: meta.size
-                    });
                     meta.serverResult = await this.withIOSLargeTransfer(async () => {
-                        manager.logClientEvent('INFO', 'ios_large_file_start', 'Large iOS transfer acquired upload slot', {
-                            file: meta.name,
-                            id: meta.id,
-                            size: meta.size,
-                            mode: this.shouldUseChunkedUpload(meta, manager) ? 'chunked' : 'whole-file'
-                        });
                         return performUpload();
                     });
                 } else {
@@ -142,12 +126,6 @@ window.UploadWorkers = {
                         existingName === meta.name
                             ? 'Already exists'
                             : `Already exists as ${existingName}`);
-                    manager.logClientEvent('INFO', 'file_skipped', 'Exact duplicate verified by server', {
-                        file: meta.name,
-                        existingName,
-                        size: meta.size,
-                        id: meta.id
-                    });
                 } else {
                     const savedName = meta.serverResult?.filename || meta.name;
                     window.ProgressTracker.markFileSuccess(
@@ -157,16 +135,9 @@ window.UploadWorkers = {
                         meta.id,
                         savedName,
                         meta.size);
-                    manager.logClientEvent('INFO', 'file_success', 'File upload succeeded', {
-                        file: meta.name,
-                        savedName,
-                        size: meta.size,
-                        id: meta.id
-                    });
                 }
                 
             } catch (error) {
-                console.error('Upload error:', error);
                 meta.failed = true;
                 this.clearFileSpeed(manager, meta);
                 if (!wasFailedBefore) {
@@ -174,10 +145,9 @@ window.UploadWorkers = {
                 }
                 window.ProgressTracker.markFileError(meta, error?.message || 'Error');
                 manager.logClientEvent('ERROR', 'file_error', 'File upload failed', {
-                    file: meta.name,
                     size: meta.size,
-                    id: meta.id,
-                    error: error?.message || 'unknown'
+                    status: Number(error?.status) || 0,
+                    errorType: error?.name || 'Error'
                 });
             } finally {
                 meta.done = true;
@@ -233,8 +203,11 @@ window.UploadWorkers = {
                     meta._lastTime = now;
                     this.recordTransferProgress(manager, meta, e.loaded);
 
-                    const percent = Math.round((e.loaded / e.total) * 100);
-                    window.ProgressTracker.setFileProgress(meta, percent, `${percent}%`);
+                    if (!meta._lastUIUpdate || now - meta._lastUIUpdate >= 100 || e.loaded === e.total) {
+                        const percent = Math.round((e.loaded / e.total) * 100);
+                        window.ProgressTracker.setFileProgress(meta, percent, `${percent}%`);
+                        meta._lastUIUpdate = now;
+                    }
                 }
             };
 
@@ -332,10 +305,6 @@ window.UploadWorkers = {
         let uploadedBytes = 0;
         let finalResult = null;
 
-        manager.logClientEvent('INFO', 'chunk_session_start', 'Chunk upload session started', {
-            file: meta.name, id: meta.id, totalChunks, chunkSize
-        });
-
         for (let i = 0; i < totalChunks; i++) {
             const start = i * chunkSize;
             const end = Math.min(start + chunkSize, meta.file.size);
@@ -370,7 +339,9 @@ window.UploadWorkers = {
                 (attemptNumber, err) => {
                     manager.retryCount = (manager.retryCount || 0) + 1;
                     manager.logClientEvent('WARN', 'chunk_retry', 'Retrying chunk upload', {
-                        file: meta.name, id: meta.id, chunkIndex: i, attempt: attemptNumber, reason: err?.name || err?.message || 'unknown'
+                        chunkIndex: i,
+                        attempt: attemptNumber,
+                        errorType: err?.name || 'Error'
                     });
                 },
                 (loaded, total) => {
@@ -448,5 +419,3 @@ window.UploadWorkers = {
         return error;
     }
 };
-
-console.log('⚙️ Upload workers loaded');

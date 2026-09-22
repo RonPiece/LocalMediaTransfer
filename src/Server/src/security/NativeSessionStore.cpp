@@ -263,7 +263,8 @@ void NativeSessionStore::pruneLocked() {
     for (auto it = m_pairings.begin(); it != m_pairings.end();) {
         if (now > it->second.expiresAt) {
             if (it->second.state == PairState::Pending ||
-                it->second.state == PairState::Confirmed) {
+                it->second.state == PairState::SenderConfirmed ||
+                it->second.state == PairState::ReceiverConfirmed) {
                 logNativeDiagnostic(json{{"event", "pairing_expired"}});
             }
             it = m_pairings.erase(it);
@@ -317,7 +318,7 @@ NativeSessionStore::Result NativeSessionStore::requestPairing(
         return error(400, "invalid_pairing_request", "The pairing request is invalid.");
     }
 
-    std::lock_guard lock(m_mutex);
+    std::unique_lock lock(m_mutex);
     pruneLocked();
     if (m_now() >= m_pairingWindowExpiresAt) {
         return error(403, "pairing_window_closed",
@@ -347,8 +348,19 @@ NativeSessionStore::Result NativeSessionStore::requestPairing(
         m_certificateFingerprint, deviceId, nonce, request.requestId);
     request.expiresAt = m_now() + PairingLifetime;
     const std::string requestId = request.requestId;
+    const json notification = {
+        {"requestId", request.requestId},
+        {"deviceId", request.deviceId},
+        {"deviceName", request.deviceName},
+        {"ip", request.ip},
+        {"securityCode", request.securityCode}
+    };
     m_pairings.emplace(requestId, std::move(request));
     logNativeDiagnostic(json{{"event", "pairing_requested"}});
+    lock.unlock();
+    if (m_pipeServer) {
+        m_pipeServer->sendNativePairingRequest(notification.dump());
+    }
     return {202, json{{"requestId", requestId}, {"status", "pending"},
         {"expiresInSeconds", 120}, {"environment", m_environment}}};
 }
@@ -362,23 +374,32 @@ NativeSessionStore::Result NativeSessionStore::confirmPairing(
     if (item == m_pairings.end()) {
         return error(404, "pairing_request_expired", "The pairing request has expired.");
     }
+    if (item->second.state == PairState::Denied) {
+        return error(403, "pairing_confirmation_rejected",
+            "The receiver declined the pairing request.");
+    }
     if (!constantTimeEqual(proof, item->second.expectedProof)) {
         item->second.state = PairState::Denied;
         return error(403, "pairing_confirmation_rejected",
             "The pairing confirmation was rejected.");
     }
-    item->second.state = PairState::Confirmed;
-    logNativeDiagnostic(json{{"event", "pairing_confirmed"}});
-    if (m_pipeServer) {
-        m_pipeServer->sendNativePairingRequest(json{
-            {"requestId", item->second.requestId},
-            {"deviceId", item->second.deviceId},
-            {"deviceName", item->second.deviceName},
-            {"ip", item->second.ip},
-            {"securityCode", item->second.securityCode}
-        }.dump());
+    if (item->second.state == PairState::ReceiverConfirmed) {
+        if (!m_pairingStore->trustCredentialHash(item->second.deviceId,
+                item->second.deviceName, item->second.credentialHash,
+                item->second.ip, "windows", "approval_required")) {
+            return error(500, "pairing_persistence_failed",
+                "The receiver could not save the trusted computer.");
+        }
+        item->second.state = PairState::Approved;
+        logNativeDiagnostic(json{{"event", "pairing_approved"}});
+    } else if (item->second.state == PairState::Pending) {
+        item->second.state = PairState::SenderConfirmed;
     }
-    return {200, json{{"status", "confirmed"}, {"environment", m_environment}}};
+    logNativeDiagnostic(json{{"event", "pairing_confirmed"}});
+    return {200, json{
+        {"status", item->second.state == PairState::Approved
+            ? "approved" : "confirmed"},
+        {"environment", m_environment}}};
 }
 
 NativeSessionStore::Result NativeSessionStore::pairingStatus(
@@ -402,7 +423,14 @@ bool NativeSessionStore::approvePairing(const std::string& requestId) {
     std::lock_guard lock(m_mutex);
     pruneLocked();
     auto item = m_pairings.find(requestId);
-    if (item == m_pairings.end() || item->second.state != PairState::Confirmed) return false;
+    if (item == m_pairings.end() || item->second.state == PairState::Denied) return false;
+    if (item->second.state == PairState::Pending) {
+        item->second.state = PairState::ReceiverConfirmed;
+        return true;
+    }
+    if (item->second.state == PairState::ReceiverConfirmed ||
+        item->second.state == PairState::Approved) return true;
+    if (item->second.state != PairState::SenderConfirmed) return false;
     if (!m_pairingStore->trustCredentialHash(item->second.deviceId,
             item->second.deviceName, item->second.credentialHash, item->second.ip,
             "windows", "approval_required")) return false;

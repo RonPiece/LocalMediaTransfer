@@ -321,5 +321,3 @@
         }
     };
 })();
-
-console.log('UI modals loaded');

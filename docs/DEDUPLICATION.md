@@ -85,7 +85,9 @@ failed.
 
 ## SQLite inventory
 
-The upload folder contains `_dont_delete/hashes.db`. Schema version 2 stores one
+The upload folder contains `Local Media Transfer Data/hashes.db`. On upgrade,
+the server renames the legacy `_dont_delete` folder in place so existing
+duplicate metadata remains available. Schema version 2 stores one
 row per physical filename:
 
 ```text

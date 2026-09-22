@@ -171,3 +171,35 @@ test('stylesheet honors the reduced-motion preference', () => {
     assert.match(reducedMotion, /animation-iteration-count:\s*1\s*!important/);
     assert.match(reducedMotion, /transition-duration:\s*0\.01ms\s*!important/);
 });
+
+test('large file lists avoid per-row compositor layers and live-region churn', () => {
+    const css = fs.readFileSync(
+        path.resolve(__dirname, '../../src/Server/static/style.css'),
+        'utf8');
+    const html = fs.readFileSync(
+        path.resolve(__dirname, '../../src/Server/static/index.html'),
+        'utf8');
+    const progressSource = fs.readFileSync(
+        path.resolve(__dirname, '../../src/Server/static/js/ui/progress.js'),
+        'utf8');
+    const managerSource = fs.readFileSync(
+        path.resolve(__dirname, '../../src/Server/static/js/upload/manager.js'),
+        'utf8');
+    const workerSource = fs.readFileSync(
+        path.resolve(__dirname, '../../src/Server/static/js/upload/workers.js'),
+        'utf8');
+
+    const fileItemRule = css.match(
+        /\.file-item\s*\{[^}]*content-visibility:\s*auto[^}]*\}/s)?.[0] || '';
+    assert.notEqual(fileItemRule, '');
+    assert.equal(fileItemRule.includes('will-change'), false);
+    assert.equal(fileItemRule.includes('translateZ'), false);
+    assert.match(fileItemRule, /content-visibility:\s*auto/);
+    assert.match(css, /\.file-item \.progress-bar-modern::after\s*{[^}]*content:\s*none/s);
+    assert.doesNotMatch(html, /id="progress"[^>]*aria-live/);
+    assert.equal(progressSource.includes('console.log'), false);
+    assert.equal(managerSource.includes('heartbeat'), false);
+    assert.equal(workerSource.includes("'file_started'"), false);
+    assert.equal(workerSource.includes("'file_success'"), false);
+    assert.match(workerSource, /now - meta\._lastUIUpdate >= 100/);
+});

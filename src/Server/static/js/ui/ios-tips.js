@@ -108,5 +108,3 @@ window.IOSTips = {
         container.appendChild(fragment);
     }
 };
-
-console.log('iOS tips loaded');
