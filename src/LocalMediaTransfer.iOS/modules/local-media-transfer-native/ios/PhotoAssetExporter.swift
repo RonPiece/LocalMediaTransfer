@@ -31,6 +31,70 @@ private final class PhotoContinuationGate<Value> {
   }
 }
 
+/// Serializes callback writes, reservation accounting, completion and cancellation.
+private final class PhotoResourceWriter {
+  private let lock = NSLock()
+  private let handle: FileHandle
+  private let sessions: PreparationSessionStore
+  private let sessionRef: String
+  private let url: URL
+  private let completion: (Result<Void, Error>) -> Void
+  private var requestId: PHAssetResourceDataRequestID?
+  private var completed = false
+  private var pendingFailure: Error?
+
+  init(url: URL, sessions: PreparationSessionStore, sessionRef: String,
+       completion: @escaping (Result<Void, Error>) -> Void) throws {
+    guard FileManager.default.createFile(atPath: url.path, contents: nil) else {
+      throw PhotoPreparationError.rendition("temporary-storage-limit")
+    }
+    handle = try FileHandle(forWritingTo: url)
+    self.url = url
+    self.sessions = sessions
+    self.sessionRef = sessionRef
+    self.completion = completion
+  }
+
+  var isCompleted: Bool {
+    lock.lock(); defer { lock.unlock() }
+    return completed
+  }
+
+  func install(_ id: PHAssetResourceDataRequestID) {
+    lock.lock()
+    requestId = id
+    let cancel = completed
+    lock.unlock()
+    if cancel { PHAssetResourceManager.default().cancelDataRequest(id) }
+  }
+
+  func receive(_ data: Data) {
+    lock.lock()
+    guard !completed, pendingFailure == nil else { lock.unlock(); return }
+    var failure: Error?
+    do {
+      try sessions.reserveTemporaryChunk(sessionRef: sessionRef, url: url, bytes: UInt64(data.count))
+      try handle.write(contentsOf: data)
+    } catch { failure = error; pendingFailure = error }
+    lock.unlock()
+    if let failure { finish(.failure(failure)) }
+  }
+
+  func finish(_ result: Result<Void, Error>) {
+    lock.lock()
+    guard !completed else { lock.unlock(); return }
+    completed = true
+    var outcome = pendingFailure.map { Result<Void, Error>.failure($0) } ?? result
+    do { try handle.close() } catch { outcome = .failure(error) }
+    let id = requestId
+    lock.unlock()
+    if case .failure = outcome, let id {
+      PHAssetResourceManager.default().cancelDataRequest(id)
+    }
+    completion(outcome)
+  }
+}
+
 /// Exports catalogued PhotoKit resources to session-owned files. Cloud access
 /// stays disabled so selection never triggers an implicit cellular download.
 final class PhotoAssetExporter {
@@ -73,7 +137,10 @@ final class PhotoAssetExporter {
         temporaryCreatedAtUptime: exported.temporaryCreatedAtUptime
       )
     } catch {
-      if exported.temporary { try? FileManager.default.removeItem(at: exported.url) }
+      if exported.temporary {
+        try? FileManager.default.removeItem(at: exported.url)
+        sessions.discardTemporaryReservation(sessionRef: sessionRef, url: exported.url)
+      }
       throw error
     }
     return ExportedPhotoVariant(
@@ -105,17 +172,28 @@ final class PhotoAssetExporter {
     do {
       try await withCheckedThrowingContinuation {
         (continuation: CheckedContinuation<Void, Error>) in
-        PHAssetResourceManager.default().writeData(
-          for: resource,
-          toFile: destination,
-          options: options
-        ) { error in
-          if let error {
-            continuation.resume(throwing: error)
-          } else {
-            continuation.resume(returning: ())
+        let operation = UUID()
+        let writer: PhotoResourceWriter
+        do {
+          writer = try PhotoResourceWriter(url: destination, sessions: sessions, sessionRef: sessionRef) { result in
+            self.sessions.completeOperation(sessionRef: sessionRef, id: operation)
+            continuation.resume(with: result)
           }
+        } catch {
+          continuation.resume(throwing: error)
+          return
         }
+        let request = PHAssetResourceManager.default().requestData(
+          for: resource, options: options,
+          dataReceivedHandler: { writer.receive($0) },
+          completionHandler: { error in
+            writer.finish(error.map { .failure($0) } ?? .success(()))
+          })
+        writer.install(request)
+        sessions.registerOperation(sessionRef: sessionRef, id: operation, completed: writer.isCompleted) {
+          writer.finish(.failure(PhotoPreparationError.rendition("cancelled")))
+        }
+        if writer.isCompleted { sessions.completeOperation(sessionRef: sessionRef, id: operation) }
       }
       guard !sessions.isCancelled(sessionRef) else {
         throw PhotoPreparationError.rendition("cancelled")
@@ -131,6 +209,7 @@ final class PhotoAssetExporter {
       // so the exporter must remove it immediately instead of waiting for the
       // session directory fallback cleanup.
       try? FileManager.default.removeItem(at: destination)
+      sessions.discardTemporaryReservation(sessionRef: sessionRef, url: destination)
       throw error
     }
   }

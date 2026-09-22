@@ -6,6 +6,16 @@ type ThroughputSample = {
 
 const BYTES_PER_MB = 1_000_000;
 
+type ThroughputRates = {
+  currentMediaMBps: number;
+  averageMediaMBps: number;
+  peakMediaMBps: number;
+  currentEncodedMBps: number;
+  uploadedMediaBytes: number;
+  acknowledgedEncodedBytes: number;
+  sampledAt: number;
+};
+
 export class ThroughputTracker {
   private readonly samples: ThroughputSample[] = [];
   private firstActiveSampleIndex = 0;
@@ -14,6 +24,13 @@ export class ThroughputTracker {
   private uploadedMediaBytes = 0;
   private acknowledgedEncodedBytes = 0;
   private peakMediaMBps = 0;
+  private rates: Readonly<ThroughputRates> = {
+    currentMediaMBps: 0, averageMediaMBps: 0, peakMediaMBps: 0,
+    currentEncodedMBps: 0, uploadedMediaBytes: 0, acknowledgedEncodedBytes: 0, sampledAt: 0,
+  };
+
+  /** All rates and acknowledged bytes describe the same acknowledgement. */
+  get current(): Readonly<ThroughputRates> { return this.rates; }
 
   constructor(
     private readonly startedAt: number,
@@ -44,13 +61,15 @@ export class ThroughputTracker {
     const windowSeconds = Math.max(0.001, Math.min(this.windowMs / 1000, elapsedSeconds));
     const currentMediaMBps = this.activeMediaBytes / BYTES_PER_MB / windowSeconds;
     this.peakMediaMBps = Math.max(this.peakMediaMBps, currentMediaMBps);
-    return {
+    this.rates = {
       currentMediaMBps,
       averageMediaMBps: this.uploadedMediaBytes / BYTES_PER_MB / elapsedSeconds,
       peakMediaMBps: this.peakMediaMBps,
       currentEncodedMBps: this.activeEncodedBytes / BYTES_PER_MB / windowSeconds,
       uploadedMediaBytes: this.uploadedMediaBytes,
       acknowledgedEncodedBytes: this.acknowledgedEncodedBytes,
+      sampledAt: now,
     };
+    return this.rates;
   }
 }

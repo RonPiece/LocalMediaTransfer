@@ -31,6 +31,9 @@ internal static class Program
                 $"Profile '{options.Profile}' will transfer approximately {FormatBytes(expectedBytes)}.");
             Console.WriteLine($"Server: {options.Server}");
             Console.WriteLine($"Exports: {options.ExportDirectory}");
+            Console.WriteLine(string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("LMT_BENCHMARK_PROCESS_ID"))
+                ? "Process metrics: benchmark client (set LMT_BENCHMARK_PROCESS_ID for a local receiver)."
+                : "Process metrics: explicitly selected local receiver.");
 
             string tempRoot = Path.Combine(
                 Path.GetTempPath(),
@@ -191,6 +194,7 @@ internal static class Program
                 errors == 0 && integrity ? "completed" : "failed");
             await client.FinishRunAsync(runId, finish, cancellationToken);
             await ExportAndReportAsync(client, options, run, runId, average, cancellationToken);
+            BenchmarkAcceptance.RequireSuccessfulTransfer(errors, integrity);
         }
         catch (Exception ex)
         {
@@ -436,7 +440,23 @@ internal static class Program
             await process.WaitForExitAsync(cancellationToken).WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
             string output = await outputTask;
             _ = await errorTask;
-            return process.ExitCode == 0 ? output.Trim() : "";
+            if (process.ExitCode != 0) return "";
+            using var status = Process.Start(new ProcessStartInfo
+            {
+                FileName = "git",
+                Arguments = "status --porcelain --untracked-files=normal",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            });
+            if (status is null) return output.Trim() + "-state-unknown";
+            Task<string> statusOutput = status.StandardOutput.ReadToEndAsync(cancellationToken);
+            Task<string> statusError = status.StandardError.ReadToEndAsync(cancellationToken);
+            await status.WaitForExitAsync(cancellationToken).WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
+            string changes = await statusOutput;
+            _ = await statusError;
+            return output.Trim() + (status.ExitCode != 0 ? "-state-unknown" : string.IsNullOrWhiteSpace(changes) ? "" : "-dirty");
         }
         catch
         {

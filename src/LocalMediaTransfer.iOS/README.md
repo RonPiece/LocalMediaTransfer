@@ -4,6 +4,9 @@ Developer guide for the iOS app. The user-facing overview lives in the
 [root README](../../README.md).
 The shared user-visible transfer rules live in
 [`docs/TRANSFER_UX_CONTRACT.md`](../../docs/TRANSFER_UX_CONTRACT.md).
+The [maintainability plan and responsibility map](../../docs/IOS_REFACTORING.md)
+describe diagnostics, transfer accounting, pairing helpers and UI lifecycle
+ownership, including the native modernization work intentionally kept separate.
 
 ## Purpose
 
@@ -107,13 +110,16 @@ The free Windows-first install path is:
 4. Use Sideloadly on Windows to sign and install it.
 
 See [Unsigned IPA + Sideloadly](../../docs/IOS_SIDELOADLY.md).
+The same macOS workflow also runs for pull requests and is required by the
+Windows release workflow. It records the native toolchain and generated
+Podfile.lock alongside the IPA; a local Jest pass does not replace that build.
 
 ## Commands
 
 Run these from `src/LocalMediaTransfer.iOS`.
 
 ```powershell
-npm install
+npm ci
 npx expo start --offline
 npx tsc --noEmit
 npm run lint

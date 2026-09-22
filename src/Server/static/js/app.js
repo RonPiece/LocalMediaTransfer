@@ -6,13 +6,14 @@
 (async function initApp() {
     'use strict';
 
-    const assetVersion = '20260813.2';
+    const assetVersion = '20260906.1';
     window.LMT_FRONTEND_VERSION = assetVersion;
 
     // Module loading configuration
     const modules = [
         // Core utilities (no dependencies)
         'core/utils.js',
+        'core/transfer-limits.js',
         'core/i18n.js',
         'core/security.js',
         'core/storage.js',

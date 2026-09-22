@@ -18,7 +18,7 @@ describe('iOS build environment contract', () => {
     );
     expect(appConfigSource).not.toContain('LMT_IOS_ENVIRONMENT');
     expect(workflowSource).toContain(
-      'EXPO_PUBLIC_LMT_ENVIRONMENT: ${{ inputs.environment }}',
+      "EXPO_PUBLIC_LMT_ENVIRONMENT: ${{ inputs.environment || 'production' }}",
     );
     expect(workflowSource).not.toMatch(/^\s+LMT_IOS_ENVIRONMENT:/m);
   });

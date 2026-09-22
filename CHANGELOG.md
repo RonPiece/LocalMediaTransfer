@@ -8,7 +8,7 @@ repository.
 
 - No user-visible changes yet.
 
-## [2.0.0] - Unreleased
+## [2.0.0] - 2026-09-04
 
 Initial public release.
 

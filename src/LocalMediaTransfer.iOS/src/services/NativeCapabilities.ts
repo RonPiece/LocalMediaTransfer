@@ -1,3 +1,4 @@
+import { NativeEvents, nativeEventRecord, parseNativeProgressEvent } from './nativeEvents';
 import { EventEmitter, requireNativeModule } from 'expo-modules-core';
 import {
   discoveryPortForEnvironment,
@@ -173,6 +174,8 @@ interface LocalMediaTransferNativeModule {
   configureSecureConnection(options: { baseUrl: string; fingerprint: string }): Promise<void>;
   clearSecureConnection(): void;
   request(options: Record<string, unknown>): Promise<NativeHttpResponse>;
+  prepareRequest(id: string): void;
+  cancelRequest(id: string): void;
   securityState(): Promise<{ tlsVersion?: string; certificateVerified: boolean }>;
   resolveAssetFilenames(requests: NativeFilenameResolutionRequest[]): Promise<unknown[]>;
   prepareAssetWindow(
@@ -473,8 +476,9 @@ export function expectedServerEnvironment(): ClientServerEnvironment {
 
 // expo-modules-core types do not expose the generated native module event map.
 // Keep the cast at this boundary instead of leaking `any` into callers.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const nativeEventEmitter = nativeModule ? new EventEmitter(nativeModule as any) : null;
+const nativeEventEmitter = nativeModule ? new EventEmitter<NativeEvents>(nativeModule as unknown as InstanceType<typeof EventEmitter>) : null;
+
+let controlRequestSequence = 0;
 
 export const nativeCapabilities = {
   available: nativeModule !== null,
@@ -496,9 +500,27 @@ export const nativeCapabilities = {
     await nativeModule.configureSecureConnection({ baseUrl, fingerprint });
   },
   clearSecureConnection: () => nativeModule?.clearSecureConnection(),
-  request: async (options: Record<string, unknown>): Promise<NativeHttpResponse> => {
+  request: async (options: Record<string, unknown>, signal?: AbortSignal): Promise<NativeHttpResponse> => {
     if (!nativeModule) throw new Error('Native HTTPS transport is unavailable in Expo Go');
-    return nativeModule.request(options);
+    if (typeof nativeModule.prepareRequest !== 'function' || typeof nativeModule.cancelRequest !== 'function') {
+      throw new Error('Rebuild the installed app to enable cancellable secure requests');
+    }
+    if (signal?.aborted) throw new Error('Request aborted');
+    const requestId = `control-${Date.now()}-${++controlRequestSequence}`;
+    nativeModule.prepareRequest(requestId);
+    const module = nativeModule;
+    const cancel = () => module.cancelRequest(requestId);
+    signal?.addEventListener('abort', cancel, { once: true });
+    // Total deadline for control requests; media uploads use their own native
+    // service and retain transfer-appropriate timeouts.
+    const timer = setTimeout(cancel, 30_000);
+    try {
+      if (signal?.aborted) cancel();
+      return await nativeModule.request({ ...options, requestId });
+    } finally {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', cancel);
+    }
   },
   securityState: async (): Promise<{ tlsVersion?: string; certificateVerified: boolean }> =>
     nativeModule ? nativeModule.securityState() : { certificateVerified: false },
@@ -528,10 +550,10 @@ export const nativeCapabilities = {
       throw new Error('Native Photos preparation is unavailable in Expo Go');
     }
     const listener = nativeEventEmitter && onProgress
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ? (nativeEventEmitter as any).addListener(
+      ? nativeEventEmitter.addListener(
           'onPreparationProgress',
-          (event: { sessionRef?: unknown; completedAssets?: unknown; totalAssets?: unknown }) => {
+          (value: unknown) => {
+            const event = nativeEventRecord(value);
             if (
               event.sessionRef !== sessionRef ||
               typeof event.completedAssets !== 'number' ||
@@ -602,15 +624,16 @@ export const nativeCapabilities = {
   cancel: (sessionRef: string) => nativeModule?.cancel(sessionRef),
   addProgressListener: (listener: (event: { fileId: string; bytesSent: number; totalBytes: number }) => void) => {
     if (!nativeEventEmitter) return { remove() {} };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return (nativeEventEmitter as any).addListener('onUploadProgress', listener);
+    return nativeEventEmitter.addListener('onUploadProgress', value => {
+      const event = parseNativeProgressEvent(value);
+      if (event) listener(event);
+    });
   },
   addThermalStateListener: (listener: (state: ThermalState) => void) => {
     if (!nativeEventEmitter) return { remove() {} };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return (nativeEventEmitter as any).addListener(
+    return nativeEventEmitter.addListener(
       'onThermalStateChanged',
-      (event: { state?: unknown }) => listener(parseThermalState(event.state)),
+      value => listener(parseThermalState(nativeEventRecord(value).state)),
     );
   },
 };

@@ -65,7 +65,7 @@ namespace LocalMediaTransfer.GUI.Features.Security
 
         public void ApplySecurityState(MainWindow mainWindow)
         {
-            Token = mainWindow.CurrentToken;
+            Token = Features.Dashboard.DashboardPresentation.PairingCredential(mainWindow.CurrentToken);
             try { mainWindow.ServerManager.RefreshTlsMetadata(); } catch { }
             TlsFingerprint = mainWindow.ServerManager.TlsFingerprint;
             TlsPorts = mainWindow.ServerManager.AllowInsecureHttp
@@ -133,7 +133,7 @@ namespace LocalMediaTransfer.GUI.Features.Security
             if (result.Success)
             {
                 mainWindow.CurrentToken = candidate;
-                Token = candidate;
+                Token = Features.Dashboard.DashboardPresentation.PairingCredential(candidate);
             }
             return result;
         }

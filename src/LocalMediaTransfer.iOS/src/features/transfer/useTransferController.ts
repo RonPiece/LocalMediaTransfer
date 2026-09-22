@@ -12,12 +12,10 @@ import {
 } from '@/services/upload/types';
 import { transferText } from './content/transferText';
 import { FileState, FileStatus } from './transferPresentation';
-import { formatTransferEta, TransferEtaEstimator } from './TransferEtaEstimator';
+import { useTransferMetrics } from './useTransferMetrics';
+import { QueueNotice } from './QueueNotice';
 
 const UI_UPDATE_INTERVAL_MS = 100;
-const METRICS_UPDATE_INTERVAL_MS = 1000;
-const QUEUE_NOTICE_DWELL_MS = 1000;
-const QUEUE_NOTICE_CLEAR_HOLD_MS = 750;
 type UploadProgress = GlobalProgress;
 
 export function useTransferController({
@@ -34,10 +32,6 @@ export function useTransferController({
   includeAdditionalMediaComponents?: boolean;
 }) {
   const [currentProgress, setCurrentProgress] = React.useState<TransferProgress | null>(null);
-  const [currentMediaMBps, setCurrentMediaMBps] = React.useState(0);
-  const [averageMediaMBps, setAverageMediaMBps] = React.useState(0);
-  const [peakMediaMBps, setPeakMediaMBps] = React.useState(0);
-  const [etaText, setEtaText] = React.useState('Calculating…');
   const [completionSummary, setCompletionSummary] = React.useState<UploadSummary | null>(null);
   const [isFinished, setIsFinished] = React.useState(false);
   const [phase, setPhase] = React.useState<
@@ -60,7 +54,7 @@ export function useTransferController({
   const [resultList, setResultList] = React.useState<FileState[]>([]);
   const [showAllResults, setShowAllResults] = React.useState(false);
   const [showOnlyErrors, setShowOnlyErrors] = React.useState(false);
-  const [elapsedSeconds, setElapsedSeconds] = React.useState(0);
+  const { state: metrics, beginMetrics, observeMetrics, finishMetrics, cancelMetrics, stopMetrics } = useTransferMetrics();
   const [thermalState, setThermalState] = React.useState<ThermalState>('nominal');
   const statusById = React.useRef(new Map<string, FileStatus>());
   const resultById = React.useRef(new Map<string, FileState>());
@@ -68,14 +62,11 @@ export function useTransferController({
   const summaryRef = React.useRef({ success: 0, skipped: 0, failed: 0 });
   const callbacksEnabledRef = React.useRef(true);
   const uiTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-  const metricsTimerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
-  const queueNoticeShowTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-  const queueNoticeHideTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const filenameById = React.useMemo(
     () => new Map(assets.map(asset => [asset.id, asset.filename])),
     [assets],
   );
-  const startedAt = React.useRef(Date.now());
+  const queueNoticeRef = React.useRef<QueueNotice | null>(null);
 
   const markUnfinishedAsFailed = React.useCallback((message: string) => {
     let newlyFailed = 0;
@@ -101,16 +92,7 @@ export function useTransferController({
     let pendingProgress: UploadProgress | null = null;
     let fileUiDirty = false;
     let uiTimer: ReturnType<typeof setTimeout> | null = null;
-    let metricsTimer: ReturnType<typeof setInterval> | null = null;
-    let latestMetrics: UploadProgress | null = null;
-    let uploadObserved = false;
     let actualUploadObserved = false;
-    let etaEstimator = new TransferEtaEstimator();
-    let preparationWasComplete = false;
-    let queueWaiting = false;
-    let queueNoticeShown = false;
-    let queueNoticeShowTimer: ReturnType<typeof setTimeout> | null = null;
-    let queueNoticeHideTimer: ReturnType<typeof setTimeout> | null = null;
     let lastUiFlushAt = Date.now();
     const isActive = () => active && callbacksEnabledRef.current;
 
@@ -119,52 +101,12 @@ export function useTransferController({
     resultById.current.clear();
     recentFilesRef.current = [];
     summaryRef.current = { success: 0, skipped: 0, failed: 0 };
-    startedAt.current = Date.now();
 
-    const clearQueueNoticeTimers = () => {
-      if (queueNoticeShowTimer) clearTimeout(queueNoticeShowTimer);
-      if (queueNoticeHideTimer) clearTimeout(queueNoticeHideTimer);
-      queueNoticeShowTimer = null;
-      queueNoticeHideTimer = null;
-      queueNoticeShowTimerRef.current = null;
-      queueNoticeHideTimerRef.current = null;
-    };
-
-    const updateQueueWaiting = (waiting: boolean) => {
-      queueWaiting = waiting;
-      if (waiting) {
-        if (queueNoticeHideTimer) {
-          clearTimeout(queueNoticeHideTimer);
-          queueNoticeHideTimer = null;
-          queueNoticeHideTimerRef.current = null;
-        }
-        if (!actualUploadObserved || queueNoticeShown || queueNoticeShowTimer) return;
-        queueNoticeShowTimer = setTimeout(() => {
-          queueNoticeShowTimer = null;
-          queueNoticeShowTimerRef.current = null;
-          if (!isActive() || finished || !queueWaiting || !actualUploadObserved) return;
-          queueNoticeShown = true;
-          setQueueCatchUpVisible(true);
-        }, QUEUE_NOTICE_DWELL_MS);
-        queueNoticeShowTimerRef.current = queueNoticeShowTimer;
-        return;
-      }
-
-      if (queueNoticeShowTimer) {
-        clearTimeout(queueNoticeShowTimer);
-        queueNoticeShowTimer = null;
-        queueNoticeShowTimerRef.current = null;
-      }
-      if (!queueNoticeShown || queueNoticeHideTimer) return;
-      queueNoticeHideTimer = setTimeout(() => {
-        queueNoticeHideTimer = null;
-        queueNoticeHideTimerRef.current = null;
-        if (!isActive() || finished || queueWaiting) return;
-        queueNoticeShown = false;
-        setQueueCatchUpVisible(false);
-      }, QUEUE_NOTICE_CLEAR_HOLD_MS);
-      queueNoticeHideTimerRef.current = queueNoticeHideTimer;
-    };
+    const queueNotice = new QueueNotice(() => isActive() && !finished,
+      () => actualUploadObserved, setQueueCatchUpVisible);
+    queueNoticeRef.current = queueNotice;
+    const clearQueueNoticeTimers = () => queueNotice.dispose();
+    const updateQueueWaiting = (waiting: boolean) => queueNotice.update(waiting);
 
     const applyProgress = (prog: UploadProgress) => {
       if (typeof prog.preparedFiles === 'number') {
@@ -185,7 +127,7 @@ export function useTransferController({
       if (uploadStartedNow && !actualUploadObserved) {
         actualUploadObserved = true;
         setHasUploadStarted(true);
-        if (queueWaiting) updateQueueWaiting(true);
+        if (queueNotice.waiting) updateQueueWaiting(true);
       }
       setCurrentProgress({
         assetId: prog.currentAsset.id,
@@ -229,24 +171,6 @@ export function useTransferController({
       setPhase('uploading');
     };
 
-    const flushMetrics = () => {
-      if (!isActive() || finished) return;
-      if (latestMetrics) {
-        setCurrentMediaMBps(latestMetrics.currentMediaMBps || 0);
-        setAverageMediaMBps(latestMetrics.averageMediaMBps || 0);
-        setPeakMediaMBps(latestMetrics.peakMediaMBps || 0);
-      }
-      setElapsedSeconds(Math.max(0, Math.floor((Date.now() - startedAt.current) / 1000)));
-      const nextEtaText = uploadObserved
-        ? formatTransferEta({
-            estimatedSeconds: etaEstimator.estimateSeconds(Date.now()),
-            hasRemainingBytes: etaEstimator.hasRemainingBytes(),
-            isFinished: false,
-          })
-        : 'Calculating…';
-      setEtaText(previous => previous === nextEtaText ? previous : nextEtaText);
-    };
-
     const flushUi = () => {
       if (!isActive()) return;
       if (pendingProgress) {
@@ -279,19 +203,14 @@ export function useTransferController({
       finished = true;
       if (uiTimer) clearTimeout(uiTimer);
       uiTimerRef.current = null;
-      if (metricsTimer) clearInterval(metricsTimer);
-      metricsTimer = null;
-      metricsTimerRef.current = null;
+      stopMetrics();
       clearQueueNoticeTimers();
       flushUi();
       setResultList(Array.from(resultById.current.values()));
       if (uploadSummary) {
         setCompletionSummary(uploadSummary);
-        setAverageMediaMBps(uploadSummary.averageMediaMBps);
-        setPeakMediaMBps(uploadSummary.peakMediaMBps);
       }
-      setElapsedSeconds(Math.max(1, Math.round((Date.now() - startedAt.current) / 1000)));
-      setEtaText('Done');
+      finishMetrics(uploadSummary);
       setIsFinished(true);
       return true;
     };
@@ -309,7 +228,7 @@ export function useTransferController({
       if (status === 'uploading' && !actualUploadObserved) {
         actualUploadObserved = true;
         setHasUploadStarted(true);
-        if (queueWaiting) updateQueueWaiting(true);
+        if (queueNotice.waiting) updateQueueWaiting(true);
       }
       const statusId = itemId || assetId;
       const previous = statusById.current.get(statusId);
@@ -349,7 +268,7 @@ export function useTransferController({
         {
           onProgress: (prog) => {
             if (isActive() && !finished) {
-              latestMetrics = prog;
+              observeMetrics(prog);
               if (
                 !actualUploadObserved &&
                 prog.status === 'uploading' &&
@@ -357,27 +276,7 @@ export function useTransferController({
               ) {
                 actualUploadObserved = true;
                 setHasUploadStarted(true);
-                if (queueWaiting) updateQueueWaiting(true);
-              }
-              const preparationJustCompleted =
-                prog.preparationComplete === true && !preparationWasComplete;
-              if (preparationJustCompleted) {
-                preparationWasComplete = true;
-                etaEstimator = new TransferEtaEstimator();
-                uploadObserved = false;
-              }
-              if (
-                prog.preparationComplete === true &&
-                prog.status !== 'preparing' &&
-                prog.status !== 'checking'
-              ) {
-                uploadObserved = true;
-                etaEstimator.observe({
-                  acknowledgedMediaBytes: prog.acknowledgedMediaBytes,
-                  plannedUploadMediaBytes: prog.plannedUploadMediaBytes,
-                  currentMediaMBps: prog.currentMediaMBps,
-                  sampledAt: prog.rateSampledAt,
-                });
+                if (queueNotice.waiting) updateQueueWaiting(true);
               }
               pendingProgress = prog;
               scheduleUiFlush();
@@ -399,8 +298,7 @@ export function useTransferController({
       );
     };
 
-    metricsTimer = setInterval(flushMetrics, METRICS_UPDATE_INTERVAL_MS);
-    metricsTimerRef.current = metricsTimer;
+    beginMetrics(() => isActive() && !finished);
     void startTransfer().catch(reportFatalError);
     return () => {
       active = false;
@@ -408,14 +306,14 @@ export function useTransferController({
       pendingProgress = null;
       if (uiTimer) clearTimeout(uiTimer);
       uiTimerRef.current = null;
-      if (metricsTimer) clearInterval(metricsTimer);
-      metricsTimerRef.current = null;
+      stopMetrics();
       clearQueueNoticeTimers();
       uploadManager.cancel();
     };
   }, [
     assets,
     filenameById,
+    beginMetrics, observeMetrics, finishMetrics, stopMetrics,
     markUnfinishedAsFailed,
     preparationMode,
     skipExactDuplicates,
@@ -426,24 +324,16 @@ export function useTransferController({
     callbacksEnabledRef.current = false;
     if (uiTimerRef.current) clearTimeout(uiTimerRef.current);
     uiTimerRef.current = null;
-    if (metricsTimerRef.current) clearInterval(metricsTimerRef.current);
-    metricsTimerRef.current = null;
-    if (queueNoticeShowTimerRef.current) clearTimeout(queueNoticeShowTimerRef.current);
-    queueNoticeShowTimerRef.current = null;
-    if (queueNoticeHideTimerRef.current) clearTimeout(queueNoticeHideTimerRef.current);
-    queueNoticeHideTimerRef.current = null;
-    setElapsedSeconds(Math.max(1, Math.round((Date.now() - startedAt.current) / 1000)));
+    queueNoticeRef.current?.dispose();
+    cancelMetrics();
     setIsFinished(true);
     uploadManager.cancel();
     onCancel();
-  }, [onCancel]);
+  }, [onCancel, cancelMetrics]);
 
   return {
     currentProgress,
-    currentMediaMBps,
-    averageMediaMBps,
-    peakMediaMBps,
-    etaText,
+    ...metrics,
     completionSummary,
     isFinished,
     phase,
@@ -461,7 +351,6 @@ export function useTransferController({
     setShowAllResults,
     showOnlyErrors,
     setShowOnlyErrors,
-    elapsedSeconds,
     resultList,
     thermalState,
     cancelTransfer,

@@ -23,7 +23,8 @@ public:
 
     NativeSessionStore(std::shared_ptr<PairingStore> pairingStore,
         std::shared_ptr<PipeServer> pipeServer, std::string serverId,
-        std::string certificateFingerprint, std::string environment);
+        std::string certificateFingerprint, std::string environment,
+        std::function<std::chrono::steady_clock::time_point()> now = [] { return std::chrono::steady_clock::now(); });
     ~NativeSessionStore();
 
     void beginPairingWindow();
@@ -125,6 +126,7 @@ private:
     std::string m_serverId;
     std::string m_certificateFingerprint;
     std::string m_environment;
+    std::function<std::chrono::steady_clock::time_point()> m_now;
     std::string m_grantMaster;
     mutable std::mutex m_mutex;
     std::chrono::steady_clock::time_point m_pairingWindowExpiresAt{};

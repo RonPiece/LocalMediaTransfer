@@ -150,6 +150,7 @@ function loadScript(context, relativePath) {
 function loadManager(navigatorOverrides = {}) {
     const harness = createContext(navigatorOverrides);
     loadScript(harness.context, '../../src/Server/static/js/core/utils.js');
+    loadScript(harness.context, '../../src/Server/static/js/core/transfer-limits.js');
     loadScript(harness.context, '../../src/Server/static/js/upload/manager.js');
     return { ...harness, manager: harness.context.window.UploadManager };
 }
@@ -158,6 +159,7 @@ function loadWorkers(navigatorOverrides = {}) {
     const harness = createContext(navigatorOverrides);
     harness.context.crypto = require('node:crypto').webcrypto;
     harness.context.AbortController = AbortController;
+    loadScript(harness.context, '../../src/Server/static/js/core/transfer-limits.js');
     loadScript(harness.context, '../../src/Server/static/js/core/utils.js');
     loadScript(harness.context, '../../src/Server/static/js/upload/workers.js');
     return { ...harness, workers: harness.context.window.UploadWorkers };

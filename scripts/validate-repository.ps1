@@ -9,6 +9,8 @@ $failures = [System.Collections.Generic.List[string]]::new()
 
 Push-Location $repoRoot
 try {
+    & (Join-Path $PSScriptRoot 'sync-transfer-limits.ps1') -Check
+    & (Join-Path $repoRoot 'tests/test_release_workflow.ps1')
     & (Join-Path $repoRoot "scripts\set-version.ps1") -Check
 
     $trackedFiles = @(git ls-files)

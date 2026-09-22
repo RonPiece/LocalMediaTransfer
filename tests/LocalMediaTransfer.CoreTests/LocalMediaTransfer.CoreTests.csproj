@@ -7,6 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="..\..\tools\LocalMediaTransfer.InnoSetup\InstalledProcessShutdown.cs" Link="Installer\InstalledProcessShutdown.cs" />
     <Compile Include="..\..\src\LocalMediaTransfer.GUI\Services\Environment\ApplicationEnvironment.cs" Link="Services\ApplicationEnvironment.cs" />
     <Compile Include="..\..\src\LocalMediaTransfer.GUI\Services\Server\ServerManager.cs" Link="Services\ServerManager.cs" />
     <Compile Include="..\..\src\LocalMediaTransfer.GUI\Services\Server\ServerProcessAbstractions.cs" Link="Services\ServerProcessAbstractions.cs" />

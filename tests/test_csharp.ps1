@@ -1,6 +1,7 @@
 $ErrorActionPreference = "Stop"
 
 $projects = @(
+    (Join-Path $PSScriptRoot "LocalMediaTransfer.BenchmarkTests\LocalMediaTransfer.BenchmarkTests.csproj"),
     (Join-Path $PSScriptRoot "LocalMediaTransfer.CoreTests\LocalMediaTransfer.CoreTests.csproj"),
     (Join-Path $PSScriptRoot "LocalMediaTransfer.WindowsClientTests\LocalMediaTransfer.WindowsClientTests.csproj"),
     (Join-Path $PSScriptRoot "LocalMediaTransfer.NativeWindowsAcceptanceTests\LocalMediaTransfer.NativeWindowsAcceptanceTests.csproj")

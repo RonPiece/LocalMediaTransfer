@@ -51,6 +51,11 @@ final class NativeUploadService {
     try handle.seek(toOffset: 0)
     let chunkSize = UInt64(configuredChunkSize)
     let totalChunks = Int((size + chunkSize - 1) / chunkSize)
+    guard size <= UInt64(TransferLimits.MaxFileBytes),
+          totalChunks <= TransferLimits.MaxChunksPerFile else {
+      throw NSError(domain: "LocalMediaTransfer.Upload", code: 1,
+        userInfo: [NSLocalizedDescriptionKey: "File exceeds the receiver's 10,000-chunk limit"])
+    }
     var sent: UInt64 = 0
     var finalBody = Data()
     var fileReadDurationMs = 0.0

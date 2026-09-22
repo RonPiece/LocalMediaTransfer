@@ -722,27 +722,27 @@ int main(int argc, char* argv[]) {
             return {true, {}};
         });
         
-        // Start Named Pipe server in background thread
-        std::thread pipeThread([&pipeServer]() {
-            pipeServer->run(g_running);
-        });
-        std::thread discoveryThread([&discoveryServer]() {
-            discoveryServer->run(g_running);
-        });
-        
-        // Start HTTP server (blocks until shutdown)
-        httpServer.run(g_running);
-        
-        // Cleanup
-        g_running = false;
-        pipeServer->stop();
-        discoveryServer->stop();
-        if (pipeThread.joinable()) {
-            pipeThread.join();
+        std::thread pipeThread;
+        std::thread discoveryThread;
+        auto stopWorkers = [&]() {
+            g_running = false;
+            pipeServer->stop();
+            discoveryServer->stop();
+            if (pipeThread.joinable()) pipeThread.join();
+            if (discoveryThread.joinable()) discoveryThread.join();
+        };
+        try {
+            pipeThread = std::thread([&pipeServer]() { pipeServer->run(g_running); });
+            discoveryThread = std::thread([&discoveryServer]() { discoveryServer->run(g_running); });
+            httpServer.run(g_running);
+        } catch (...) {
+            // Also covers failure while starting the second worker. Stop the
+            // services before joining so exception unwinding cannot terminate
+            // the process through a joinable std::thread destructor.
+            stopWorkers();
+            throw;
         }
-        if (discoveryThread.joinable()) {
-            discoveryThread.join();
-        }
+        stopWorkers();
         
         // SQLite auto-persists — no explicit save needed
 

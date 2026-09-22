@@ -16,6 +16,7 @@ internal static class Program
     private static readonly List<(string Name, Func<Task> Test)> Tests =
     [
         ("owned process stops normally", OwnedProcessStopsNormally),
+        ("installer stops only the verified executable", InstallerStopsVerifiedExecutable),
         ("external conflict remains alive", ExternalConflictRemainsAlive),
         ("conflict never reports running", ConflictNeverReportsRunning),
         ("unverified conflict cannot be recovered", UnverifiedConflictCannotBeRecovered),
@@ -79,6 +80,32 @@ internal static class Program
 
         Console.WriteLine($"{Tests.Count - failures}/{Tests.Count} C# core tests passed.");
         return failures == 0 ? 0 : 1;
+    }
+
+    private static async Task InstallerStopsVerifiedExecutable()
+    {
+        string executable = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System),
+            "WindowsPowerShell", "v1.0", "powershell.exe");
+        Process Start() => Process.Start(new ProcessStartInfo(executable,
+            "-NoProfile -NonInteractive -Command Start-Sleep -Seconds 60")
+            { UseShellExecute = false, CreateNoWindow = true })!;
+        using Process first = Start();
+        using Process second = Start();
+        try
+        {
+            Assert(!LocalMediaTransfer.Installer.InstalledProcessShutdown.StopOne(first.Id,
+                Path.Combine(Path.GetTempPath(), "unrelated.exe")), "Mismatched path was accepted.");
+            Assert(!first.HasExited, "Unverified process was stopped.");
+            Assert(LocalMediaTransfer.Installer.InstalledProcessShutdown.StopOne(first.Id, executable),
+                "Verified process was not stopped.");
+            Assert(!second.HasExited, "Another process with the same name was stopped.");
+        }
+        finally
+        {
+            if (!first.HasExited) first.Kill();
+            if (!second.HasExited) second.Kill();
+            await Task.WhenAll(first.WaitForExitAsync(), second.WaitForExitAsync());
+        }
     }
 
     private static async Task OwnedProcessStopsNormally()
@@ -763,7 +790,14 @@ internal static class Program
         Assert((string)payload["serverId"]! == "server-1", "Pairing payload server ID is missing.");
         Assert((string)payload["httpsUrl"]! == "https://10.0.0.2:8443", "Pairing payload HTTPS URL is missing.");
         Assert((string)payload["certificateFingerprint"]! == "abcdef", "Pairing payload fingerprint is missing.");
-        Assert((string)payload["token"]! == "token123", "Pairing payload token is missing.");
+        string expected = "pair-" + Convert.ToHexString(
+            System.Security.Cryptography.HMACSHA256.HashData(
+                System.Text.Encoding.UTF8.GetBytes("token123"),
+                System.Text.Encoding.UTF8.GetBytes("lmt-pairing-only-v1"))).ToLowerInvariant();
+        Assert((string)payload["token"]! == expected, "QR must contain the pairing-only capability.");
+        Assert((string)payload["token"]! != "token123", "QR exposed the receiver credential.");
+        Assert(DashboardPresentation.PairingCredential("rotated") != expected,
+            "Rotating the receiver credential must rotate the QR capability.");
         return Task.CompletedTask;
     }
 

@@ -97,7 +97,7 @@ internal static class TestHarness
                 Console.WriteLine("Starting isolated benchmark server...");
                 server = await StartServerAsync(context, benchmarkMode: true);
                 pipe = await ConnectPipeAsync(context.BenchmarkPipeName, token);
-                await RunBenchmarkRunnerAsync(context, options.BenchmarkProfile);
+                await RunBenchmarkRunnerAsync(context, options.BenchmarkProfile, server.Id);
 
                 Console.ForegroundColor = ConsoleColor.Green;
                 Console.WriteLine(
@@ -111,6 +111,7 @@ internal static class TestHarness
             await VerifyRuntimeConfigContractAsync(context);
             await VerifyEnvironmentArgumentValidationAsync(context);
             await VerifyAuthenticatedOwnershipControlAsync(context);
+            await VerifyListenerFailureShutdownAsync(context);
 
             string managedOrphan = Path.Combine(
                 uploadDirectory,
@@ -148,6 +149,7 @@ internal static class TestHarness
             await VerifyDistinctTestInstanceAsync(context, server);
             await VerifyDiscoveryAndPairingAsync(context, pipe);
             await VerifyNativeWindowsTransferAsync(context, pipe);
+            await VerifyConcurrentSettingsAsync(context);
             await VerifyOneTimeBrowserBootstrapAsync(context, pipe);
 
             Console.WriteLine("Running isolated HTTP integration suite...");
@@ -665,6 +667,33 @@ internal static class TestHarness
             if (message.RootElement.GetProperty("type").GetString() == expectedType)
                 return message.RootElement.GetProperty("data").Clone();
         }
+    }
+
+    private static async Task VerifyListenerFailureShutdownAsync(HarnessContext context)
+    {
+        var occupied = new TcpListener(IPAddress.Any, context.HttpsPort);
+        occupied.Server.ExclusiveAddressUse = true;
+        occupied.Start();
+        try
+        {
+            var start = new ProcessStartInfo(context.ServerExecutable) {
+                WorkingDirectory = context.ServerDirectory, UseShellExecute = false,
+                CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true
+            };
+            foreach (string argument in new[] {
+                "--environment", "test", "--instance-id", context.RunId,
+                "--data-root", context.RuntimeDataDirectory,
+                "--https-port", context.HttpsPort.ToString(), "--http-port", context.Port.ToString(),
+                "--tls-storage-dir", context.TlsDirectory, "--upload-dir", context.UploadDirectory,
+                "--history-db", context.HistoryDatabase
+            }) start.ArgumentList.Add(argument);
+            await using OwnedProcess process = OwnedProcess.Start(start, "occupied listener server");
+            Assert(await process.WaitForExitAsync(TimeSpan.FromSeconds(15)),
+                "Listener failure left worker threads running.");
+            AssertEqual(1, process.ExitCode,
+                "Listener failure must reach normal exception handling, not std::terminate.");
+        }
+        finally { occupied.Stop(); }
     }
 
     private static async Task VerifyEnvironmentArgumentValidationAsync(
@@ -1555,7 +1584,10 @@ internal static class TestHarness
         const string deviceId = "harness-device";
         string credential = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
         using var http = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{context.Port}") };
-        http.DefaultRequestHeaders.Add("X-Upload-Token", context.Token);
+        string pairingToken = "pair-" + Convert.ToHexString(HMACSHA256.HashData(
+            Encoding.UTF8.GetBytes(context.Token), Encoding.UTF8.GetBytes("lmt-pairing-only-v1"))).ToLowerInvariant();
+        http.DefaultRequestHeaders.Add("X-Upload-Token", pairingToken);
+        await VerifyPairingCannotTransferAsync(http);
         using HttpResponseMessage pending = await http.PostAsJsonAsync("/pair/request", new
         {
             deviceId,
@@ -1612,6 +1644,113 @@ internal static class TestHarness
         using JsonDocument verifiedBody = JsonDocument.Parse(await verified.Content.ReadAsStringAsync());
         if (verifiedBody.RootElement.GetProperty("environment").GetString() != "test")
             throw new InvalidOperationException("Token verification omitted the test environment.");
+        await VerifyUploadOwnershipAsync(context, credential);
+
+        const string deniedId = "harness-denied-device";
+        string deniedCredential = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
+        using var denialRequest = await http.PostAsJsonAsync("/pair/request", new
+        {
+            deviceId = deniedId, deviceName = "Denied test client", credential = deniedCredential
+        });
+        denialRequest.EnsureSuccessStatusCode();
+        await pipe.SendAcknowledgedCommandAsync("deny_device", deniedId);
+        await VerifyPairingCannotTransferAsync(http);
+        using var deniedClient = new HttpClient { BaseAddress = http.BaseAddress };
+        deniedClient.DefaultRequestHeaders.Add("X-Upload-Token", deniedCredential);
+        await VerifyPairingCannotTransferAsync(deniedClient);
+        await pipe.SendAcknowledgedCommandAsync("revoke_device", deviceId);
+        using var revokedClient = new HttpClient { BaseAddress = http.BaseAddress };
+        revokedClient.DefaultRequestHeaders.Add("X-Upload-Token", credential);
+        await VerifyPairingCannotTransferAsync(revokedClient);
+    }
+
+    private static async Task VerifyConcurrentSettingsAsync(HarnessContext context)
+    {
+        using HttpClient http = CreateHttpClient(context);
+        await Task.WhenAll(Enumerable.Range(0, 32).Select(async index =>
+        {
+            using HttpResponseMessage written = await http.PostAsJsonAsync("/settings",
+                new { marker = index, data = new string('x', 4096 + index) });
+            written.EnsureSuccessStatusCode();
+            using JsonDocument read = await GetJsonAsync(http, "/settings");
+            int marker = read.RootElement.GetProperty("marker").GetInt32();
+            AssertEqual(4096 + marker, read.RootElement.GetProperty("data").GetString()!.Length,
+                "Concurrent settings reads returned an inconsistent document.");
+        }));
+    }
+
+    private static async Task VerifyPairingCannotTransferAsync(HttpClient client)
+    {
+        foreach (var (method, route) in new[] {
+            (HttpMethod.Post, "/upload_chunk"), (HttpMethod.Post, "/upload_single"),
+            (HttpMethod.Post, "/upload/preflight"), (HttpMethod.Post, "/upload/preflight/verify"),
+            (HttpMethod.Post, "/upload_session/cancel"), (HttpMethod.Get, "/transfer_history/recent"),
+            (HttpMethod.Post, "/transfer_history"), (HttpMethod.Delete, "/transfer_history"),
+            (HttpMethod.Post, "/client_metrics"), (HttpMethod.Post, "/client_log"),
+            (HttpMethod.Get, "/settings"), (HttpMethod.Post, "/settings"),
+            (HttpMethod.Post, "/check_file") })
+        {
+            using var request = new HttpRequestMessage(method, route) { Content = new StringContent("{}") };
+            using var response = await client.SendAsync(request);
+            if (response.StatusCode != HttpStatusCode.Unauthorized && response.StatusCode != HttpStatusCode.Forbidden)
+                throw new InvalidOperationException($"Pairing/denied credential reached {route}: {response.StatusCode}");
+        }
+    }
+
+    private static async Task<HttpResponseMessage> OwnershipChunkAsync(HttpClient http,
+        string token, string id, string name, int index, string body, bool base64 = false,
+        string? transferId = null, int totalSize = 2)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/upload_chunk")
+        { Content = new StringContent(body) };
+        request.Headers.Add("X-Upload-Token", token);
+        request.Headers.Add("X-File-Id", id);
+        request.Headers.Add("X-Filename", name);
+        request.Headers.Add("X-Chunk-Index", index.ToString());
+        request.Headers.Add("X-Total-Chunks", "2");
+        request.Headers.Add("X-File-Size", totalSize.ToString());
+        if (transferId != null) request.Headers.Add("X-Transfer-Id", transferId);
+        if (base64) request.Headers.Add("X-Content-Transfer-Encoding", "base64");
+        return await http.SendAsync(request);
+    }
+
+    private static async Task VerifyUploadOwnershipAsync(HarnessContext context, string approvedCredential)
+    {
+        using var http = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{context.Port}") };
+        const string a = "ios-1785139292001", b = "ios-1785139292002";
+        using var firstA = await OwnershipChunkAsync(http, approvedCredential, a + "-0", "owner-a.bin", 0, "a");
+        using var firstB = await OwnershipChunkAsync(http, context.Token, b + "-0", "owner-b.bin", 0, "b");
+        firstA.EnsureSuccessStatusCode(); firstB.EnsureSuccessStatusCode();
+
+        using var cross = new HttpRequestMessage(HttpMethod.Post, "/upload_session/cancel")
+        { Content = JsonContent.Create(new { sessionId = b }) };
+        cross.Headers.Add("X-Upload-Token", approvedCredential);
+        using var rejected = await http.SendAsync(cross);
+        if (rejected.StatusCode != HttpStatusCode.Forbidden)
+            throw new InvalidOperationException("Cross-owner cancellation was not rejected.");
+        using var mutate = await OwnershipChunkAsync(http, approvedCredential, b + "-0", "owner-b.bin", 1, "x");
+        if (mutate.IsSuccessStatusCode) throw new InvalidOperationException("Cross-owner chunk mutation succeeded.");
+        using var finishB = await OwnershipChunkAsync(http, context.Token, b + "-0", "owner-b.bin", 1, "c");
+        finishB.EnsureSuccessStatusCode();
+        if (await File.ReadAllTextAsync(Path.Combine(context.UploadDirectory, "owner-b.bin")) != "bc")
+            throw new InvalidOperationException("Rejected cross-owner operation changed B.");
+
+        using var self = new HttpRequestMessage(HttpMethod.Post, "/upload_session/cancel")
+        { Content = JsonContent.Create(new { sessionId = a }) };
+        self.Headers.Add("X-Upload-Token", approvedCredential);
+        using var cancelled = await http.SendAsync(self);
+        cancelled.EnsureSuccessStatusCode();
+        using var retry = await OwnershipChunkAsync(http, approvedCredential, a + "-0", "owner-a.bin", 1, "a");
+        if (retry.IsSuccessStatusCode) throw new InvalidOperationException("Cancelled A still accepted data.");
+
+        int before = Directory.GetFiles(context.UploadDirectory, ".lmt-upload-*.tmp").Length;
+        for (int i = 0; i < 12; ++i) {
+            using var invalid = await OwnershipChunkAsync(http, context.Token,
+                "ios-1785139292003-" + i, "malformed.bin", 0, "!not-base64!", true);
+            if (invalid.IsSuccessStatusCode) throw new InvalidOperationException("Malformed Base64 was accepted.");
+        }
+        if (Directory.GetFiles(context.UploadDirectory, ".lmt-upload-*.tmp").Length != before)
+            throw new InvalidOperationException("Malformed first chunks allocated temporary storage.");
     }
 
     private static async Task VerifyNativeWindowsTransferAsync(
@@ -1679,8 +1818,32 @@ internal static class TestHarness
 
         string sessionId = "win-" + Convert.ToHexString(
             RandomNumberGenerator.GetBytes(16)).ToLowerInvariant();
+        using (var deviceOnly = CreatePinnedHttpsClient(context)) {
+            deviceOnly.DefaultRequestHeaders.Add("X-Upload-Token", credential);
+            await VerifyPairingCannotTransferAsync(deviceOnly);
+        }
         string fileId = sessionId + "-" + Convert.ToHexString(
             RandomNumberGenerator.GetBytes(8)).ToLowerInvariant();
+        for (int deniedIndex = 0; deniedIndex < 12; deniedIndex++)
+        {
+            string deniedSession = "win-" + Guid.NewGuid().ToString("N");
+            using var deniedRequest = new HttpRequestMessage(HttpMethod.Post,
+                "/native/v1/transfers/requests")
+            {
+                Content = JsonContent.Create(new {
+                    protocolVersion = 1, clientSessionId = deniedSession, skipExactDuplicates = true,
+                    files = new[] { new { fileId = deniedSession + "-0123456789abcdef",
+                        name = "denied.bin", sizeBytes = 1 } }
+                })
+            };
+            deniedRequest.Headers.Add("X-Device-Credential", credential);
+            using HttpResponseMessage response = await http.SendAsync(deniedRequest);
+            response.EnsureSuccessStatusCode();
+            using JsonDocument body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            await pipe.SendAcknowledgedCommandAsync("deny_native_transfer",
+                body.RootElement.GetProperty("requestId").GetString()!);
+        }
+
         using var transferRequest = new HttpRequestMessage(HttpMethod.Post,
             "/native/v1/transfers/requests")
         {
@@ -1723,6 +1886,55 @@ internal static class TestHarness
         catch (HttpRequestException exception) when (
             exception.StatusCode == HttpStatusCode.Forbidden) { }
 
+        // Two approved grants: A cannot cancel B even with B's exact session ID.
+        string sessionB = "win-" + Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant();
+        string fileB = sessionB + "-0";
+        // Keep this ownership assertion independent of files saved by earlier tests.
+        string contentB = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
+        using var requestB = new HttpRequestMessage(HttpMethod.Post, "/native/v1/transfers/requests")
+        {
+            Content = JsonContent.Create(new {
+                protocolVersion = 1, clientSessionId = sessionB, skipExactDuplicates = true,
+                files = new[] { new { fileId = fileB, name = "grant-b.bin", sizeBytes = contentB.Length } }
+            })
+        };
+        requestB.Headers.Add("X-Device-Credential", credential);
+        using var pendingB = await http.SendAsync(requestB);
+        pendingB.EnsureSuccessStatusCode();
+        using var bodyB = JsonDocument.Parse(await pendingB.Content.ReadAsStringAsync());
+        string requestIdB = bodyB.RootElement.GetProperty("requestId").GetString()!;
+        await pipe.SendAcknowledgedCommandAsync("approve_native_transfer", requestIdB);
+        using var statusB = new HttpRequestMessage(HttpMethod.Post,
+            $"/native/v1/transfers/requests/{requestIdB}/status");
+        statusB.Headers.Add("X-Device-Credential", credential);
+        using var approvedB = await http.SendAsync(statusB);
+        approvedB.EnsureSuccessStatusCode();
+        using var grantBodyB = JsonDocument.Parse(await approvedB.Content.ReadAsStringAsync());
+        string grantB = grantBodyB.RootElement.GetProperty("token").GetString()!;
+        using var startA = await OwnershipChunkAsync(http, grant, fileId, "native-harness.bin", 0, "a",
+            transferId: transferId, totalSize: 3);
+        using var startB = await OwnershipChunkAsync(http, grantB, fileB, "grant-b.bin", 0, contentB[..16],
+            transferId: sessionB[4..], totalSize: contentB.Length);
+        startA.EnsureSuccessStatusCode(); startB.EnsureSuccessStatusCode();
+        using var crossCancel = new HttpRequestMessage(HttpMethod.Post, "/upload_session/cancel")
+        { Content = JsonContent.Create(new { sessionId = sessionB }) };
+        crossCancel.Headers.Add("X-Upload-Token", grant);
+        crossCancel.Headers.Add("X-Transfer-Id", transferId);
+        using var crossRejected = await http.SendAsync(crossCancel);
+        if (crossRejected.StatusCode != HttpStatusCode.Forbidden)
+            throw new InvalidOperationException("Grant A cancelled transfer B.");
+        using var finishB = await OwnershipChunkAsync(http, grantB, fileB, "grant-b.bin", 1, contentB[16..],
+            transferId: sessionB[4..], totalSize: contentB.Length);
+        finishB.EnsureSuccessStatusCode();
+        if (await File.ReadAllTextAsync(Path.Combine(context.UploadDirectory, "grant-b.bin")) != contentB)
+            throw new InvalidOperationException("Cross-grant cancellation changed B.");
+        using var selfCancel = new HttpRequestMessage(HttpMethod.Post, "/upload_session/cancel")
+        { Content = JsonContent.Create(new { sessionId }) };
+        selfCancel.Headers.Add("X-Upload-Token", grant);
+        selfCancel.Headers.Add("X-Transfer-Id", transferId);
+        using var selfCancelled = await http.SendAsync(selfCancel);
+        selfCancelled.EnsureSuccessStatusCode();
+
         using var cancel = new HttpRequestMessage(HttpMethod.Post,
             $"/native/v1/transfers/{transferId}/cancel");
         cancel.Headers.Add("X-Upload-Token", grant);
@@ -1737,7 +1949,12 @@ internal static class TestHarness
         catch (HttpRequestException exception) when (
             exception.StatusCode == HttpStatusCode.Forbidden) { }
 
+        await VerifyThousandFileTransferAsync(http, pipe, context, credential);
         await pipe.SendAcknowledgedCommandAsync("revoke_device", clientId);
+        using (var revokedDevice = CreatePinnedHttpsClient(context)) {
+            revokedDevice.DefaultRequestHeaders.Add("X-Upload-Token", credential);
+            await VerifyPairingCannotTransferAsync(revokedDevice);
+        }
         using var revokedRequest = new HttpRequestMessage(HttpMethod.Post,
             "/native/v1/transfers/requests")
         {
@@ -1765,6 +1982,117 @@ internal static class TestHarness
         VerifyNativeDiagnosticPrivacy(context,
             [credential, nonce, clientId, requestId, transferRequestId, transferId,
                 fileId, fingerprint, "Harness Windows sender", "native-harness.bin"]);
+    }
+
+    private static async Task VerifyThousandFileTransferAsync(HttpClient http,
+        PipeConnection pipe, HarnessContext context, string credential)
+    {
+        Console.WriteLine("Verifying 1,000-file approved HTTPS transfer and 1,001-file rejection...");
+        string session = "win-" + Guid.NewGuid().ToString("N");
+        var files = Enumerable.Range(0, 1001).Select(index => new {
+            fileId = session + "-" + index.ToString("D4"),
+            name = "manifest-boundary-" + index.ToString("D4") + ".bin", sizeBytes = 4
+        }).ToArray();
+        foreach (int count in new[] { 1001, 1000 }) {
+            using var request = new HttpRequestMessage(HttpMethod.Post, "/native/v1/transfers/requests") {
+                Content = JsonContent.Create(new { protocolVersion = 1, clientSessionId = session,
+                    skipExactDuplicates = false, files = files.Take(count).ToArray() })
+            };
+            request.Headers.Add("X-Device-Credential", credential);
+            using var response = await http.SendAsync(request);
+            if (count == 1001) {
+                AssertEqual(HttpStatusCode.BadRequest, response.StatusCode, "1,001-file manifest accepted.");
+                continue;
+            }
+            response.EnsureSuccessStatusCode();
+            using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            string requestId = body.RootElement.GetProperty("requestId").GetString()!;
+            string transferId = body.RootElement.GetProperty("transferId").GetString()!;
+            await pipe.SendAcknowledgedCommandAsync("approve_native_transfer", requestId);
+            using var statusRequest = new HttpRequestMessage(HttpMethod.Post, $"/native/v1/transfers/requests/{requestId}/status");
+            statusRequest.Headers.Add("X-Device-Credential", credential);
+            using var status = await http.SendAsync(statusRequest);
+            status.EnsureSuccessStatusCode();
+            using var statusBody = JsonDocument.Parse(await status.Content.ReadAsStringAsync());
+            string grant = statusBody.RootElement.GetProperty("token").GetString()!;
+            using var deadline = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+            for (int index = 0; index < 1000; ++index) {
+                byte[] content = BitConverter.GetBytes(index);
+                using var upload = new HttpRequestMessage(HttpMethod.Post, "/upload_chunk") { Content = new ByteArrayContent(content) };
+                upload.Headers.Add("X-Upload-Token", grant);
+                upload.Headers.Add("X-Transfer-Id", transferId);
+                upload.Headers.Add("X-File-Id", files[index].fileId);
+                upload.Headers.Add("X-Filename", files[index].name);
+                upload.Headers.Add("X-File-Size", "4");
+                upload.Headers.Add("X-Chunk-Index", "0");
+                upload.Headers.Add("X-Total-Chunks", "1");
+                upload.Headers.Add("X-Skip-Duplicates", "false");
+                using var saved = await http.SendAsync(upload, deadline.Token);
+                saved.EnsureSuccessStatusCode();
+                byte[] actual = await File.ReadAllBytesAsync(Path.Combine(context.UploadDirectory, files[index].name), deadline.Token);
+                Assert(actual.SequenceEqual(content), "1,000-file transfer returned incorrect bytes.");
+            }
+            using var cancel = new HttpRequestMessage(HttpMethod.Post, $"/native/v1/transfers/{transferId}/cancel");
+            cancel.Headers.Add("X-Upload-Token", grant);
+            using var ended = await http.SendAsync(cancel);
+            ended.EnsureSuccessStatusCode();
+        }
+        Console.WriteLine("1,000-file transfer verified exact bytes for every file.");
+        await MeasureDuplicateInventoryAsync(context);
+    }
+
+    private static async Task MeasureDuplicateInventoryAsync(HarnessContext context)
+    {
+        using var client = CreatePinnedHttpsClient(context);
+        client.DefaultRequestHeaders.Add("X-Upload-Token", context.Token);
+        using var deadline = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        var queryTimes = new List<double>();
+        var uploadTimes = new List<double>();
+        var clock = Stopwatch.StartNew();
+        async Task VerifyDuplicatesAsync()
+        {
+            for (int batch = 0; batch < 10; ++batch)
+            {
+                var files = Enumerable.Range(batch * 100, 100).Select(index => new {
+                    id = index.ToString(), name = $"renamed-boundary-{index:D4}.bin", size = 4,
+                    sha256 = Convert.ToHexString(SHA256.HashData(BitConverter.GetBytes(index))).ToLowerInvariant()
+                }).ToArray();
+                var requestClock = Stopwatch.StartNew();
+                using var response = await client.PostAsJsonAsync("/upload/preflight/verify",
+                    new { files }, deadline.Token);
+                response.EnsureSuccessStatusCode();
+                using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync(deadline.Token));
+                var results = body.RootElement.GetProperty("files");
+                Assert(results.GetArrayLength() == 100 && results.EnumerateArray().All(
+                    result => result.GetProperty("action").GetString() == "skip"),
+                    "Duplicate inventory measurement returned an incorrect decision.");
+                queryTimes.Add(requestClock.Elapsed.TotalMilliseconds);
+            }
+        }
+        async Task UploadAlongsideAsync()
+        {
+            for (int index = 0; index < 20; ++index)
+            {
+                byte[] bytes = new byte[4096];
+                BitConverter.GetBytes(index).CopyTo(bytes, 0);
+                string name = $"inventory-concurrent-{index:D2}.bin";
+                using var multipart = new MultipartFormDataContent();
+                multipart.Add(new ByteArrayContent(bytes), "file", name);
+                var requestClock = Stopwatch.StartNew();
+                using var response = await client.PostAsync("/upload_single", multipart, deadline.Token);
+                response.EnsureSuccessStatusCode();
+                uploadTimes.Add(requestClock.Elapsed.TotalMilliseconds);
+                Assert((await File.ReadAllBytesAsync(Path.Combine(context.UploadDirectory, name),
+                    deadline.Token)).SequenceEqual(bytes), "Concurrent inventory upload bytes differ.");
+            }
+        }
+        await Task.WhenAll(VerifyDuplicatesAsync(), UploadAlongsideAsync());
+        queryTimes.Sort();
+        uploadTimes.Sort();
+        Console.WriteLine($"Duplicate inventory observation: 1,000 verified decisions in ten 100-file batches; " +
+            $"batch median/max {(queryTimes[4] + queryTimes[5]) / 2:F1}/{queryTimes[^1]:F1} ms; " +
+            $"20 concurrent 4 KiB uploads median/max {(uploadTimes[9] + uploadTimes[10]) / 2:F1}/{uploadTimes[^1]:F1} ms; " +
+            $"wall {clock.Elapsed.TotalSeconds:F2} s (HTTPS loopback, not isolated lock-wait timing).");
     }
 
     private static void VerifyNativeDiagnosticPrivacy(HarnessContext context,
@@ -2082,8 +2410,22 @@ internal static class TestHarness
 
     private static async Task RunBenchmarkRunnerAsync(
         HarnessContext context,
-        string profile)
+        string profile,
+        int serverProcessId)
     {
+        var acceptanceClock = Stopwatch.StartNew();
+        long transferBytes = profile switch
+        {
+            "stress" => 11L * 4 * 101 * 1024 * 1024,
+            "soak" => 15L * 1024 * 1024 * 1024,
+            "standard" => 4L * (200 + 1024) * 1024 * 1024,
+            _ => 305L * 1024 * 1024 + 4097
+        };
+        // Sources and receiver files coexist on the temporary drive until cleanup.
+        long requiredBytes = transferBytes * 2 + 1024L * 1024 * 1024;
+        if (new DriveInfo(Path.GetPathRoot(context.UploadDirectory)!).AvailableFreeSpace < requiredBytes)
+            throw new IOException($"Benchmark requires at least {requiredBytes / (1024 * 1024)} MiB free for sources and uploads.");
+        Console.WriteLine($"Planned transfer: {transferBytes} bytes; disk budget: {requiredBytes} bytes.");
         string runnerDll = Path.Combine(
             context.RepoRoot,
             "tools",
@@ -2111,6 +2453,7 @@ internal static class TestHarness
             RedirectStandardError = true
         };
         startInfo.ArgumentList.Add(runnerDll);
+        startInfo.Environment["LMT_BENCHMARK_PROCESS_ID"] = serverProcessId.ToString();
         startInfo.ArgumentList.Add("--profile");
         startInfo.ArgumentList.Add(profile);
         startInfo.ArgumentList.Add("--server");
@@ -2130,11 +2473,12 @@ internal static class TestHarness
             startInfo,
             "benchmark runner",
             echoOutput: true);
-        if (!await runner.WaitForExitAsync(TimeSpan.FromMinutes(10)))
+        int timeoutMinutes = profile == "soak" ? 30 : 10;
+        if (!await runner.WaitForExitAsync(TimeSpan.FromMinutes(timeoutMinutes)))
         {
             await runner.StopAsync();
             throw new TimeoutException(
-                $"Benchmark profile '{profile}' exceeded 10 minutes.");
+                $"Benchmark profile '{profile}' exceeded {timeoutMinutes} minutes.");
         }
         if (runner.ExitCode != 0)
         {
@@ -2143,10 +2487,21 @@ internal static class TestHarness
                 runner.FormatCapturedOutput());
         }
 
+        long lifetimePeakWorkingSet;
+        using (Process measuredServer = Process.GetProcessById(serverProcessId))
+        {
+            measuredServer.Refresh();
+            long peak = measuredServer.PeakWorkingSet64;
+            lifetimePeakWorkingSet = peak;
+            Console.WriteLine($"Acceptance: server lifetime peak working set {peak / (1024 * 1024)} MiB.");
+            if (profile == "stress" && peak > 2L * 1024 * 1024 * 1024)
+                throw new InvalidOperationException("Four-file stress exceeded the 2 GiB server peak working-set budget.");
+        }
+
         string[] jsonFiles = Directory.GetFiles(exportDirectory, "*.json");
         string[] csvFiles = Directory.GetFiles(exportDirectory, "*.csv");
-        int expectedRuns = profile == "standard" ? 4 : 1;
-        int expectedFilesPerRun = profile == "standard" ? 22 : 6;
+        int expectedRuns = profile switch { "standard" => 4, "stress" => 11, "soak" => 3, _ => 1 };
+        int expectedFilesPerRun = profile switch { "standard" => 22, "stress" => 4, "soak" => 1, _ => 6 };
         if (jsonFiles.Length != expectedRuns || csvFiles.Length != expectedRuns)
         {
             throw new InvalidOperationException(
@@ -2154,11 +2509,28 @@ internal static class TestHarness
                 "JSON and CSV export pair(s).");
         }
 
+        var measuredRates = new List<double>();
+        long verifiedBytes = 0;
+        string sourceRevision = "";
         foreach (string jsonFile in jsonFiles)
         {
             using JsonDocument export = JsonDocument.Parse(
                 await File.ReadAllTextAsync(jsonFile));
             JsonElement root = export.RootElement;
+            JsonElement run = root;
+            sourceRevision = run.GetProperty("gitCommit").GetString() ?? "";
+            if (run.GetProperty("errors").GetInt32() != 0 ||
+                run.GetProperty("retries").GetInt32() != 0 ||
+                !run.GetProperty("integrityOk").GetBoolean() ||
+                run.GetProperty("status").GetString() != "completed")
+                throw new InvalidOperationException("Benchmark acceptance requires completed runs with zero errors and retries.");
+            verifiedBytes += run.GetProperty("totalBytes").GetInt64();
+            if (!run.GetProperty("profile").GetString()!.EndsWith("-warmup", StringComparison.Ordinal))
+                measuredRates.Add(run.GetProperty("averageMBps").GetDouble());
+            long peakWorkingSet = root.GetProperty("samples").EnumerateArray()
+                .Select(sample => sample.GetProperty("workingSetBytes").GetInt64()).DefaultIfEmpty().Max();
+            string sampledPeak = peakWorkingSet == 0 ? "unavailable (transfer shorter than sampling interval)" : $"{peakWorkingSet / (1024 * 1024)} MiB";
+            Console.WriteLine($"Acceptance: {run.GetProperty("profile").GetString()}, {run.GetProperty("averageMBps").GetDouble():F2} MB/s, peak sampled server working set {sampledPeak}.");
             if (root.GetProperty("files").GetArrayLength() != expectedFilesPerRun ||
                 !root.GetProperty("files").EnumerateArray()
                     .All(file => file.GetProperty("integrityOk").GetBoolean()) ||
@@ -2169,6 +2541,24 @@ internal static class TestHarness
                     "Benchmark export is missing file integrity or machine metadata.");
             }
         }
+        if (verifiedBytes != transferBytes)
+            throw new InvalidOperationException("Benchmark did not verify the complete planned transfer volume.");
+        measuredRates.Sort();
+        double median = (measuredRates[(measuredRates.Count - 1) / 2] + measuredRates[measuredRates.Count / 2]) / 2;
+        Console.WriteLine($"Acceptance summary: {verifiedBytes} verified bytes; {measuredRates.Count} measured runs; median {median:F2} MB/s; range {measuredRates[0]:F2}-{measuredRates[^1]:F2} MB/s (loopback, warm-up excluded).");
+        // Preserve only sanitized acceptance evidence, not raw machine/media exports.
+        using var binary = File.OpenRead(context.ServerExecutable);
+        string serverSha256 = Convert.ToHexString(await SHA256.HashDataAsync(binary)).ToLowerInvariant();
+        string reportPath = Path.Combine(context.RepoRoot, "tests",
+            $"test_results_benchmark_{profile}_{DateTime.UtcNow:yyyyMMddHHmmss}.json");
+        await File.WriteAllTextAsync(reportPath, JsonSerializer.Serialize(new {
+            profile, completedUtc = DateTime.UtcNow, sourceRevision, serverSha256,
+            transport = "loopback", verifiedBytes, verifiedFiles = expectedRuns * expectedFilesPerRun,
+            measuredRuns = measuredRates.Count, medianMBps = median,
+            minMBps = measuredRates[0], maxMBps = measuredRates[^1], lifetimePeakWorkingSet,
+            totalWallSeconds = acceptanceClock.Elapsed.TotalSeconds, errors = 0, retries = 0, passed = true
+        }, JsonOptions));
+        Console.WriteLine($"Sanitized acceptance report: {reportPath}");
     }
 
     private static async Task<string> StartBenchmarkRunAsync(
@@ -2471,10 +2861,10 @@ internal sealed record HarnessOptions(
                     break;
                 case "--benchmark-only":
                     benchmarkProfile = Next().ToLowerInvariant();
-                    if (benchmarkProfile is not ("smoke" or "standard"))
+                    if (benchmarkProfile is not ("smoke" or "standard" or "stress" or "soak"))
                     {
                         throw new ArgumentException(
-                            "--benchmark-only supports smoke or standard.");
+                            "--benchmark-only supports smoke, standard, stress or soak.");
                     }
                     break;
                 case "--help":
@@ -2513,7 +2903,7 @@ internal sealed record HarnessOptions(
               --keep-artifacts                Preserve the isolated temporary directory.
               --skip-large-boundary-tests     Skip 99/100/101 MiB boundary uploads.
               --ownership-only               Run only authenticated process-control checks.
-              --benchmark-only <profile>      Run only smoke or standard benchmark profile.
+              --benchmark-only <profile>      Run smoke, standard, stress or soak in isolation.
               --benchmark-smoke-only          Alias for --benchmark-only smoke.
               --help                          Show this help.
             """);

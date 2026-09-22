@@ -49,6 +49,24 @@ function Get-SafeName {
     return $Value -replace '[^A-Za-z0-9._-]', '_'
 }
 
+function Get-NormalizedTextSha256 {
+    param([Parameter(Mandatory)][string]$Path)
+
+    $text = [IO.File]::ReadAllText($Path).
+        Replace("`r`n", "`n").
+        Replace("`r", "`n")
+    $utf8 = New-Object Text.UTF8Encoding($false)
+    $sha256 = [Security.Cryptography.SHA256]::Create()
+    try {
+        return ([BitConverter]::ToString(
+            $sha256.ComputeHash($utf8.GetBytes($text))
+        )).Replace('-', '')
+    }
+    finally {
+        $sha256.Dispose()
+    }
+}
+
 function Get-XmlChildText {
     param(
         [Parameter(Mandatory)]$Parent,
@@ -272,7 +290,10 @@ foreach ($entry in $browserLicenses) {
     $source = Join-Path $resolvedRepoRoot $entry.Source
     Assert-File -Path $source -Description "Browser dependency license"
     if (-not [string]::IsNullOrWhiteSpace([string]$entry.Sha256)) {
-        $actualHash = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash
+        # Git normalizes text to LF in the index, while Windows worktrees may
+        # materialize CRLF. Verify the license text independently of that
+        # checkout detail so local and CI packaging enforce the same pin.
+        $actualHash = Get-NormalizedTextSha256 -Path $source
         if ($actualHash -ne [string]$entry.Sha256) {
             throw "Pinned license checksum mismatch for $($entry.Name)."
         }

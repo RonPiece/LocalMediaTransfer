@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Security.Cryptography;
+using System.Text;
 using LocalMediaTransfer.GUI.Models;
 using LocalMediaTransfer.GUI.Services;
 
@@ -7,6 +9,13 @@ namespace LocalMediaTransfer.GUI.Features.Dashboard
 {
     public static class DashboardPresentation
     {
+        // Domain-separated capability: sharing this value does not reveal the
+        // receiver/browser session credential. Keep the label in sync with C++.
+        public static string PairingCredential(string sessionToken) =>
+            "pair-" + Convert.ToHexString(HMACSHA256.HashData(
+                Encoding.UTF8.GetBytes(sessionToken),
+                Encoding.UTF8.GetBytes("lmt-pairing-only-v1"))).ToLowerInvariant();
+
         public static string FormatBytes(long bytes)
         {
             if (bytes >= 1024L * 1024 * 1024)
@@ -73,7 +82,7 @@ namespace LocalMediaTransfer.GUI.Features.Dashboard
                 ["name"] = machineName,
                 ["httpsUrl"] = httpsUrl,
                 ["certificateFingerprint"] = certificateFingerprint,
-                ["token"] = token
+                ["token"] = PairingCredential(token)
             };
         }
     }

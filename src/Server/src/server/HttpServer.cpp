@@ -6,6 +6,7 @@
  */
 
 #include "server/HttpServer.hpp"
+#include "common/TransferLimits.hpp"
 #include "security/PairingStore.hpp"
 #include "security/NativeSessionStore.hpp"
 #include "io/FileWriter.hpp"
@@ -39,6 +40,7 @@
 #include <openssl/evp.h>
 #include <openssl/crypto.h>
 #include <openssl/ssl.h>
+#include <openssl/hmac.h>
 
 using json = nlohmann::json;
 namespace fs = std::filesystem;
@@ -181,47 +183,10 @@ static json sanitizeLogData(const json& data) {
 }
 
 static std::string computeFileSha256(const fs::path& path) {
-    std::ifstream file(path, std::ios::binary);
-    if (!file.is_open()) {
-        throw std::runtime_error("Unable to open uploaded file for integrity verification");
-    }
-
-    std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)> context(
-        EVP_MD_CTX_new(),
-        EVP_MD_CTX_free);
-    if (!context) {
-        throw std::runtime_error("Unable to allocate SHA-256 context");
-    }
-
-    std::vector<char> buffer(1024 * 1024);
-    unsigned char digest[EVP_MAX_MD_SIZE];
-    unsigned int digestLength = 0;
-
-    if (EVP_DigestInit_ex(context.get(), EVP_sha256(), nullptr) != 1) {
-        throw std::runtime_error("Unable to initialize SHA-256");
-    }
-
-    while (file.good()) {
-        file.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
-        const auto count = file.gcount();
-        if (count > 0 &&
-            EVP_DigestUpdate(context.get(), buffer.data(), static_cast<size_t>(count)) != 1) {
-            throw std::runtime_error("Unable to update SHA-256");
-        }
-    }
-
-    if (EVP_DigestFinal_ex(context.get(), digest, &digestLength) != 1) {
-        throw std::runtime_error("Unable to finalize SHA-256");
-    }
-
-    std::ostringstream output;
-    output << std::hex << std::setfill('0');
-    for (unsigned int i = 0; i < digestLength; ++i) {
-        output << std::setw(2) << static_cast<int>(digest[i]);
-    }
-    return output.str();
+    const auto hash = HashEngine::computeFileHash(path.u8string());
+    if (hash.empty()) throw std::runtime_error("Unable to read complete file for integrity verification");
+    return hash;
 }
-
 // Serializes the final append only; timestamp and line construction happen outside it.
 static std::mutex g_metadataMutex;
 
@@ -326,7 +291,7 @@ HttpServer::HttpServer(int httpsPort,
     fs::create_directories(m_config.uploadDir);
     ensureMetadataFolder(m_config.uploadDir);
 
-    // Suppress Crow's built-in INFO logging to prevent fmt 12.x assertion crash.
+    // Keep routine Crow request logging quiet; fmt assertions remain enabled.
     // Crow's response logger formats content_length (int, can be -1) which triggers
     // "assertion failed: negative value" in fmt/base.h:440. Our spdlog handles logging.
     m_httpsApp.loglevel(crow::LogLevel::Warning);
@@ -488,11 +453,15 @@ void HttpServer::setupRoutes(CrowApp& app) {
     CROW_ROUTE(app, "/native/v1/transfers/<string>/cancel")
     .methods("POST"_method)
     ([this, nativeResponse](const crow::request& req, std::string transferId) {
+        const auto credential = getTokenFromRequest(req);
         auto result = m_nativeSessionStore->cancelTransfer(
-            transferId, getTokenFromRequest(req));
+            transferId, credential);
         if (result.status == 200) {
+            // The store authorizes cancellation, including terminal grants.
+            const UploadAuthorization authorization{UploadPrincipal::NativeGrant,
+                UploadAction::Cancel, transferId, credentialOwnerPrefix(credential), credential};
             result.body["cancelledFiles"] =
-                m_fileWriter->abortFilesWithPrefix("win-" + transferId + "-");
+                m_fileWriter->abortFilesWithPrefix(authorization.ownerPrefix + "win-" + authorization.transferId + "-");
         }
         return nativeResponse(result);
     });
@@ -577,7 +546,8 @@ void HttpServer::setupRoutes(CrowApp& app) {
         res.add_header("Access-Control-Allow-Origin", "*");
 
         if (validateAnyToken(getTokenFromRequest(req))) {
-            response = {{"valid", true}, {"environment", m_runtimeEnvironment}};
+            response = {{"valid", true}, {"environment", m_runtimeEnvironment},
+                {"scope", validateSessionToken(getTokenFromRequest(req)) ? "pairing" : "authenticated"}};
             res.code = 200;
         } else {
             response = {{"valid", false}, {"error", "Invalid token"},
@@ -723,19 +693,20 @@ void HttpServer::setupRoutes(CrowApp& app) {
             {"browserBootstrapLifetimeSeconds",
              BrowserBootstrapLifetimeSeconds},
             {"mobile", {
-                {"chunkSizeBytes", 4 * 1024 * 1024},
+                {"chunkSizeBytes", lmt::TransferLimits::CompatibilityChunkBytes},
                 {"parallelFiles", 5},
                 {"sequentialChunksPerFile", true},
             }},
             {"desktop", {
-                {"chunkSizeBytes", 8 * 1024 * 1024},
+                {"chunkSizeBytes", lmt::TransferLimits::NativeChunkBytes},
                 {"parallelFiles", 6},
                 {"sequentialChunksPerFile", true},
             }},
             {"shared", {
-                {"singleFileMaxBytes", 100 * 1024 * 1024},
-                {"maxQueuedFiles", 1000},
-                {"maxFileSizeBytes", 100ULL * 1024 * 1024 * 1024}
+                {"singleFileMaxBytes", lmt::TransferLimits::WholeFileBytes},
+                {"maxQueuedFiles", lmt::TransferLimits::MaxQueuedFiles},
+                {"maxChunksPerFile", lmt::TransferLimits::MaxChunksPerFile},
+                {"maxFileSizeBytes", lmt::TransferLimits::MaxFileBytes}
             }},
             {"features", {
                 {"duplicateDetection", true},
@@ -768,7 +739,8 @@ void HttpServer::setupRoutes(CrowApp& app) {
         crow::response res;
         res.add_header("Content-Type", "application/json; charset=utf-8");
         res.add_header("Access-Control-Allow-Origin", "*");
-        if (!validateUploadAuthorization(req)) {
+        const auto authorization = authorizeUpload(req, UploadAction::Preflight);
+        if (!authorization) {
             res.code = 403;
             res.body = json{{"error", "Invalid token"}}.dump();
             return res;
@@ -777,15 +749,14 @@ void HttpServer::setupRoutes(CrowApp& app) {
         try {
             const auto body = json::parse(req.body);
             if (!body.contains("files") || !body["files"].is_array() ||
-                body["files"].size() > 1000) {
+                body["files"].size() > lmt::TransferLimits::MaxQueuedFiles) {
                 throw std::invalid_argument(
                     "files must be an array containing at most 1000 entries");
             }
 
             json results = json::array();
-            const std::string nativeTransferId =
-                req.get_header_value("X-Transfer-Id");
-            const std::string nativeToken = getTokenFromRequest(req);
+
+
             const bool skipExactDuplicates = skipExactDuplicatesForRequest(req);
             for (const auto& file : body["files"]) {
                 const std::string id = file.value("id", "");
@@ -795,10 +766,7 @@ void HttpServer::setupRoutes(CrowApp& app) {
                     throw std::invalid_argument(
                         "Each file requires a non-empty id and name");
                 }
-                if (!nativeTransferId.empty() &&
-                    !m_nativeSessionStore->authorizeFile(nativeToken,
-                        nativeTransferId, id, name, size,
-                        skipExactDuplicates)) {
+                if (!authorizeUploadFile(*authorization, id, name, size, skipExactDuplicates)) {
                     res.code = 403;
                     res.body = json{{"error", "transfer_manifest_mismatch"}}.dump();
                     return res;
@@ -825,7 +793,8 @@ void HttpServer::setupRoutes(CrowApp& app) {
         crow::response res;
         res.add_header("Content-Type", "application/json; charset=utf-8");
         res.add_header("Access-Control-Allow-Origin", "*");
-        if (!validateUploadAuthorization(req)) {
+        const auto authorization = authorizeUpload(req, UploadAction::Preflight);
+        if (!authorization) {
             res.code = 403;
             res.body = json{{"error", "Invalid token"}}.dump();
             return res;
@@ -834,15 +803,14 @@ void HttpServer::setupRoutes(CrowApp& app) {
         try {
             const auto body = json::parse(req.body);
             if (!body.contains("files") || !body["files"].is_array() ||
-                body["files"].size() > 1000) {
+                body["files"].size() > lmt::TransferLimits::MaxQueuedFiles) {
                 throw std::invalid_argument(
                     "files must be an array containing at most 1000 entries");
             }
 
             json results = json::array();
-            const std::string nativeTransferId =
-                req.get_header_value("X-Transfer-Id");
-            const std::string nativeToken = getTokenFromRequest(req);
+            const auto& nativeTransferId = authorization->transferId;
+
             const bool skipExactDuplicates = skipExactDuplicatesForRequest(req);
             PreflightHashCache hashCache;
             for (const auto& file : body["files"]) {
@@ -867,10 +835,7 @@ void HttpServer::setupRoutes(CrowApp& app) {
                     throw std::invalid_argument(
                         "Each file requires id, name, size, and full SHA-256");
                 }
-                if (!nativeTransferId.empty() &&
-                    !m_nativeSessionStore->authorizeFile(nativeToken,
-                        nativeTransferId, id, name, size,
-                        skipExactDuplicates)) {
+                if (!authorizeUploadFile(*authorization, id, name, size, skipExactDuplicates)) {
                     res.code = 403;
                     res.body = json{{"error", "transfer_manifest_mismatch"}}.dump();
                     return res;
@@ -991,7 +956,9 @@ void HttpServer::setupRoutes(CrowApp& app) {
             try {
                 // Validate it's proper JSON
                 auto j = json::parse(req.body);
-                m_settingsJson = j.dump();
+                const auto serialized = j.dump();
+                std::lock_guard<std::mutex> lock(m_settingsMutex);
+                m_settingsJson = serialized;
                 res.code = 200;
                 res.body = R"({"ok":true})";
             } catch (const std::exception& e) {
@@ -1000,6 +967,7 @@ void HttpServer::setupRoutes(CrowApp& app) {
             }
         } else {
             res.code = 200;
+            std::lock_guard<std::mutex> lock(m_settingsMutex);
             res.body = m_settingsJson;
         }
         return res;
@@ -1187,8 +1155,8 @@ void HttpServer::setupRoutes(CrowApp& app) {
         res.add_header("Content-Type", "application/json; charset=utf-8");
 
         // Validate token
-        if (!req.get_header_value("X-Transfer-Id").empty() ||
-            !validateRequestToken(req)) {
+        const auto authorization = authorizeUpload(req, UploadAction::WholeFile);
+        if (!authorization) {
             json err = {{"error", "Unauthorized"}, {"code", 401}};
             res.code = 401;
             res.body = err.dump();
@@ -1201,6 +1169,11 @@ void HttpServer::setupRoutes(CrowApp& app) {
 
         // Wrap ALL multipart parsing in try-catch to prevent abort()
         try {
+            if (req.body.size() > 101ULL * 1024 * 1024) {
+                res.code = 413;
+                res.body = json{{"error", "Multipart upload exceeds 100 MiB file limit"}}.dump();
+                return res;
+            }
             const bool skipExactDuplicates =
                 skipExactDuplicatesForRequest(req);
             crow::multipart::message msg(req);
@@ -1250,10 +1223,9 @@ void HttpServer::setupRoutes(CrowApp& app) {
 
                 if (!isTargetPart) continue;
 
-                if (part.body.empty()) {
-                    spdlog::warn("Empty file body for '{}'", filename);
-                    json err = {{"error", "Empty file"}, {"code", 400}};
-                    res.code = 400;
+                if (part.body.empty() || part.body.size() > lmt::TransferLimits::WholeFileBytes) {
+                    res.code = part.body.empty() ? 400 : 413;
+                    json err = {{"error", "File must contain 1 byte to 100 MiB"}, {"code", res.code}};
                     res.body = err.dump();
                     return res;
                 }
@@ -1264,7 +1236,7 @@ void HttpServer::setupRoutes(CrowApp& app) {
                     auto now = std::chrono::high_resolution_clock::now();
                     auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
                         now.time_since_epoch()).count();
-                    std::string fileId = std::to_string(ns) + "_" + std::to_string(uploadCounter++);
+                    std::string fileId = authorization->ownerPrefix + std::to_string(ns) + "_" + std::to_string(uploadCounter++);
 
                     spdlog::info("Initializing file '{}' with id '{}', size {} bytes", 
                                 filename, fileId, part.body.size());
@@ -1366,14 +1338,14 @@ void HttpServer::setupRoutes(CrowApp& app) {
                         return res;
                     } else {
                         spdlog::error("initFile failed for '{}' (id: {})", filename, fileId);
-                        json err = {{"error", "Failed to initialize file on server"}, {"code", 500}};
+                        json err = {{"error", "Receiver could not start this file. Check file-size limits, free space and folder access; wait for other uploads to finish, then retry."}, {"code", 500}};
                         res.code = 500;
                         res.body = err.dump();
                         return res;
                     }
                 } catch (const std::exception& e) {
                     spdlog::error("Failed to save file {}: {}", filename, e.what());
-                    json err = {{"error", "Failed to save file"}, {"code", 500}};
+                    json err = {{"error", "Receiver could not save this file. Check free space and folder access, then restart its upload."}, {"code", 500}};
                     res.code = 500;
                     res.body = err.dump();
                     return res;
@@ -1402,7 +1374,8 @@ void HttpServer::setupRoutes(CrowApp& app) {
         crow::response res;
         res.add_header("Access-Control-Allow-Origin", "*");
         res.add_header("Content-Type", "application/json; charset=utf-8");
-        if (!validateUploadAuthorization(req)) {
+        const auto authorization = authorizeUpload(req, UploadAction::Cancel);
+        if (!authorization) {
             res.code = 401;
             res.body = json{{"error", "Unauthorized"}}.dump();
             return res;
@@ -1418,12 +1391,22 @@ void HttpServer::setupRoutes(CrowApp& app) {
                 res.body = json{{"error", "Invalid upload session"}}.dump();
                 return res;
             }
-            const size_t cancelledFiles =
-                m_fileWriter->abortFilesWithPrefix(sessionId + "-");
-            if (sessionId.rfind("win-", 0) == 0 && m_nativeSessionStore) {
-                m_nativeSessionStore->cancelTransfer(
-                    sessionId.substr(4), getTokenFromRequest(req));
+            const auto& grantId = authorization->transferId;
+            const auto prefix = authorization->ownerPrefix + sessionId + "-";
+            if (sessionId.rfind("win-", 0) == 0) {
+                if (grantId != sessionId.substr(4) || !m_nativeSessionStore ||
+                    m_nativeSessionStore->cancelTransfer(
+                        sessionId.substr(4), authorization->credential).status != 200) {
+                    res.code = 403;
+                    res.body = json{{"error", "Session ownership mismatch"}}.dump();
+                    return res;
+                }
+            } else if (!grantId.empty() || !m_fileWriter->ownsSession(prefix)) {
+                res.code = 403;
+                res.body = json{{"error", "Session ownership mismatch"}}.dump();
+                return res;
             }
+            const size_t cancelledFiles = m_fileWriter->abortFilesWithPrefix(prefix);
             res.code = 200;
             res.body = json{
                 {"ok", true},
@@ -1470,7 +1453,8 @@ void HttpServer::setupRoutes(CrowApp& app) {
         res.add_header("Access-Control-Allow-Origin", "*");
         res.add_header("Content-Type", "application/json; charset=utf-8");
 
-        if (!validateUploadAuthorization(req)) {
+        const auto authorization = authorizeUpload(req, UploadAction::Chunk);
+        if (!authorization) {
             res.code = 401;
             res.body = json{{"error", "Unauthorized"}}.dump();
             res.add_header("Connection", "close");
@@ -1479,6 +1463,11 @@ void HttpServer::setupRoutes(CrowApp& app) {
 
         try {
             std::string fileId = req.get_header_value("X-File-Id");
+            if (req.body.size() > lmt::TransferLimits::MaxEncodedChunkBytes) {
+                res.code = 413;
+                res.body = json{{"error", "Chunk body exceeds limit"}}.dump();
+                return res;
+            }
             std::string filename = urlDecode(req.get_header_value("X-Filename"));
             std::string chunkIndexHeader = req.get_header_value("X-Chunk-Index");
             std::string totalChunksHeader = req.get_header_value("X-Total-Chunks");
@@ -1497,12 +1486,8 @@ void HttpServer::setupRoutes(CrowApp& app) {
             const bool skipExactDuplicates =
                 skipExactDuplicatesForRequest(req);
 
-            const std::string nativeTransferId =
-                req.get_header_value("X-Transfer-Id");
-            if (!nativeTransferId.empty() &&
-                !m_nativeSessionStore->authorizeFile(getTokenFromRequest(req),
-                    nativeTransferId, fileId, filename, fileSize,
-                    skipExactDuplicates)) {
+            const auto& nativeTransferId = authorization->transferId;
+            if (!authorizeUploadFile(*authorization, fileId, filename, fileSize, skipExactDuplicates)) {
                 res.code = 403;
                 res.body = json{{"error", "transfer_manifest_mismatch"}}.dump();
                 return res;
@@ -1514,19 +1499,7 @@ void HttpServer::setupRoutes(CrowApp& app) {
                 return res;
             }
 
-            if (chunkIndex == 0) {
-                if (!m_fileWriter->initFile(
-                        fileId,
-                        filename,
-                        fileSize,
-                        totalChunks,
-                        skipExactDuplicates)) {
-                    res.code = 409;
-                    res.body = json{{"error", "File session already exists or could not be initialized"}}.dump();
-                    return res;
-                }
-            }
-
+            // Decode and validate the first body before reserving disk space.
             std::vector<unsigned char> decodedChunk;
             const bool base64Encoded =
                 req.get_header_value("X-Content-Transfer-Encoding") == "base64";
@@ -1537,10 +1510,28 @@ void HttpServer::setupRoutes(CrowApp& app) {
                 chunkData = reinterpret_cast<const char*>(decodedChunk.data());
                 chunkSize = decodedChunk.size();
             }
+            if (chunkSize == 0 || chunkSize > fileSize || chunkSize > lmt::TransferLimits::MaxChunkBytes) {
+                res.code = 400;
+                res.body = json{{"error", "Invalid chunk size"}}.dump();
+                return res;
+            }
+            const auto storageId = authorization->ownerPrefix + fileId;
+            if (chunkIndex == 0) {
+                if (!m_fileWriter->initFile(
+                        storageId,
+                        filename,
+                        fileSize,
+                        totalChunks,
+                        skipExactDuplicates)) {
+                    res.code = 409;
+                    res.body = json{{"error", "Receiver could not start this file. Restart its upload; if it still fails, check file-size limits, free space and folder access, and wait for other uploads to finish."}}.dump();
+                    return res;
+                }
+            }
 
             const auto writeStarted = std::chrono::steady_clock::now();
             auto writeStatus = m_fileWriter->writeChunk(
-                fileId,
+                storageId,
                 chunkIndex,
                 chunkData,
                 chunkSize);
@@ -1554,6 +1545,7 @@ void HttpServer::setupRoutes(CrowApp& app) {
                     res.code = 409;
                     res.body = json{{"error", "Chunk is out of order or has no active file session"}}.dump();
                 } else if (writeStatus == ChunkWriteStatus::SizeExceeded) {
+                    m_fileWriter->abortFile(storageId);
                     res.code = 400;
                     res.body = json{{"error", "Chunk exceeds declared file size"}}.dump();
                 } else if (writeStatus == ChunkWriteStatus::Finalizing) {
@@ -1562,7 +1554,7 @@ void HttpServer::setupRoutes(CrowApp& app) {
                     res.body = json{{"error", "Upload is still finalizing"}}.dump();
                 } else {
                     res.code = 500;
-                    res.body = json{{"error", "Failed to write chunk"}}.dump();
+                    res.body = json{{"error", "Receiver could not write this file. Check free space and folder access, then restart its upload."}}.dump();
                 }
                 return res;
             }
@@ -1581,7 +1573,7 @@ void HttpServer::setupRoutes(CrowApp& app) {
                 writeStatus == ChunkWriteStatus::Completed) {
                 const auto finalizeStarted = std::chrono::steady_clock::now();
                 finalizeResult = m_fileWriter->finalizeFileResult(
-                    fileId,
+                    storageId,
                     &finalizedNow);
                 finalizeDurationMs = std::chrono::duration<double, std::milli>(
                     std::chrono::steady_clock::now() - finalizeStarted).count();
@@ -1607,7 +1599,7 @@ void HttpServer::setupRoutes(CrowApp& app) {
                     finalizeResult.disposition !=
                         FileFinalizeDisposition::Duplicate) {
                     res.code = 400;
-                    res.body = json{{"error", "File is incomplete and cannot be finalized"}}.dump();
+                    res.body = json{{"error", "Receiver could not finish saving this file. Check free space and folder access, then restart its upload."}}.dump();
                     return res;
                 }
 
@@ -1813,6 +1805,12 @@ std::string HttpServer::getTokenFromRequest(const crow::request& req) const {
     return token;
 }
 
+std::string HttpServer::credentialOwnerPrefix(const std::string& token) const {
+    const auto hash = HashEngine::computeHash(token.data(), token.size());
+    if (hash.empty()) throw std::runtime_error("Unable to identify upload owner");
+    return hash + "-";
+}
+
 bool HttpServer::validateToken(const std::string& token) const {
     std::string sessionToken;
     {
@@ -1827,17 +1825,44 @@ bool HttpServer::validateToken(const std::string& token) const {
 }
 
 bool HttpServer::validateAnyToken(const std::string& token) const {
+    // Verification establishes validity, not upload authority. The iOS pairing
+    // flow probes this endpoint before asking for receiver approval.
+    if (validateSessionToken(token)) return true;
     if (validateToken(token)) return true;
     return m_pairingStore && m_pairingStore->findDeviceByCredential(token).has_value();
 }
 
-bool HttpServer::validateUploadAuthorization(const crow::request& req) const {
-    const std::string transferId = req.get_header_value("X-Transfer-Id");
-    if (!transferId.empty()) {
-        return m_nativeSessionStore && m_nativeSessionStore->authorizeTransfer(
-            getTokenFromRequest(req), transferId);
+std::optional<HttpServer::UploadAuthorization> HttpServer::authorizeUpload(
+    const crow::request& req, UploadAction action) const {
+    UploadAuthorization context{};
+    context.action = action;
+    context.credential = getTokenFromRequest(req);
+    context.transferId = req.get_header_value("X-Transfer-Id");
+    if (!context.transferId.empty()) {
+        if (action == UploadAction::WholeFile || !m_nativeSessionStore ||
+            !m_nativeSessionStore->authorizeTransfer(context.credential, context.transferId)) return std::nullopt;
+        context.principal = UploadPrincipal::NativeGrant;
+    } else {
+        bool sessionCredential;
+        {
+            std::lock_guard<std::mutex> lock(m_authMutex);
+            if (m_config.token.empty()) return std::nullopt;
+            sessionCredential = context.credential == m_config.token;
+        }
+        if (!sessionCredential && (!m_pairingStore ||
+            !m_pairingStore->validateCredential(context.credential))) return std::nullopt;
+        context.principal = sessionCredential ? UploadPrincipal::Session : UploadPrincipal::TrustedDevice;
     }
-    return validateToken(getTokenFromRequest(req));
+    context.ownerPrefix = credentialOwnerPrefix(context.credential);
+    return context;
+}
+
+bool HttpServer::authorizeUploadFile(const UploadAuthorization& context,
+    const std::string& id, const std::string& name, uint64_t size, bool skipExactDuplicates) const {
+    if (context.action != UploadAction::Preflight && context.action != UploadAction::Chunk) return false;
+    return !context.isNative() || (m_nativeSessionStore &&
+        m_nativeSessionStore->authorizeFile(context.credential, context.transferId,
+            id, name, size, skipExactDuplicates));
 }
 
 bool HttpServer::validateRequestToken(const crow::request& req) const {
@@ -1912,7 +1937,21 @@ void HttpServer::revokeAllNativeSessions() {
 
 bool HttpServer::validateSessionToken(const std::string& token) const {
     std::lock_guard<std::mutex> lock(m_authMutex);
-    return !m_config.token.empty() && token == m_config.token;
+    if (m_config.token.empty()) return false;
+    constexpr char label[] = "lmt-pairing-only-v1";
+    unsigned char digest[EVP_MAX_MD_SIZE];
+    unsigned int length = 0;
+    if (!HMAC(EVP_sha256(), m_config.token.data(),
+              static_cast<int>(m_config.token.size()),
+              reinterpret_cast<const unsigned char*>(label), sizeof(label) - 1,
+              digest, &length)) return false;
+    std::ostringstream encoded;
+    encoded << std::hex << std::setfill('0');
+    for (unsigned int i = 0; i < length; ++i)
+        encoded << std::setw(2) << static_cast<unsigned int>(digest[i]);
+    const auto expected = "pair-" + encoded.str();
+    return token.size() == expected.size() &&
+        CRYPTO_memcmp(token.data(), expected.data(), expected.size()) == 0;
 }
 
 bool HttpServer::setBrowserBootstrap(const std::string& bootstrap) {
@@ -1988,7 +2027,12 @@ void HttpServer::run(std::atomic<bool>& running) {
             throw std::runtime_error("A configured server listener did not bind within five seconds");
         }
 
+        auto nextCleanup = std::chrono::steady_clock::now();
         while (running && m_running) {
+            if (std::chrono::steady_clock::now() >= nextCleanup) {
+                m_fileWriter->expireIdleFiles();
+                nextCleanup = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+            }
             if (httpsFuture.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready ||
                 (m_allowInsecureHttp && httpFuture.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready)) {
                 throw std::runtime_error("A configured server listener stopped unexpectedly");

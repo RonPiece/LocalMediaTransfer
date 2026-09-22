@@ -20,6 +20,7 @@ if "%SCRIPT_DIR:~-1%"=="\" set "SCRIPT_DIR=%SCRIPT_DIR:~0,-1%"
 for %%I in ("%SCRIPT_DIR%\..\..") do set "REPO_ROOT=%%~fI"
 
 if not defined VCPKG_ROOT set "VCPKG_ROOT=%REPO_ROOT%\vcpkg"
+set "PROJECT_VCPKG_ROOT=%VCPKG_ROOT%"
 set "VCPKG_TOOLCHAIN=%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake"
 if not exist "%VCPKG_TOOLCHAIN%" (
     echo vcpkg toolchain not found at "%VCPKG_TOOLCHAIN%".
@@ -37,6 +38,12 @@ for /f "usebackq tokens=*" %%i in (`"%VSWHERE%" -latest -products * -requires Mi
     set "VS_PATH=%%i"
 )
 
+if not defined VS_PATH (
+    for /f "usebackq tokens=*" %%i in (`"%VSWHERE%" -latest -prerelease -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do (
+        set "VS_PATH=%%i"
+    )
+)
+
 if "%VS_PATH%"=="" (
     echo Could not find a Visual Studio installation with C++ build tools.
     exit /b 1
@@ -49,6 +56,9 @@ if not exist "%VCVARSALL%" (
 )
 
 call "%VCVARSALL%" >nul 2>&1
+rem vcvars64 can replace VCPKG_ROOT with Visual Studio's bundled checkout.
+rem Keep the selected project checkout and executable consistent with its toolchain.
+set "VCPKG_ROOT=%PROJECT_VCPKG_ROOT%"
 echo === ENVIRONMENT SET ===
 
 set "CMAKE_EXE=%VS_PATH%\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe"

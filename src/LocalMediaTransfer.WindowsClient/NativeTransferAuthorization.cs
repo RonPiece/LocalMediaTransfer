@@ -8,7 +8,7 @@ internal sealed record TransferApproval(string TransferId, string Token);
 
 internal static class NativeTransferAuthorization
 {
-    private const int DefaultChunkBytes = 8 * 1024 * 1024;
+    private const int DefaultChunkBytes = TransferLimits.NativeChunkBytes;
     private const int DefaultParallelFiles = 6;
 
     internal static async Task<ClientConfiguration> GetConfigurationAsync(

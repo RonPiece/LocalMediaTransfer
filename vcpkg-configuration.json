@@ -1,0 +1,12 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg-configuration.schema.json",
+  "registries": [
+    {
+      "kind": "git",
+      "repository": "https://github.com/microsoft/vcpkg",
+      "baseline": "7e43e0768a5af180a9cf75d87d692dce1b9da34f",
+      "reference": "7e43e0768a5af180a9cf75d87d692dce1b9da34f",
+      "packages": ["openssl"]
+    }
+  ]
+}

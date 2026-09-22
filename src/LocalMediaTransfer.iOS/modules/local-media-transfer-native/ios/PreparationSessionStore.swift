@@ -39,6 +39,7 @@ final class PreparationSessionStore {
     var variantByUrl: [URL: String] = [:]
     var hashesByVariant: [String: String] = [:]
     var operations: [UUID: () -> Void] = [:]
+    var partialBytes: [URL: UInt64] = [:]
   }
 
   private let lock = NSLock()
@@ -154,11 +155,15 @@ final class PreparationSessionStore {
       throw PhotoPreparationError.metadata("invalid-prepared-file")
     }
     if temporary {
-      guard sizeBytes <= session.budgetBytes,
-            session.reservedBytes <= session.budgetBytes - sizeBytes else {
+      let partial = session.partialBytes[url.standardizedFileURL] ?? 0
+      guard partial <= sizeBytes else { throw PhotoPreparationError.rendition("temporary-storage-limit") }
+      let additional = sizeBytes - partial
+      guard additional <= session.budgetBytes,
+            session.reservedBytes <= session.budgetBytes - additional else {
         throw PhotoPreparationError.rendition("temporary-storage-limit")
       }
-      session.reservedBytes += sizeBytes
+      session.reservedBytes += additional
+      session.partialBytes.removeValue(forKey: url.standardizedFileURL)
     }
     let normalizedUrl = url.standardizedFileURL
     let record = PreparedRecord(
@@ -173,6 +178,31 @@ final class PreparationSessionStore {
     )
     session.recordsByVariant[variantId] = record
     session.variantByUrl[normalizedUrl] = variantId
+    sessions[sessionRef] = session
+  }
+
+  func reserveTemporaryChunk(sessionRef: String, url: URL, bytes: UInt64) throws {
+    lock.lock()
+    defer { lock.unlock() }
+    guard var session = sessions[sessionRef], !session.cancelled else {
+      throw PhotoPreparationError.rendition("cancelled")
+    }
+    guard bytes <= session.budgetBytes, session.reservedBytes <= session.budgetBytes - bytes else {
+      throw PhotoPreparationError.rendition("temporary-storage-limit")
+    }
+    session.reservedBytes += bytes
+    session.partialBytes[url.standardizedFileURL, default: 0] += bytes
+    sessions[sessionRef] = session
+  }
+
+  func discardTemporaryReservation(sessionRef: String, url: URL) {
+    // Retain the charge if filesystem cleanup failed; end/restart can retry.
+    guard !FileManager.default.fileExists(atPath: url.path) else { return }
+    lock.lock()
+    defer { lock.unlock() }
+    guard var session = sessions[sessionRef] else { return }
+    let bytes = session.partialBytes.removeValue(forKey: url.standardizedFileURL) ?? 0
+    session.reservedBytes -= min(bytes, session.reservedBytes)
     sessions[sessionRef] = session
   }
 

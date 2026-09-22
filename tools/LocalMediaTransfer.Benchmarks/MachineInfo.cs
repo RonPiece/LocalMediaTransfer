@@ -91,16 +91,9 @@ internal static class MachineInfo
 
     public static Process GetMetricsProcess()
     {
-        try
-        {
-            Process? server = Process.GetProcessesByName("LocalMediaTransferServer")
-                .OrderByDescending(process => process.StartTime)
-                .FirstOrDefault();
-            if (server != null) return server;
-        }
-        catch
-        {
-        }
+        string? processId = Environment.GetEnvironmentVariable("LMT_BENCHMARK_PROCESS_ID");
+        if (!string.IsNullOrWhiteSpace(processId))
+            return Process.GetProcessById(int.Parse(processId, System.Globalization.CultureInfo.InvariantCulture));
         return Process.GetCurrentProcess();
     }
 

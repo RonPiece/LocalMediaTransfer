@@ -147,34 +147,7 @@ lmt::RealtimeMetrics MetricsCollector::getRealtimeMetrics() const {
     return metrics;
 }
 
-lmt::SessionStats MetricsCollector::getSessionStats() const {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    
-    lmt::SessionStats stats;
-    stats.clientIp = m_clientIp;
-    stats.sessionId = m_sessionId;
-    stats.startTime = m_sessionStart;
-    stats.filesTransferred = m_filesTransferred;
-    stats.totalBytes = m_totalBytes;
-    const auto averageEnd = m_sessionActive ? std::chrono::steady_clock::now() : m_sessionEnd;
-    const auto durationSeconds = m_hasTransferStarted
-        ? std::chrono::duration<double>(averageEnd - m_firstTransferTime).count()
-        : 0.0;
-    stats.averageSpeedMBps = durationSeconds > 0.0
-        ? (m_totalBytes / BytesPerMegabyte) / durationSeconds
-        : 0.0;
-    stats.peakSpeedMBps = m_peakSpeedMBps;
-    
-    return stats;
-}
-
 bool MetricsCollector::isSessionActive() const {
     std::lock_guard<std::mutex> lock(m_mutex);
     return m_sessionActive;
-}
-
-std::vector<std::pair<int64_t, double>> MetricsCollector::getSpeedHistory() const {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    return std::vector<std::pair<int64_t, double>>(
-        m_speedHistory.begin(), m_speedHistory.end());
 }

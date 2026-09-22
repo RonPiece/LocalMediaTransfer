@@ -67,3 +67,24 @@ accidental cross-process control and untrusted local sessions. They do not
 protect against arbitrary malicious code already executing as the same Windows
 user. Installer ACL and Authenticode policy are separate release-acceptance
 controls and are not asserted by the developer build tests.
+
+## Native dependency advisory review
+
+The OpenSSL port is pinned to **3.6.4**, vcpkg commit
+`7e43e0768a5af180a9cf75d87d692dce1b9da34f`, via an OpenSSL-only Git registry in
+`vcpkg-configuration.json`. Other ports retain the manifest's existing builtin
+baseline. CMake requires at least 3.6.4 so stale older installations fail the
+configure gate. Dependency cache keys include both manifest and registry config.
+
+The [upstream August 25 advisory](https://openssl-library.org/news/secadv/20260825.txt)
+includes QUIC, CMS, CMP, raw-public-key and DTLS issues. The reviewed application
+uses certificate-based TCP TLS, not these protocol/API paths; no reachable
+exploit was established. Updating is patch maintenance, not evidence that each
+advisory affects the application. Reassess if those APIs become dependencies.
+The pinned port also retains the earlier Windows OpenSSL directory-layout fix.
+
+Sources: [official vcpkg update](https://github.com/microsoft/vcpkg/commit/7e43e0768a5af180a9cf75d87d692dce1b9da34f),
+[Microsoft registry configuration](https://learn.microsoft.com/en-us/vcpkg/reference/vcpkg-configuration-json).
+
+This is a review of the pinned source baseline, not proof of an older distributed
+installer's contents. Revalidate dependencies for every release.

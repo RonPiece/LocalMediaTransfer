@@ -65,6 +65,7 @@ Use the Windows installer when a release build is published. If you are building
 from source, see the developer guide:
 
 - [Windows GUI developer guide](src/LocalMediaTransfer.GUI/README.md)
+- [New developer setup and verification](CONTRIBUTING.md)
 - [Installer build guide](tools/LocalMediaTransfer.InnoSetup/README.md)
 
 After opening the Windows app:
@@ -82,7 +83,8 @@ HTTPS, nearby desktop discovery, Windows approval, trusted reconnect, and native
 raw uploads.
 
 This project is not currently distributed through Apple's store. The repository
-contains a manual GitHub Actions workflow that builds an unsigned IPA on macOS;
+contains a GitHub Actions workflow that builds an unsigned IPA on macOS for
+pull requests, release verification, or a manual run;
 Sideloadly on Windows can then sign and install that IPA with a free Apple ID.
 
 - [iOS developer guide](src/LocalMediaTransfer.iOS/README.md)

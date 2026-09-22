@@ -8,9 +8,27 @@ concurrently. Correctness requires
 application-level idempotency: retrying an accepted request must not append the
 same bytes twice or create a second completed file.
 
+## Shared policy and authorization context
+
+`protocol/transfer-limits.json` owns the cross-platform file/chunk limits.
+Run `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\sync-transfer-limits.ps1`
+after editing it. The generated C++, C#, Swift, TypeScript and browser files
+are checked in so each platform can build independently. Repository validation
+runs the generator in `-Check` mode and rejects drift. Throughput tuning knobs
+and session allocation budgets remain separate from wire-protocol limits.
+
+HTTP upload authorization now yields a request-local context containing the
+principal, permitted action, transfer ID, storage-owner prefix and credential.
+The credential is never serialized or logged. Native grants still undergo
+per-file manifest validation; pairing-only credentials cannot create this
+context. Whole-file compatibility requests still reject native grants. The
+native cancel endpoint obtains its context only after the session store
+authorizes cancellation, preserving terminal-grant cleanup behavior.
+
 ## Session Identity
 
-The current client supplies `X-File-Id`. The server binds that ID to immutable:
+The client supplies `X-File-Id`. The server namespaces it by SHA-256 of the
+authenticated upload credential and binds that ID to immutable:
 
 - original filename
 - total byte size
@@ -24,9 +42,76 @@ authorized by a receiver-approved, in-memory transfer grant supplied through
 `X-Upload-Token` plus `X-Transfer-Id`. The grant binds every exact ID, filename,
 size, and duplicate preference; a trusted Windows credential is never accepted
 directly by upload routes. Existing `ios-...` cancellation IDs remain valid.
+Cancellation requires that credential's own session. A Windows cancellation
+must also name the same transfer as `X-Transfer-Id`; authorization precedes file
+mutation. Identical external IDs from different credentials are isolated.
+
+## Pairing and compatibility credentials
+
+QR/manual presentation contains `pair-` followed by the lowercase HMAC-SHA-256
+of `lmt-pairing-only-v1`, keyed by the receiver's session credential. It grants
+only pairing and validity verification, never uploads, history, or settings.
+`/verify_token` labels it with scope `pairing`; verification is not approval.
+The approved iOS device credential authorizes subsequent requests. Expo Go HTTP
+connections using a pairing capability also require approval.
+
+The browser's single-use bootstrap exchange remains unchanged and obtains the
+receiver session credential. Explicit headless/API use of that privileged
+credential remains supported. Never publish it in a pairing QR or manual-token
+display. Update the receiver and GUI together and rescan old pairing codes.
+
+## Admission, cleanup, and storage completion
+
+Default limits are 100 GiB per file, 32 active/reserved files globally, 8 per
+credential, 128 GiB reserved globally and 100 GiB per credential. Admission also
+leaves 256 MiB of available destination space. These are server-enforced bounds,
+independent of client UI limits. A file awaiting finalization or failed-file
+deletion still consumes its reservation. Completion, successful cleanup, or
+cancellation releases it; failed deletion is retried without releasing it early.
+
+Idle uploads expire after 30 minutes, checked every 30 seconds. New temporary
+files use exclusively created random `.lmt-upload-<64 hex>.tmp` names. Recovery
+recognizes that namespace and the previous native-client naming contracts; it
+does not delete arbitrary `.tmp` files. Browser uploads use the same owned
+temporary namespace. Invalid first-chunk Base64 is rejected before allocation.
+
+Chunk handlers accept at most 64 MiB decoded data. Multipart files are capped
+at 100 MiB. Handler body checks do not constitute a pre-buffering HTTP parser
+limit.
+
+Windows mapped writes catch only in-page I/O faults within the destination
+view. Each view is checked/flushed before unmapping; file buffers are checked
+before final publication, which requests write-through rename without replacing
+an existing destination. A failure produces no successful completion response.
+This requests OS/storage durability; it cannot guarantee survival when hardware
+does not honor flushes. Full-file hashing rejects read errors and unexpected
+byte counts rather than returning a digest of a readable prefix.
 
 The protocol accepts at most 10,000 chunks per file. With the normal 8 MiB
 chunk size, this covers approximately 78 GiB while bounding per-session memory.
+Clients reject files exceeding their effective chunk capacity before sending
+media. The 4 MiB iOS compatibility path supports approximately 39 GiB per file;
+the server's separate 100 GiB byte limit does not increase either chunk limit.
+
+### Recovering from rejected or interrupted uploads
+
+- **File too large:** use the limit for the current transfer method, rather
+  than the receiver's 100 GiB ceiling. Split the file into smaller files before
+  retrying; retrying unchanged cannot increase the supported size.
+- **Receiver cannot start a file:** check the selected destination's free space
+  and write access, and wait for other uploads to finish. The receiver reserves
+  the declared file size before receiving all bytes, so active transfers can
+  consume admission capacity even when their temporary files contain little data.
+- **Write or finalization failure:** check that the destination drive remains
+  connected and writable, then restart the affected file's upload with a new
+  file/session ID. A failed file is not a confirmed successful save.
+- **Expired partial upload:** start a new file/session after the 30-minute idle
+  timeout. Retrying a later chunk cannot recreate an expired first chunk.
+
+Do not manually delete arbitrary temporary files to recover capacity. The
+receiver cleans its owned files and retries cleanup when Windows releases them.
+HTTP status codes and response fields remain the protocol contract; explanatory
+error text is intended for people and may change.
 
 ## State Machine
 
@@ -105,9 +190,12 @@ a plausible filename/size candidate exists. Installed iOS then calls its native
 session-owned CryptoKit hasher; Expo Go deliberately sends no JavaScript hash
 and falls back to upload.
 
-`POST /upload/preflight/verify` accepts full SHA-256 values. The server orders
-known hash matches first, then unhashed candidates, and pages deterministically
-beyond 256 entries. It rechecks the physical file's size and modification time
+`POST /upload/preflight/verify` accepts full SHA-256 values. The server checks
+the exact filename first, then indexed hash matches, then other plausible
+candidates. Each lookup phase processes pages
+of at most 256 entries in stable filename order. Hash-cache entries are also
+bounded to 256; updating an indexed hash does not shift the paging cursor.
+It rechecks the physical file's size and modification time
 around hashing. A verified equal hash returns `skip` and the existing filename;
 any unsafe or inconclusive verification returns `upload` rather than a false
 skip. Finalization remains authoritative under concurrent senders.

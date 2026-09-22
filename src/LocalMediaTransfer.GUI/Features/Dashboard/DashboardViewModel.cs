@@ -133,7 +133,7 @@ namespace LocalMediaTransfer.GUI.Features.Dashboard
                 SelectedConnectionModeIndex = 0;
             }
 
-            SessionToken = currentToken;
+            SessionToken = DashboardPresentation.PairingCredential(currentToken);
             UploadFolder = serverManager.UploadDir;
 
             var payload = DashboardPresentation.BuildPairingPayload(

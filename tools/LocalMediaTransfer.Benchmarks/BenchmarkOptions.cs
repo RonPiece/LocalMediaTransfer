@@ -88,7 +88,7 @@ internal sealed class BenchmarkOptions
         }
 
         if (!options.ShowHelp &&
-            !new[] { "smoke", "standard", "soak", "tune", "manual" }.Contains(options.Profile))
+            !new[] { "smoke", "standard", "stress", "soak", "tune", "manual" }.Contains(options.Profile))
         {
             throw new ArgumentException($"Unknown profile: {options.Profile}");
         }
@@ -132,7 +132,7 @@ Required:
 Options:
   --server <url>                  Server base URL (default http://127.0.0.1:8080)
   --certificate-fingerprint <sha256> Required for pinned HTTPS
-  --profile <name>                smoke, standard, soak, tune, or manual
+  --profile <name>                smoke, standard, stress, soak, tune, or manual
   --chunk-size-mb <n>             Chunk size for smoke/standard/soak
   --file-concurrency <n>          Concurrent files (chunks remain sequential per file)
   --iterations <n>                Override measured iteration count

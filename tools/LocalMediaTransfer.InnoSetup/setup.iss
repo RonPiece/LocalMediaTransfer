@@ -56,6 +56,8 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Name: "firewall"; Description: "Add private-network firewall exceptions for local-device transfers"; GroupDescription: "{cm:AdditionalIcons}"
 
 [Files]
+Source: "InstalledProcessShutdown.cs"; DestDir: "{app}\uninstall-support"; Flags: ignoreversion
+Source: "stop-installed-processes.ps1"; DestDir: "{app}\uninstall-support"; Flags: ignoreversion
 ; Staged layout:
 ;   {app}\LocalMediaTransfer.GUI.exe
 ;   {app}\Assets\...
@@ -74,8 +76,6 @@ Filename: "netsh"; Parameters: "advfirewall firewall add rule name=""{#Discovery
 Filename: "{app}\{#MyGuiExeName}"; Description: "Launch Local Media Transfer"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
-Filename: "taskkill"; Parameters: "/IM ""LocalMediaTransfer.GUI.exe"" /T /F"; Flags: runhidden; RunOnceId: "StopGui"
-Filename: "taskkill"; Parameters: "/IM ""LocalMediaTransferServer.exe"" /T /F"; Flags: runhidden; RunOnceId: "StopServer"
 Filename: "netsh"; Parameters: "advfirewall firewall delete rule name=""{#FirewallRuleName}"" program=""{app}\server\{#MyServerExeName}"""; Flags: runhidden; RunOnceId: "RemoveFirewall"
 Filename: "netsh"; Parameters: "advfirewall firewall delete rule name=""{#DiscoveryFirewallRuleName}"" program=""{app}\server\{#MyServerExeName}"""; Flags: runhidden; RunOnceId: "RemoveDiscoveryFirewall"
 
@@ -159,9 +159,14 @@ begin
   if (not UninstallSilent) and (not ConfirmUninstallOptions()) then
     Exit;
 
-  Exec(ExpandConstant('{sys}\taskkill.exe'), '/IM "LocalMediaTransfer.GUI.exe" /T /F', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  Exec(ExpandConstant('{sys}\taskkill.exe'), '/IM "LocalMediaTransferServer.exe" /T /F', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  Sleep(1000);
+  if not Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+    '-NoProfile -ExecutionPolicy Bypass -File "' + ExpandConstant('{app}\uninstall-support\stop-installed-processes.ps1') +
+    '" -InstallDirectory "' + ExpandConstant('{app}') + '"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then Exit;
+  if ResultCode <> 0 then
+  begin
+    if not UninstallSilent then MsgBox('Close the installed application and retry uninstalling.', mbError, MB_OK);
+    Exit;
+  end;
 
   Result := True;
 end;

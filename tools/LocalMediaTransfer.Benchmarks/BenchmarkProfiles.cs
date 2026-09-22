@@ -26,6 +26,11 @@ internal static class BenchmarkProfiles
                     .ToArray(),
                 defaultIterations: 3,
                 includeWarmup: true),
+            "stress" => Repeat(
+                options,
+                Enumerable.Range(1, 4).Select(i => new BenchmarkFileSpec($"concurrent-{i}.bin", 101 * MB)).ToArray(),
+                defaultIterations: 10,
+                includeWarmup: true),
             "soak" => Repeat(
                 options,
                 [new("5-gib.bin", 5 * GB)],
@@ -53,7 +58,7 @@ internal static class BenchmarkProfiles
                 options.Profile,
                 "warmup",
                 options.ChunkSizeBytes,
-                options.FileConcurrency,
+                options.Profile == "stress" ? 4 : options.FileConcurrency,
                 files,
                 IsWarmup: true));
         }
@@ -65,7 +70,7 @@ internal static class BenchmarkProfiles
                 options.Profile,
                 $"run-{index}",
                 options.ChunkSizeBytes,
-                options.FileConcurrency,
+                options.Profile == "stress" ? 4 : options.FileConcurrency,
                 files));
         }
         return runs;

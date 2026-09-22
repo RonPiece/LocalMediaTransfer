@@ -184,47 +184,55 @@ export default function AppShell() {
 
   return (
     <AppNavigator
-      appState={appState}
-      selectedAssets={selectedAssets}
-      isServerConnected={isServerConnected}
-      isConnecting={isConnecting}
-      pairingDesktopName={pairingDesktopName}
-      connectionSecurity={connectionSecurity}
-      connectionHealthStatus={connectionHealthStatus}
-      discoveredServers={discoveredServers}
-      isDiscovering={isDiscovering}
-      discoveryFailed={discoveryFailed}
-      nearbyDiscoveryEnabled={nearbyDiscoveryEnabled}
-      allowInsecureHttp={effectiveAllowInsecureHttp}
-      nativeHttpsAvailable={nativeHttpsAvailable}
-      preparationMode={appState === 'transfer'
+      navigation={{
+        appState: appState,
+        selectedAssets: selectedAssets,
+        scanRequestId: qrScanRequestId,
+        onOpenPicker: () => setAppState('picker'),
+        onTransfer: handleTransfer,
+        onCancelPicker: () => setAppState('dashboard'),
+        onCancelTransfer: () => setAppState('dashboard'),
+        onCompleteTransfer: () => setAppState('dashboard'),
+      }}
+      connection={{
+        isServerConnected: isServerConnected,
+        isConnecting: isConnecting,
+        pairingDesktopName: pairingDesktopName,
+        connectionSecurity: connectionSecurity,
+        connectionHealthStatus: connectionHealthStatus,
+        onConnect: handleConnect,
+        onConnectDiscovered: handleDiscoveredServer,
+        onDisconnect: handleDisconnect,
+        onRetryConnection: retryConnection,
+      }}
+      preferences={{
+        nearbyDiscoveryEnabled: nearbyDiscoveryEnabled,
+        allowInsecureHttp: effectiveAllowInsecureHttp,
+        nativeHttpsAvailable: nativeHttpsAvailable,
+        preparationMode: appState === 'transfer'
         ? activeTransferPreferences.preparationMode
-        : preparationMode}
-      skipExactDuplicates={appState === 'transfer'
+        : preparationMode,
+        skipExactDuplicates: appState === 'transfer'
         ? activeTransferPreferences.skipExactDuplicates
-        : skipExactDuplicates}
-      includeAdditionalMediaComponents={appState === 'transfer'
+        : skipExactDuplicates,
+        includeAdditionalMediaComponents: appState === 'transfer'
         ? activeTransferPreferences.includeAdditionalMediaComponents
-        : includeAdditionalMediaComponents}
-      scanRequestId={qrScanRequestId}
-      onConnect={handleConnect}
-      onConnectDiscovered={handleDiscoveredServer}
-      onAllowInsecureHttpChange={updateAllowInsecureHttp}
-      onExplainUnencryptedHttp={explainUnencryptedHttp}
-      onExplainNearbyDiscovery={explainNearbyDiscovery}
-      onEnableNearbyDiscovery={() => updateNearbyDiscovery(true)}
-      onRefreshDiscovery={discoverServers}
-      onNearbyDiscoveryChange={updateNearbyDiscovery}
-      onPreparationModeChange={persistPreparationMode}
-      onSkipExactDuplicatesChange={persistSkipExactDuplicates}
-      onIncludeAdditionalMediaComponentsChange={persistIncludeAdditionalMediaComponents}
-      onOpenPicker={() => setAppState('picker')}
-      onTransfer={handleTransfer}
-      onCancelPicker={() => setAppState('dashboard')}
-      onCancelTransfer={() => setAppState('dashboard')}
-      onCompleteTransfer={() => setAppState('dashboard')}
-      onDisconnect={handleDisconnect}
-      onRetryConnection={retryConnection}
+        : includeAdditionalMediaComponents,
+        onAllowInsecureHttpChange: updateAllowInsecureHttp,
+        onExplainUnencryptedHttp: explainUnencryptedHttp,
+        onExplainNearbyDiscovery: explainNearbyDiscovery,
+        onNearbyDiscoveryChange: updateNearbyDiscovery,
+        onPreparationModeChange: persistPreparationMode,
+        onSkipExactDuplicatesChange: persistSkipExactDuplicates,
+        onIncludeAdditionalMediaComponentsChange: persistIncludeAdditionalMediaComponents,
+      }}
+      discovery={{
+        discoveredServers: discoveredServers,
+        isDiscovering: isDiscovering,
+        discoveryFailed: discoveryFailed,
+        onEnableNearbyDiscovery: () => updateNearbyDiscovery(true),
+        onRefreshDiscovery: discoverServers,
+      }}
     />
   );
 }

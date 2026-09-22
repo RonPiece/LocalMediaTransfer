@@ -53,17 +53,6 @@ public:
     lmt::RealtimeMetrics getRealtimeMetrics() const;
     
     /**
-     * Get current session stats
-     */
-    lmt::SessionStats getSessionStats() const;
-    
-    /**
-     * Get transfer speed history (last 5 minutes)
-     * @return Vector of (timestamp_seconds, speed_mbps) pairs
-     */
-    std::vector<std::pair<int64_t, double>> getSpeedHistory() const;
-    
-    /**
      * Check if session is active
      */
     bool isSessionActive() const;

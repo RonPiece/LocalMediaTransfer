@@ -45,6 +45,28 @@ function sourceSection(source: string, start: string, end: string): string {
 }
 
 describe('native Swift source contracts', () => {
+  it('reserves resource chunks before writing and cancels PhotoKit work', () => {
+    const writer = sourceSection(exporterSource, 'private final class PhotoResourceWriter',
+      'final class PhotoAssetExporter');
+    expect(writer.indexOf('sessions.reserveTemporaryChunk')).toBeLessThan(
+      writer.indexOf('handle.write(contentsOf: data)'));
+    expect(writer).toContain('cancelDataRequest');
+    expect(writer).toContain('guard !completed');
+    expect(exporterSource).toContain('PHAssetResourceManager.default().requestData(');
+    expect(exporterSource).not.toContain('PHAssetResourceManager.default().writeData(');
+    expect(sessionSource).toContain('session.budgetBytes - bytes');
+    expect(sessionSource).toContain('sizeBytes - partial');
+  });
+
+  it('maps control request cancellation to its URLSession task', () => {
+    expect(moduleSource).toContain('Function("prepareRequest")');
+    expect(moduleSource).toContain('Function("cancelRequest")');
+    expect(httpSource).toContain('task?.cancel()');
+    expect(httpSource).toContain('!control.cancelled');
+    expect(httpSource).toContain('completeRequest(requestId)');
+    expect(httpSource).toContain('deadline.cancel()');
+  });
+
   it('keeps the Expo module as a focused service-composition boundary', () => {
     expect(moduleSource).toContain('private let discovery = DiscoveryService()');
     expect(moduleSource).toContain('private let httpClient = PinnedHTTPClient()');

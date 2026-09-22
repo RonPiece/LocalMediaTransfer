@@ -52,6 +52,18 @@ Generated output, logs, local uploads, and build folders are ignored by Git.
 
 ## Build
 
+Install Visual Studio 2022 or later with **Desktop development with C++**, an
+x64 MSVC toolchain, a Windows SDK, and the C++ CMake tools. Git must also be
+available. Then restore the pinned native libraries from the repository root:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\bootstrap-dependencies.ps1 -PreferVisualStudioTools
+```
+
+Bootstrap restores the project vcpkg checkout, matching vcpkg executable, helper
+tools and manifest libraries. It does **not** install Visual Studio, MSVC or the
+Windows SDK. It checks the current manifest even when packages already exist.
+
 Run commands from the repository root.
 
 ```powershell
@@ -62,6 +74,9 @@ Run commands from the repository root.
 Use `build.bat`; it discovers Visual Studio with `vswhere`, initializes the x64
 MSVC environment, and uses the Visual Studio CMake executable. Do not assume
 `cmake` is already on `PATH`.
+Discovery prefers stable Visual Studio installations and falls back to a
+prerelease installation with the required C++ tools. The wrapper preserves the
+project vcpkg checkout when Visual Studio initializes the compiler environment.
 
 ## Verification
 

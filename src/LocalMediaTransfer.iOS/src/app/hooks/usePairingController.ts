@@ -1,3 +1,5 @@
+import { configurePairingTransport } from './pairingTransport';
+import { awaitPairingApproval, activatePairingCredential } from './pairingHandshake';
 import React from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
@@ -130,41 +132,13 @@ export function usePairingController({
     connectionAttemptRef.current = true;
     setIsConnecting(true);
     try {
-      const expectedEnvironment = expectedServerEnvironment();
-      if (pairing && pairing.environment !== expectedEnvironment) {
-        if (!silent) {
-          showAlertOnce(
-            'Wrong desktop environment',
-            `This app expects the ${expectedEnvironment} Windows environment, but the QR code is for ${pairing.environment}. Open the matching Windows app and scan its QR code.`,
-          );
-        }
-        return false;
-      }
-      let url = ipOrUrl.trim();
-      if (!url.startsWith('http')) url = `https://${url}:8443`;
-      if (url.startsWith('http://')) {
-        const needsHttpConfirmation = nativeHttpsAvailable && !httpConfirmedRef.current;
-        if (silent || !effectiveAllowInsecureHttp || (needsHttpConfirmation && !(await confirmHttpFallback()))) {
-          if (!silent && !effectiveAllowInsecureHttp) {
-            showAlertOnce('HTTP disabled', 'Turn on unencrypted HTTP in iOS settings before connecting to an older desktop build.');
-          }
-          return false;
-        }
-        httpConfirmedRef.current = true;
-      } else {
-        if (!pairing?.certificateFingerprint || !token) {
-          if (!silent) showAlertOnce('Fingerprint and token required', 'Scan the Windows pairing QR or enter its SHA-256 fingerprint and session token.');
-          return false;
-        }
-        try {
-          await nativeCapabilities.configureSecureConnection(url, pairing.certificateFingerprint);
-        } catch (error) {
-          console.warn('HTTPS pairing failed while configuring pinned certificate trust.');
-          if (!silent) showAlertOnce('Secure connection unavailable', error instanceof Error ? error.message : 'Use the installed app for pinned HTTPS.');
-          return false;
-        }
-      }
-
+      const transport = await configurePairingTransport(ipOrUrl, token, pairing, silent, {
+        nativeHttpsAvailable, effectiveAllowInsecureHttp, showAlertOnce,
+        httpConfirmed: httpConfirmedRef.current, confirmHttpFallback,
+      });
+      if (!transport) return false;
+      const { url } = transport;
+      httpConfirmedRef.current = transport.httpConfirmed;
       api.setConfig(url, token);
       const ok = await api.pingServer({ notifyUnauthorized: false });
       if (!ok) {
@@ -184,16 +158,11 @@ export function usePairingController({
         return false;
       }
 
-      if (url.startsWith('https://') && pairing) {
+      if ((url.startsWith('https://') && pairing) || token.startsWith('pair-')) {
         const identity = await getDeviceIdentity();
-        let status = await api.requestPairing(url, identity.deviceId, 'iPhone', identity.credential);
-        if (status === 'pending') {
-          setPairingDesktopName(pairing.name || 'the desktop');
-          for (let attempt = 0; attempt < 24 && status === 'pending'; attempt += 1) {
-            await new Promise(resolve => setTimeout(resolve, 2500));
-            status = await api.pairingStatus(url, identity.deviceId, identity.credential);
-          }
-        }
+        const status = await awaitPairingApproval(api, url, identity, () => {
+          setPairingDesktopName(pairing?.name || 'the desktop');
+        });
         if (status !== 'approved') {
           console.warn('HTTPS pairing did not reach approved status:', status);
           void api.logClientEvent('WARN', 'ios_https_pairing_failed', 'Windows approval did not complete during HTTPS pairing.', {
@@ -206,14 +175,7 @@ export function usePairingController({
           if (!silent) showAlertOnce('Connection not approved', 'The desktop denied the request or the approval timed out.');
           return false;
         }
-        api.setConfig(url, identity.credential);
-        let credentialActivated = false;
-        for (let attempt = 0; attempt < 3 && !credentialActivated; attempt += 1) {
-          credentialActivated = await api.pingServer({ notifyUnauthorized: false });
-          if (!credentialActivated) {
-            await new Promise(resolve => setTimeout(resolve, 500));
-          }
-        }
+        const credentialActivated = await activatePairingCredential(api, url, identity.credential);
         if (!credentialActivated) {
           console.warn('HTTPS pairing approved, but trusted credential verification did not become ready.');
           void api.logClientEvent('WARN', 'ios_https_pairing_failed', 'Windows approved pairing, but trusted credential verification did not become ready.', {
@@ -225,17 +187,21 @@ export function usePairingController({
           if (!silent) showAlertOnce('Pairing Verification Failed', 'Windows approved this iPhone, but the desktop did not accept the trusted credential in time. Scan the current Windows QR code again.');
           return false;
         }
-        const saved: SavedConnection = {
-          version: 3,
-          environment: pairing.environment,
-          serverId: pairing.serverId,
-          httpsUrl: url,
-          httpUrl: pairing.httpUrl,
-          certificateFingerprint: normalizeFingerprint(pairing.certificateFingerprint),
-        };
-        await AsyncStorage.setItem(connectionStorageKeys.lastServer(), JSON.stringify(saved));
-        const state = await nativeCapabilities.securityState();
-        markSecureConnected({ tlsVersion: state.tlsVersion, certificateVerified: state.certificateVerified });
+        if (url.startsWith('https://') && pairing) {
+          const saved: SavedConnection = {
+            version: 3,
+            environment: pairing.environment,
+            serverId: pairing.serverId,
+            httpsUrl: url,
+            httpUrl: pairing.httpUrl,
+            certificateFingerprint: normalizeFingerprint(pairing.certificateFingerprint),
+          };
+          await AsyncStorage.setItem(connectionStorageKeys.lastServer(), JSON.stringify(saved));
+          const state = await nativeCapabilities.securityState();
+          markSecureConnected({ tlsVersion: state.tlsVersion, certificateVerified: state.certificateVerified });
+        } else {
+          markHttpConnected();
+        }
       } else {
         markHttpConnected();
       }

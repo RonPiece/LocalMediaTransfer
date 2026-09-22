@@ -3,6 +3,12 @@
 This folder builds the Windows installer for the GUI application. The headless
 server is included as a private runtime component and is launched by the GUI.
 
+Uninstall ships a PowerShell/C# helper under `uninstall-support`. It matches
+each process to the exact installed executable path, requests a window close,
+then uses the retained verified process handle if forced shutdown is needed.
+Other installations and same-name processes are left running. Verify this
+behavior with two installations before distributing a rebuilt installer.
+
 ## Prerequisites
 
 - Visual Studio 2022 with the x64 C++ toolchain.
@@ -47,6 +53,21 @@ powershell -NoProfile -ExecutionPolicy Bypass -File `
 This produces the installer EXE, a portable x64 ZIP, and `SHA256SUMS.txt`.
 Both Windows artifacts include a generated `THIRD_PARTY_LICENSES` bundle from
 the exact vcpkg and NuGet runtime dependency closure used by the build.
+
+For a tagged public release, pushing a `v*` tag runs the manual-capable
+`Build Windows release artifacts` GitHub workflow. It executes this same build
+on `windows-2022`, independently verifies the checksums, portable ZIP, license
+manifests, and PDB exclusion, then uploads the three files as one Actions
+artifact. The workflow can also be dispatched manually to test packaging before
+tagging. A tag-triggered run attaches the verified files to a private draft
+GitHub Release for final release-note review; it does not publish the release.
+
+To repeat the independent checks locally after building with `-KeepStaging`:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File `
+  .\tools\LocalMediaTransfer.InnoSetup\verify-release-artifacts.ps1
+```
 
 Validate the complete install layout without invoking Inno Setup:
 
