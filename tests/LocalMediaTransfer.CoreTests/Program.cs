@@ -48,6 +48,7 @@ internal static class Program
         ("reconnect reconciliation reapplies security policy", ReconnectReconciliationReappliesSecurityPolicy),
         ("pipe parser rejects unsafe telemetry", PipeParserRejectsUnsafeTelemetry),
         ("pipe parser bounds native approval summaries", PipeParserBoundsNativeApprovals),
+        ("pipe parser maps browser link consumption", PipeParserMapsBrowserLinkConsumption),
         ("secret redactor covers diagnostic forms", SecretRedactorCoversDiagnosticForms),
         ("shell launcher rejects unsafe schemes", ShellLauncherRejectsUnsafeSchemes),
         ("pipe disposal during IO is safe", PipeDisposalDuringIoIsSafe),
@@ -319,6 +320,8 @@ internal static class Program
         Assert(production.GuiMutexName != test.GuiMutexName, "GUI mutex is shared.");
         Assert(production.PipeName != test.PipeName, "Named pipe is shared.");
         Assert(production.HttpsPort != test.HttpsPort, "HTTPS port is shared.");
+        Assert(production.DiscoveryPort == 45892 && test.DiscoveryPort == 45893,
+            "Discovery ports are not environment-specific.");
         Assert(production.HttpPort != test.HttpPort, "HTTP port is shared.");
         Assert(production.DataRoot != test.DataRoot, "Application data root is shared.");
         Assert(production.SettingsPath != test.SettingsPath, "Settings file is shared.");
@@ -1115,6 +1118,16 @@ internal static class Program
         Assert(BrowserTransferSession.FormatRemaining(300) == "5:00" &&
             BrowserTransferSession.FormatRemaining(59) == "0:59",
             "Browser link countdown formatting is unclear.");
+        return Task.CompletedTask;
+    }
+
+    private static Task PipeParserMapsBrowserLinkConsumption()
+    {
+        PipeParseResult result = PipeMessageParser.Parse(
+            "{\"type\":\"browser_link_consumed\",\"data\":{}}");
+        Assert(result.Success &&
+            result.Message?.Kind == PipeMessageKind.BrowserLinkConsumed,
+            "Browser-link consumption event was not parsed.");
         return Task.CompletedTask;
     }
 

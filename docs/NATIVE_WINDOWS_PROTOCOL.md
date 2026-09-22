@@ -22,7 +22,8 @@ Discovery remains protocol version 2. A capable response and `/config` add:
 ```
 
 Windows sender scans are user initiated, cover active private IPv4 adapters,
-exclude loopback and public destinations, and stop at 1,024 destinations. The
+exclude loopback, public, and known VPN/virtual destinations, share work across
+eligible physical adapters, and stop at 1,024 destinations. The
 UDP response source is authoritative for the endpoint. Manual entry accepts a
 private IPv4 address and optional HTTPS port, then probes
 `GET /native/v1/identity`; it does not bypass pairing or TLS verification.

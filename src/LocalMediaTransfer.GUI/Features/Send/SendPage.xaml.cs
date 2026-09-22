@@ -119,7 +119,9 @@ public sealed partial class SendPage : Page
         try
         {
             IReadOnlyList<DiscoveredReceiver> found = await _discovery.ScanAsync(
-                ApplicationEnvironment.Current.Name, 45892, _activity.Token);
+                ApplicationEnvironment.Current.Name,
+                ApplicationEnvironment.Current.DiscoveryPort,
+                _activity.Token);
             IReadOnlyList<TrustedReceiver> trusted = _trustStore!.Load();
             _receivers.Clear();
             foreach (TrustedReceiver saved in trusted.OrderByDescending(item => item.LastSeen))
@@ -222,6 +224,11 @@ public sealed partial class SendPage : Page
         if (selected.Discovered?.SupportsNativeWindows != true)
         {
             SetError("This receiver does not support native Windows transfer. Use Browser transfer on its Receive page.");
+            return;
+        }
+        if (selected.Discovered.NativeWindows?.PairingAvailable != true)
+        {
+            SetError("Windows pairing is closed on the receiver. Open pairing there, then scan again.");
             return;
         }
 
@@ -475,7 +482,10 @@ public sealed partial class SendPage : Page
             DisplayName = name;
             Details = changed ? $"{address} · Identity changed — pair again" :
                 trusted is not null ? $"{address} · Trusted (certificate pinned)" :
-                discovered?.SupportsNativeWindows == true ? $"{address} · Available to pair" :
+                discovered?.NativeWindows is { PairingAvailable: true }
+                    ? $"{address} · Windows pairing is open" :
+                discovered?.SupportsNativeWindows == true
+                    ? $"{address} · Windows pairing is closed" :
                 $"{address} · Browser transfer available";
         }
         public DiscoveredReceiver? Discovered { get; }

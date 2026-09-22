@@ -6,7 +6,20 @@ repository.
 
 ## [Unreleased]
 
-- No user-visible changes yet.
+- Fixed Windows nearby discovery when VPN or virtual adapters such as Tailscale
+  appear before the physical Wi-Fi or Ethernet adapter. Discovery now ignores
+  known virtual adapters and fairly scans every eligible local subnet.
+- Fixed TEST builds using the production discovery port instead of their
+  isolated port.
+- Improved browser transfer links: the QR code and countdown disappear as soon
+  as the one-time link is used, and the desktop offers a clear button to create
+  a link for another device.
+- Browser transfers now use a separate, scoped credential with a 30-minute idle
+  lifetime. Refreshing or reopening the same browser resumes the session, while
+  a second device can use a newly generated one-time link without disconnecting
+  the first device.
+- Clarified browser-link security text and Windows pairing availability in the
+  desktop interface.
 
 ## [2.0.0] - 2026-09-04
 

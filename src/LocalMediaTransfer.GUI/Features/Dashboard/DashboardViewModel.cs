@@ -48,7 +48,10 @@ namespace LocalMediaTransfer.GUI.Features.Dashboard
         private string _httpsBrowserUrl = "";
         private string _httpBrowserUrl = "";
         private DateTimeOffset _browserLinkExpiresAtUtc = DateTimeOffset.MinValue;
+        private long _browserLinkConsumptionVersionAtCreation;
+        private bool _browserLinkWasConsumed;
         public DateTimeOffset BrowserLinkExpiresAtUtc => _browserLinkExpiresAtUtc;
+        public bool BrowserLinkWasConsumed => _browserLinkWasConsumed;
         public int BrowserLinkRemainingSeconds => BrowserTransferSession.RemainingSeconds(
             _browserLinkExpiresAtUtc, DateTimeOffset.UtcNow);
         public bool IsBrowserLinkFresh =>
@@ -181,6 +184,9 @@ namespace LocalMediaTransfer.GUI.Features.Dashboard
                 $"http://{localIP}:{serverManager.HttpPort}/{fragment}";
             _browserLinkExpiresAtUtc = requestedAtUtc.AddSeconds(
                 BrowserTransferSession.LifetimeSeconds);
+            _browserLinkConsumptionVersionAtCreation =
+                pipeClient.BrowserLinkConsumptionVersion;
+            _browserLinkWasConsumed = false;
             ApplyBrowserConnectionMode();
         }
 
@@ -201,7 +207,21 @@ namespace LocalMediaTransfer.GUI.Features.Dashboard
             _httpsBrowserUrl = "";
             _httpBrowserUrl = "";
             _browserLinkExpiresAtUtc = DateTimeOffset.MinValue;
+            _browserLinkWasConsumed = false;
             ConnectionUrl = message;
+        }
+
+        public bool MarkBrowserLinkConsumed(long consumptionVersion)
+        {
+            if (!IsBrowserLinkFresh ||
+                consumptionVersion <= _browserLinkConsumptionVersionAtCreation)
+                return false;
+            _httpsBrowserUrl = "";
+            _httpBrowserUrl = "";
+            _browserLinkExpiresAtUtc = DateTimeOffset.MinValue;
+            _browserLinkWasConsumed = true;
+            ConnectionUrl = "One-time link used. The browser now has a temporary session.";
+            return true;
         }
 
         public void SetConnectionError(string message)

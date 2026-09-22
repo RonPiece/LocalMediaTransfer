@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace LocalMediaTransfer.GUI.Services
@@ -19,6 +20,7 @@ namespace LocalMediaTransfer.GUI.Services
         private readonly ConcurrentDictionary<string, TaskCompletionSource<PipeCommandAcknowledgement>>
             _pendingCommands = new();
         private bool _disposed;
+        private long _browserLinkConsumptionVersion;
 
         public PipeClient(
             string pipeName = PipeName,
@@ -60,10 +62,13 @@ namespace LocalMediaTransfer.GUI.Services
         public event Action<NativePairingRequestData>? NativePairingRequested;
         public event Action<NativeTransferRequestData>? NativeTransferRequested;
         public event Action<IReadOnlyList<TrustedDeviceData>>? TrustedDevicesReceived;
+        public event Action<long>? BrowserLinkConsumed;
         public event Action<bool>? ConnectionChanged;
         public event Action<string>? DiagnosticLog;
 
         public bool IsConnected => _connectionLoop.IsConnected;
+        public long BrowserLinkConsumptionVersion =>
+            Interlocked.Read(ref _browserLinkConsumptionVersion);
 
         public void Start()
         {
@@ -213,6 +218,11 @@ namespace LocalMediaTransfer.GUI.Services
                     break;
                 case PipeMessageKind.TrustedDevices:
                     TrustedDevicesReceived?.Invoke((IReadOnlyList<TrustedDeviceData>)message.Payload!);
+                    break;
+                case PipeMessageKind.BrowserLinkConsumed:
+                    long version = Interlocked.Increment(
+                        ref _browserLinkConsumptionVersion);
+                    BrowserLinkConsumed?.Invoke(version);
                     break;
                 case PipeMessageKind.CommandResult:
                     var commandResult = (CommandResultData)message.Payload!;

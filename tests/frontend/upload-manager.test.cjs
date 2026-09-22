@@ -174,8 +174,13 @@ function loadPreflight(navigatorOverrides = {}) {
     };
 }
 
-function loadSecurity() {
+function loadSecurity(authorizationStore = new Map()) {
     const harness = createContext();
+    harness.context.localStorage = {
+        getItem(key) { return authorizationStore.get(key) || null; },
+        setItem(key, value) { authorizationStore.set(key, value); },
+        removeItem(key) { authorizationStore.delete(key); }
+    };
     harness.context.window.I18n = {
         t(key) {
             return key === 'security.disabledTitle'
@@ -188,6 +193,7 @@ function loadSecurity() {
     loadScript(harness.context, '../../src/Server/static/js/core/security.js');
     return {
         ...harness,
+        authorizationStore,
         security: harness.context.window.SecurityManager
     };
 }
@@ -736,7 +742,7 @@ test('upload phases progress from checking through completion', async () => {
 });
 
 test('one-time browser bootstrap is exchanged and removed from browser history', async () => {
-    const { context, security } = loadSecurity();
+    const { context, security, authorizationStore } = loadSecurity();
     const bootstrap = 'a'.repeat(64);
     context.window.location.search = '';
     context.window.location.hash = `#bootstrap=${bootstrap}`;
@@ -753,12 +759,43 @@ test('one-time browser bootstrap is exchanged and removed from browser history',
 
     assert.equal(security.token, 'memory-only-token');
     assert.equal(security.isValid, true);
+    assert.equal(
+        authorizationStore.get('lmt.browser.authorization.v1'),
+        'memory-only-token');
     assert.equal(context.window.history.replaced, '/');
     assert.equal(requests[0].url, '/exchange_bootstrap');
     assert.equal(requests[0].options.referrerPolicy, 'no-referrer');
     assert.equal(requests[0].options.credentials, 'omit');
     assert.equal(requests[0].options.body.includes(bootstrap), true);
     assert.equal(requests[1].url, '/verify_token');
+});
+
+test('browser authorization survives refresh and clears after server rejection', async () => {
+    const authorizationStore = new Map([
+        ['lmt.browser.authorization.v1', 'temporary-browser-token']
+    ]);
+    const first = loadSecurity(authorizationStore);
+    first.context.window.location.search = '';
+    first.context.window.location.hash = '';
+    const firstRequests = [];
+    first.context.fetch = async (url) => {
+        firstRequests.push(url);
+        return { ok: true, json: async () => ({ valid: true, scope: 'browser' }) };
+    };
+
+    await first.security.init();
+
+    assert.equal(first.security.token, 'temporary-browser-token');
+    assert.deepEqual(firstRequests, ['/verify_token']);
+
+    const expired = loadSecurity(authorizationStore);
+    expired.context.window.location.search = '';
+    expired.context.window.location.hash = '';
+    expired.context.fetch = async () => ({ ok: false });
+    await expired.security.init();
+
+    assert.equal(expired.security.failureReason, 'invalid');
+    assert.equal(authorizationStore.has('lmt.browser.authorization.v1'), false);
 });
 
 test('legacy query token is scrubbed after reading', async () => {

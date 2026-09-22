@@ -140,9 +140,13 @@ numeric counts into its report. Do not publish the raw server log.
 - First trust comes from QR/manual pairing plus Windows approval.
 - Browser launch uses a manually requested random five-minute, one-time
   fragment bootstrap. A new bootstrap replaces and invalidates the previous
-  one. The exchange consumes the code and returns the session token with
-  `no-store`; expiry and replay are rejected. The static frontend removes
-  bootstrap and legacy token material from browser history before continuing.
+  unused one. The exchange consumes the code, notifies WinUI, and returns a
+  separate random browser credential with `no-store`; expiry and replay are
+  rejected. Browser credentials expire after 30 minutes without an
+  authenticated request and are invalidated by receiver-token rotation or
+  server restart. The static frontend removes bootstrap and legacy token
+  material from browser history and retains only the scoped browser credential
+  for refresh/reopen recovery.
 - Headless development/test launches without a GUI ownership key retain the
   current-logon ACL pipe mode; they do not claim authenticated GUI ownership.
 - Pipe input is capped at 64 KiB and GUI-facing collections, identifiers,

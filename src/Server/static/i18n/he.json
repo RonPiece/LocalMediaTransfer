@@ -63,12 +63,12 @@
   "modal.uploadMore": "העלה עוד",
   "modal.securityTitle": "נדרש קישור מאובטח",
   "modal.securityDefault": "פתח את הדף מתוך Local Media Transfer במחשב באמצעות קישור הדפדפן החד-פעמי העדכני.",
-  "modal.securityNote": "ההעלאות יישארו נעולות עד שהדף ייפתח באמצעות קישור תקין.",
-  "modal.noToken": "הדף נפתח ללא קישור גישה חד-פעמי תקין. חזור אל Local Media Transfer במחשב ובחר ״פתח בדפדפן״, או העתק את קישור הדפדפן החד-פעמי העדכני. אפשר גם לסרוק את קוד ההתחברות העדכני.",
-  "modal.invalidTokenTitle": "הקישור פג או כבר נוצל",
-  "modal.invalidToken": "הקישור החד-פעמי אינו תקין, פג תוקף או כבר נוצל. צור קישור חדש ב-Local Media Transfer במחשב ופתח אותו שוב.",
+  "modal.securityNote": "קישור חד-פעמי יוצר הפעלת דפדפן זמנית ששורדת רענון ופתיחה מחדש באותו דפדפן.",
+  "modal.noToken": "לדפדפן הזה אין הפעלת העברה פעילה. צור קישור דפדפן חד-פעמי ב-Local Media Transfer במחשב ופתח אותו כאן.",
+  "modal.invalidTokenTitle": "הפעלת הדפדפן אינה זמינה",
+  "modal.invalidToken": "הקישור החד-פעמי כבר נוצל או פג תוקפו, או שהפעלת הדפדפן הסתיימה לאחר חוסר פעילות. צור קישור חדש ב-Local Media Transfer במחשב ופתח אותו שוב.",
   "footer.copyright": "© 2025 Ron Blanki. כל הזכויות שמורות.",
   "language.menuAria": "בחר שפה",
   "security.disabledTitle": "נעול: נדרש קישור גישה תקין",
-  "security.lockedBanner": "ההעלאות נעולות. פתח את הדף באמצעות הקישור החד-פעמי העדכני מ-Local Media Transfer במחשב, או סרוק את קוד ההתחברות העדכני."
+  "security.lockedBanner": "ההעלאות נעולות. צור ופתח קישור דפדפן חד-פעמי חדש מ-Local Media Transfer במחשב."
 }

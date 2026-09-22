@@ -212,12 +212,12 @@
             const invalid = titleKey === 'modal.invalidTokenTitle';
             const resolvedTitle = title || t(
                 titleKey,
-                invalid ? 'Link expired or already used' : 'Secure link required');
+                invalid ? 'Browser session unavailable' : 'Secure link required');
             const resolvedMessage = message || t(
                 messageKey,
                 invalid
-                    ? 'This one-time link is invalid, expired, or has already been used. Create a new link in Local Media Transfer on Windows and open it again.'
-                    : 'This page was opened without a valid one-time access link. Open it again from Local Media Transfer on Windows.');
+                    ? 'This one-time link was already used or expired, or this browser session ended after being idle. Create a new link in Local Media Transfer on Windows and open it again.'
+                    : 'This browser has no active transfer session. Create a one-time browser link in Local Media Transfer on Windows and open it here.');
             const resolvedButtonText = btnText || t('modal.close', 'Close');
             this.showDialog({
                 id: 'tokenModal',

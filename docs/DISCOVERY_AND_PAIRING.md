@@ -71,9 +71,13 @@ not for authorizing uploads.
 
 The Windows sender uses the same credential-free version-2 unicast discovery,
 but independently owns its scan consent and enumerates active private IPv4
-adapters with the same 1,024-destination cap. It uses the datagram source
-address, not an address inside the JSON. Manual private-IPv4 entry remains
-available when receiver advertising is disabled.
+adapters with the same 1,024-destination cap. It excludes known VPN and virtual
+adapters from LAN probing, prioritizes adapters with an IPv4 gateway, and shares
+the bounded destination budget across the remaining adapters so one large
+subnet cannot starve Wi-Fi or Ethernet. Production scans use UDP `45892`; TEST
+scans use UDP `45893`. It uses the datagram source address, not an address inside
+the JSON. Manual private-IPv4 entry remains available when receiver advertising
+is disabled.
 
 Native first pairing requires the receiver to open a two-minute pairing window.
 Both PCs compare an independently computed eight-digit security code that binds

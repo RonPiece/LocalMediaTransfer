@@ -30,8 +30,9 @@ and maintainer availability.
   network may be able to observe traffic or authentication credentials.
 - Do not port-forward the server, expose it directly to the Internet, or use it
   on an untrusted public Wi-Fi network.
-- The installer firewall exception is program-scoped, inbound TCP only, Private
-  profile only, and restricted to `LocalSubnet`.
+- The installer firewall exceptions are program-scoped inbound TCP plus UDP
+  discovery on port `45892`, Private profile only, and restricted to
+  `LocalSubnet`.
 - Nearby Windows discovery is separately opt-in, credential-free UDP unicast,
   private-IPv4-only, and bounded to 1,024 sender destinations per scan.
 - The GUI stops only the server process it owns unless the user explicitly
@@ -40,11 +41,15 @@ and maintainer availability.
   and binds it to the exact GUI/server process identities and environment.
   Security commands are acknowledged and desired policy is replayed after a
   reconnect instead of being treated as successfully delivered on write.
-- The browser receives its bearer token through an explicitly created,
-  five-minute, single-use fragment bootstrap. Creating a replacement link
-  invalidates the previous link. The bootstrap is removed from browser history
-  before exchange and the token remains in browser memory. Legacy query-token
-  links are accepted only for compatibility and are scrubbed immediately.
+- The browser receives a random, upload-capable browser credential through an
+  explicitly created five-minute, single-use fragment bootstrap. Creating a
+  replacement invalidates the previous unused link. Successful exchange
+  consumes the link, notifies the GUI, and creates a browser session that
+  expires after 30 minutes without an authenticated request. The scoped
+  credential is retained only in that origin's browser storage so refresh and
+  reopening can resume; server restart, receiver-token rotation, expiry, or
+  clearing site data ends it. Legacy query-token links are accepted only for
+  compatibility and are scrubbed immediately.
 - Automatically allowing previously approved devices defaults off. Enabling it
   remains an explicit persisted choice.
 

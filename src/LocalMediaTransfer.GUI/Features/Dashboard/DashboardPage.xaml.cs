@@ -44,6 +44,7 @@ namespace LocalMediaTransfer.GUI.Features.Dashboard
                 _mainWindow = mainWindow;
                 _pipeClient = mainWindow.PipeClient;
                 _pipeClient.ConnectionChanged += OnPipeConnectionChanged;
+                _pipeClient.BrowserLinkConsumed += OnBrowserLinkConsumed;
                 mainWindow.PendingApprovalsChanged += OnPendingApprovalsChanged;
                 OnPendingApprovalsChanged(mainWindow.PendingApprovalCount);
                 
@@ -52,7 +53,11 @@ namespace LocalMediaTransfer.GUI.Features.Dashboard
                 _ = RefreshIosPairingAsync(mainWindow);
                 if (ViewModel.IsBrowserLinkFresh)
                 {
-                    StartBrowserLinkCountdown();
+                    if (ViewModel.MarkBrowserLinkConsumed(
+                        _pipeClient.BrowserLinkConsumptionVersion))
+                        _ = UpdateBrowserLinkPresentationAsync(refreshQr: false);
+                    else
+                        StartBrowserLinkCountdown();
                 }
             }
         }
@@ -64,6 +69,7 @@ namespace LocalMediaTransfer.GUI.Features.Dashboard
             if (_pipeClient != null)
             {
                 _pipeClient.ConnectionChanged -= OnPipeConnectionChanged;
+                _pipeClient.BrowserLinkConsumed -= OnBrowserLinkConsumed;
             }
             if (_mainWindow != null)
                 _mainWindow.PendingApprovalsChanged -= OnPendingApprovalsChanged;
@@ -221,6 +227,14 @@ namespace LocalMediaTransfer.GUI.Features.Dashboard
             await UpdateBrowserLinkPresentationAsync(refreshQr: ViewModel.IsBrowserLinkFresh);
         }
 
+        private void OnBrowserLinkConsumed(long consumptionVersion) =>
+            DispatcherQueue.TryEnqueue(async () =>
+            {
+                if (!ViewModel.MarkBrowserLinkConsumed(consumptionVersion)) return;
+                _browserLinkTimer?.Stop();
+                await UpdateBrowserLinkPresentationAsync(refreshQr: false);
+            });
+
         private void StartBrowserLinkCountdown()
         {
             _browserLinkTimer?.Stop();
@@ -246,15 +260,22 @@ namespace LocalMediaTransfer.GUI.Features.Dashboard
             ConnectionUrl.Text = ViewModel.ConnectionUrl;
             CopyUrlBtn.IsEnabled = active;
             OpenBrowserBtn.IsEnabled = active;
+            BrowserLinkPanel.Visibility = active ? Visibility.Visible : Visibility.Collapsed;
             BrowserQrPanel.Visibility = active ? Visibility.Visible : Visibility.Collapsed;
+            OpenBrowserBtn.Visibility = active ? Visibility.Visible : Visibility.Collapsed;
+            Grid.SetColumnSpan(RefreshBrowserLinkButton, active ? 1 : 2);
             RefreshBrowserLinkButton.Content = active
-                ? "Replace browser link"
-                : "Create browser link";
+                ? "Replace one-time link"
+                : ViewModel.BrowserLinkWasConsumed
+                    ? "Create link for another device"
+                    : "Create one-time link";
             BrowserLinkStatusText.Text = active
-                ? $"Available for up to {BrowserTransferSession.FormatRemaining(ViewModel.BrowserLinkRemainingSeconds)} · first successful use consumes it"
-                : ViewModel.ConnectionUrl.StartsWith("Error:", StringComparison.Ordinal)
-                    ? "Link creation failed · check the receiver and try again"
-                    : "No active link · create one when you are ready to share";
+                ? $"Waiting for first use · expires in {BrowserTransferSession.FormatRemaining(ViewModel.BrowserLinkRemainingSeconds)}"
+                : ViewModel.BrowserLinkWasConsumed
+                    ? "Connected · one-time link used"
+                    : ViewModel.ConnectionUrl.StartsWith("Error:", StringComparison.Ordinal)
+                        ? "Link creation failed · check the receiver and try again"
+                        : "No active link · create one when you are ready to share";
 
             if (active && refreshQr)
             {

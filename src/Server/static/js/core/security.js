@@ -7,6 +7,7 @@ window.SecurityManager = {
     isValid: false,
     failureReason: null,
     _initPromise: null,
+    storageKey: 'lmt.browser.authorization.v1',
 
     async init() {
         if (this._initPromise) return this._initPromise;
@@ -24,7 +25,7 @@ window.SecurityManager = {
 
         this.token = bootstrap
             ? await this.exchangeBootstrap(bootstrap)
-            : legacyToken;
+            : legacyToken || this.restoreBrowserAuthorization();
 
         if (!this.token) {
             this.failureReason = bootstrap ? 'invalid' : 'missing';
@@ -39,6 +40,7 @@ window.SecurityManager = {
         // Verify token with server
         const valid = await this.verifyTokenWithServer(this.token);
         if (!valid) {
+            this.clearBrowserAuthorization(this.token);
             this.failureReason = 'invalid';
             console.error('Token rejected by server');
             this.showAccessError('invalid');
@@ -82,13 +84,42 @@ window.SecurityManager = {
             });
             if (!response.ok) return null;
             const payload = await response.json();
-            return typeof payload.token === 'string' && payload.token.length > 0
-                ? payload.token
-                : null;
+            if (typeof payload.token !== 'string' || payload.token.length === 0)
+                return null;
+            this.persistBrowserAuthorization(payload.token);
+            return payload.token;
         } catch (e) {
             console.warn('Bootstrap exchange failed');
             return null;
         }
+    },
+
+    restoreBrowserAuthorization() {
+        try {
+            return typeof localStorage === 'undefined'
+                ? null
+                : localStorage.getItem(this.storageKey);
+        } catch (e) {
+            return null;
+        }
+    },
+
+    persistBrowserAuthorization(token) {
+        try {
+            if (typeof localStorage !== 'undefined')
+                localStorage.setItem(this.storageKey, token);
+        } catch (e) {
+            console.warn('Browser authorization could not be retained');
+        }
+    },
+
+    clearBrowserAuthorization(expectedToken) {
+        try {
+            if (typeof localStorage === 'undefined') return;
+            const stored = localStorage.getItem(this.storageKey);
+            if (!expectedToken || stored === expectedToken)
+                localStorage.removeItem(this.storageKey);
+        } catch (e) {}
     },
 
     async verifyTokenWithServer(token) {

@@ -47,6 +47,8 @@ pinned-HTTPS flow, and Browser transfer remains a compatibility option.
 5. Use **Browser transfer (compatibility)** only when a native client is
    unavailable. Create its single-use five-minute link manually, then copy it
    or let the other phone, tablet, or computer scan the separate browser QR.
+   Opening the link once creates a temporary browser-only session that survives
+   refresh and reopening; create another one-time link for another device.
 
 ```mermaid
 flowchart LR

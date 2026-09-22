@@ -622,6 +622,10 @@ internal static class TestHarness
             configBody.RootElement.GetProperty(
                 "browserBootstrapLifetimeSeconds").GetInt32(),
             "Browser bootstrap lifetime contract changed.");
+        AssertEqual(1800,
+            configBody.RootElement.GetProperty(
+                "browserSessionIdleLifetimeSeconds").GetInt32(),
+            "Browser session idle lifetime contract changed.");
 
         using HttpResponseMessage replaced = await http.PostAsJsonAsync(
             "/exchange_bootstrap",
@@ -633,16 +637,69 @@ internal static class TestHarness
             "/exchange_bootstrap",
             new { bootstrap });
         first.EnsureSuccessStatusCode();
+        await pipe.WaitForBrowserLinkConsumedAsync(TimeSpan.FromSeconds(5));
         using JsonDocument firstBody = JsonDocument.Parse(
             await first.Content.ReadAsStringAsync());
-        AssertEqual(context.Token, firstBody.RootElement.GetProperty("token").GetString(),
-            "Bootstrap exchange returned another session token.");
+        string browserToken = firstBody.RootElement.GetProperty("token").GetString() ?? "";
+        Assert(browserToken.Length == 64 && browserToken != context.Token,
+            "Bootstrap exchange did not return a scoped browser session.");
+        AssertEqual(1800,
+            firstBody.RootElement.GetProperty("sessionIdleLifetimeSeconds").GetInt32(),
+            "Bootstrap exchange omitted the browser session lifetime.");
+
+        using (var verifyRequest = new HttpRequestMessage(
+            HttpMethod.Post, "/verify_token"))
+        {
+            verifyRequest.Headers.Add("X-Upload-Token", browserToken);
+            verifyRequest.Content = JsonContent.Create(new { });
+            using HttpResponseMessage verify = await http.SendAsync(verifyRequest);
+            verify.EnsureSuccessStatusCode();
+            using JsonDocument verifyBody = JsonDocument.Parse(
+                await verify.Content.ReadAsStringAsync());
+            AssertEqual("browser",
+                verifyBody.RootElement.GetProperty("scope").GetString(),
+                "Scoped browser session was not recognized.");
+        }
+
+        using (var preflightRequest = new HttpRequestMessage(
+            HttpMethod.Post, "/upload/preflight"))
+        {
+            preflightRequest.Headers.Add("X-Upload-Token", browserToken);
+            preflightRequest.Content = JsonContent.Create(new { files = Array.Empty<object>() });
+            using HttpResponseMessage preflight = await http.SendAsync(preflightRequest);
+            preflight.EnsureSuccessStatusCode();
+        }
 
         using HttpResponseMessage replay = await http.PostAsJsonAsync(
             "/exchange_bootstrap",
             new { bootstrap });
         AssertEqual(HttpStatusCode.Forbidden, replay.StatusCode,
             "One-time browser bootstrap was accepted twice.");
+
+        await pipe.SendAcknowledgedCommandAsync("set_token", context.Token);
+        using (var replayedPolicyRequest = new HttpRequestMessage(
+            HttpMethod.Post, "/verify_token"))
+        {
+            replayedPolicyRequest.Headers.Add("X-Upload-Token", browserToken);
+            replayedPolicyRequest.Content = JsonContent.Create(new { });
+            using HttpResponseMessage replayedPolicy = await http.SendAsync(
+                replayedPolicyRequest);
+            replayedPolicy.EnsureSuccessStatusCode();
+        }
+
+        string rotatedToken = Convert.ToHexString(
+            RandomNumberGenerator.GetBytes(16)).ToLowerInvariant();
+        await pipe.SendAcknowledgedCommandAsync("set_token", rotatedToken);
+        using (var staleRequest = new HttpRequestMessage(
+            HttpMethod.Post, "/verify_token"))
+        {
+            staleRequest.Headers.Add("X-Upload-Token", browserToken);
+            staleRequest.Content = JsonContent.Create(new { });
+            using HttpResponseMessage stale = await http.SendAsync(staleRequest);
+            AssertEqual(HttpStatusCode.Forbidden, stale.StatusCode,
+                "Rotating the receiver token left browser sessions active.");
+        }
+        await pipe.SendAcknowledgedCommandAsync("set_token", context.Token);
 
     }
 
@@ -2918,6 +2975,7 @@ internal sealed class PipeConnection : IAsyncDisposable
     private readonly CancellationTokenSource _cancellation = new();
     private readonly Task _drainTask;
     private readonly ConcurrentQueue<JsonElement> _metrics = new();
+    private readonly SemaphoreSlim _browserLinkConsumed = new(0, 1);
     private readonly ConcurrentDictionary<string,
         TaskCompletionSource<PipeCommandResult>> _pendingCommands = new();
     private readonly SemaphoreSlim _writeLock = new(1, 1);
@@ -2966,6 +3024,7 @@ internal sealed class PipeConnection : IAsyncDisposable
         finally
         {
             _writeLock.Dispose();
+            _browserLinkConsumed.Dispose();
             _cancellation.Dispose();
         }
     }
@@ -2987,6 +3046,13 @@ internal sealed class PipeConnection : IAsyncDisposable
             await Task.Delay(20);
         }
         throw new TimeoutException("Expected named-pipe metrics update was not received.");
+    }
+
+    public async Task WaitForBrowserLinkConsumedAsync(TimeSpan timeout)
+    {
+        if (!await _browserLinkConsumed.WaitAsync(timeout))
+            throw new TimeoutException(
+                "Expected browser-link consumption notification was not received.");
     }
 
     public async Task SendAcknowledgedCommandAsync(
@@ -3084,6 +3150,11 @@ internal sealed class PipeConnection : IAsyncDisposable
                     if (messageType == "metrics")
                     {
                         _metrics.Enqueue(messageData.Clone());
+                    }
+                    else if (messageType == "browser_link_consumed")
+                    {
+                        if (_browserLinkConsumed.CurrentCount == 0)
+                            _browserLinkConsumed.Release();
                     }
                     else if (messageType == "command_result")
                     {

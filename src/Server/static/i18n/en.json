@@ -63,12 +63,12 @@
   "modal.uploadMore": "Upload More",
   "modal.securityTitle": "Secure link required",
   "modal.securityDefault": "Open this page from Local Media Transfer on Windows using its current one-time browser link.",
-  "modal.securityNote": "Uploads stay locked until this page is opened with a valid link.",
-  "modal.noToken": "This page was opened without a valid one-time access link. In Local Media Transfer on Windows, select Open in Browser or copy the current one-time browser link. You can also scan the current connection QR code.",
-  "modal.invalidTokenTitle": "Link expired or already used",
-  "modal.invalidToken": "This one-time link is invalid, expired, or has already been used. Create a new link in Local Media Transfer on Windows and open it again.",
+  "modal.securityNote": "A one-time link creates a temporary browser session that can survive refresh and reopening on the same browser.",
+  "modal.noToken": "This browser has no active transfer session. In Local Media Transfer on Windows, create a one-time browser link and open it here.",
+  "modal.invalidTokenTitle": "Browser session unavailable",
+  "modal.invalidToken": "This one-time link was already used or expired, or this browser session ended after being idle. Create a new link in Local Media Transfer on Windows and open it again.",
   "footer.copyright": "© 2025 Ron Blanki. All rights reserved.",
   "language.menuAria": "Choose language",
   "security.disabledTitle": "Locked: a valid access link is required",
-  "security.lockedBanner": "Uploads are locked. Open this page with the current one-time link from Local Media Transfer on Windows, or scan the current connection QR code."
+  "security.lockedBanner": "Uploads are locked. Create and open a new one-time browser link from Local Media Transfer on Windows."
 }

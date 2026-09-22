@@ -41,6 +41,7 @@
 #include <openssl/crypto.h>
 #include <openssl/ssl.h>
 #include <openssl/hmac.h>
+#include <openssl/rand.h>
 
 using json = nlohmann::json;
 namespace fs = std::filesystem;
@@ -545,9 +546,26 @@ void HttpServer::setupRoutes(CrowApp& app) {
         res.add_header("Content-Type", "application/json; charset=utf-8");
         res.add_header("Access-Control-Allow-Origin", "*");
 
-        if (validateAnyToken(getTokenFromRequest(req))) {
+        const std::string token = getTokenFromRequest(req);
+        if (validateSessionToken(token)) {
             response = {{"valid", true}, {"environment", m_runtimeEnvironment},
-                {"scope", validateSessionToken(getTokenFromRequest(req)) ? "pairing" : "authenticated"}};
+                {"scope", "pairing"}};
+            res.code = 200;
+        } else if (validateBrowserSessionToken(token)) {
+            response = {{"valid", true}, {"environment", m_runtimeEnvironment},
+                {"scope", "browser"},
+                {"idleLifetimeSeconds", BrowserSessionIdleLifetimeSeconds}};
+            res.code = 200;
+        } else if (validateToken(token)) {
+            response = {{"valid", true}, {"environment", m_runtimeEnvironment},
+                {"scope", "authenticated"}};
+            res.code = 200;
+        } else if (m_pairingStore &&
+            m_pairingStore->findDeviceByCredential(token).has_value()) {
+            // Native Windows identity credentials can prove remembered trust
+            // here but still cannot authorize upload routes without a grant.
+            response = {{"valid", true}, {"environment", m_runtimeEnvironment},
+                {"scope", "trusted"}};
             res.code = 200;
         } else {
             response = {{"valid", false}, {"error", "Invalid token"},
@@ -692,6 +710,8 @@ void HttpServer::setupRoutes(CrowApp& app) {
             {"environment", m_runtimeEnvironment},
             {"browserBootstrapLifetimeSeconds",
              BrowserBootstrapLifetimeSeconds},
+            {"browserSessionIdleLifetimeSeconds",
+             BrowserSessionIdleLifetimeSeconds},
             {"mobile", {
                 {"chunkSizeBytes", lmt::TransferLimits::CompatibilityChunkBytes},
                 {"parallelFiles", 5},
@@ -1432,6 +1452,7 @@ void HttpServer::setupRoutes(CrowApp& app) {
             if (exchangeBrowserBootstrap(bootstrap, token)) {
                 res.code = 200;
                 res.body = json{{"token", token},
+                    {"sessionIdleLifetimeSeconds", BrowserSessionIdleLifetimeSeconds},
                     {"environment", m_runtimeEnvironment}}.dump();
             } else {
                 res.code = 403;
@@ -1820,16 +1841,8 @@ bool HttpServer::validateToken(const std::string& token) const {
     if (sessionToken.empty()) {
         return false;
     }
-    return token == sessionToken ||
+    return token == sessionToken || validateBrowserSessionToken(token) ||
         (m_pairingStore && m_pairingStore->validateCredential(token));
-}
-
-bool HttpServer::validateAnyToken(const std::string& token) const {
-    // Verification establishes validity, not upload authority. The iOS pairing
-    // flow probes this endpoint before asking for receiver approval.
-    if (validateSessionToken(token)) return true;
-    if (validateToken(token)) return true;
-    return m_pairingStore && m_pairingStore->findDeviceByCredential(token).has_value();
 }
 
 std::optional<HttpServer::UploadAuthorization> HttpServer::authorizeUpload(
@@ -1849,9 +1862,13 @@ std::optional<HttpServer::UploadAuthorization> HttpServer::authorizeUpload(
             if (m_config.token.empty()) return std::nullopt;
             sessionCredential = context.credential == m_config.token;
         }
-        if (!sessionCredential && (!m_pairingStore ||
+        const bool browserCredential = !sessionCredential &&
+            validateBrowserSessionToken(context.credential);
+        if (!sessionCredential && !browserCredential && (!m_pairingStore ||
             !m_pairingStore->validateCredential(context.credential))) return std::nullopt;
-        context.principal = sessionCredential ? UploadPrincipal::Session : UploadPrincipal::TrustedDevice;
+        context.principal = sessionCredential || browserCredential
+            ? UploadPrincipal::Session
+            : UploadPrincipal::TrustedDevice;
     }
     context.ownerPrefix = credentialOwnerPrefix(context.credential);
     return context;
@@ -1898,9 +1915,13 @@ asio::ssl::context HttpServer::createTlsContext(
 
 void HttpServer::setToken(const std::string& token) {
     std::lock_guard<std::mutex> lock(m_authMutex);
+    const bool changed = m_config.token != token;
     m_config.token = token;
-    m_browserBootstrap.clear();
-    m_browserBootstrapExpiresAt = {};
+    if (changed) {
+        m_browserBootstrap.clear();
+        m_browserBootstrapExpiresAt = {};
+        m_browserSessions.clear();
+    }
 }
 
 void HttpServer::beginNativePairingWindow() {
@@ -1954,6 +1975,21 @@ bool HttpServer::validateSessionToken(const std::string& token) const {
         CRYPTO_memcmp(token.data(), expected.data(), expected.size()) == 0;
 }
 
+bool HttpServer::validateBrowserSessionToken(const std::string& token) const {
+    if (token.empty()) return false;
+    std::lock_guard<std::mutex> lock(m_authMutex);
+    const auto session = m_browserSessions.find(token);
+    if (session == m_browserSessions.end()) return false;
+    const auto now = std::chrono::steady_clock::now();
+    if (now >= session->second) {
+        m_browserSessions.erase(session);
+        return false;
+    }
+    session->second = now +
+        std::chrono::seconds(BrowserSessionIdleLifetimeSeconds);
+    return true;
+}
+
 bool HttpServer::setBrowserBootstrap(const std::string& bootstrap) {
     if (bootstrap.size() != 64 ||
         !std::all_of(bootstrap.begin(), bootstrap.end(), [](unsigned char value) {
@@ -1972,20 +2008,48 @@ bool HttpServer::setBrowserBootstrap(const std::string& bootstrap) {
 bool HttpServer::exchangeBrowserBootstrap(
     const std::string& bootstrap,
     std::string& token) {
-    std::lock_guard<std::mutex> lock(m_authMutex);
-    if (bootstrap.size() != m_browserBootstrap.size() ||
-        bootstrap.empty() ||
-        std::chrono::steady_clock::now() > m_browserBootstrapExpiresAt ||
-        CRYPTO_memcmp(
-            bootstrap.data(),
-            m_browserBootstrap.data(),
-            bootstrap.size()) != 0) {
-        return false;
+    {
+        std::lock_guard<std::mutex> lock(m_authMutex);
+        const auto now = std::chrono::steady_clock::now();
+        if (bootstrap.size() != m_browserBootstrap.size() ||
+            bootstrap.empty() ||
+            now > m_browserBootstrapExpiresAt ||
+            CRYPTO_memcmp(
+                bootstrap.data(),
+                m_browserBootstrap.data(),
+                bootstrap.size()) != 0 ||
+            m_config.token.empty()) {
+            return false;
+        }
+
+        unsigned char randomBytes[32];
+        if (RAND_bytes(randomBytes, sizeof(randomBytes)) != 1) return false;
+        std::ostringstream encoded;
+        encoded << std::hex << std::setfill('0');
+        for (unsigned char value : randomBytes)
+            encoded << std::setw(2) << static_cast<unsigned int>(value);
+        token = encoded.str();
+
+        for (auto session = m_browserSessions.begin();
+            session != m_browserSessions.end();) {
+            if (now >= session->second) session = m_browserSessions.erase(session);
+            else ++session;
+        }
+        if (m_browserSessions.size() >= MaxBrowserSessions) {
+            const auto oldest = std::min_element(
+                m_browserSessions.begin(), m_browserSessions.end(),
+                [](const auto& left, const auto& right) {
+                    return left.second < right.second;
+                });
+            if (oldest != m_browserSessions.end()) m_browserSessions.erase(oldest);
+        }
+        m_browserSessions[token] = now +
+            std::chrono::seconds(BrowserSessionIdleLifetimeSeconds);
+        m_browserBootstrap.clear();
+        m_browserBootstrapExpiresAt = {};
     }
-    token = m_config.token;
-    m_browserBootstrap.clear();
-    m_browserBootstrapExpiresAt = {};
-    return !token.empty();
+    if (m_pipeServer) m_pipeServer->sendBrowserLinkConsumed();
+    return true;
 }
 
 void HttpServer::run(std::atomic<bool>& running) {

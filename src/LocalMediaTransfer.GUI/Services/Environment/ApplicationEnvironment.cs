@@ -52,6 +52,7 @@ namespace LocalMediaTransfer.GUI.Services
         public string SettingsPath => Path.Combine(DataRoot, "gui-settings.json");
         public string LogDirectory => Path.Combine(DataRoot, "logs");
         public string TlsStorageDirectory => Path.Combine(DataRoot, "security");
+        public int DiscoveryPort => IsTest ? 45893 : 45892;
 
         public string DefaultUploadDirectory => IsTest
             ? Path.Combine(DataRoot, "uploads")

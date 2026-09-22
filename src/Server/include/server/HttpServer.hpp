@@ -15,6 +15,7 @@
 #include <mutex>
 #include <optional>
 #include <cstdint>
+#include <unordered_map>
 
 class HashEngine;
 class BenchmarkStore;
@@ -89,6 +90,8 @@ public:
 
 private:
     static constexpr int BrowserBootstrapLifetimeSeconds = 5 * 60;
+    static constexpr int BrowserSessionIdleLifetimeSeconds = 30 * 60;
+    static constexpr std::size_t MaxBrowserSessions = 8;
     using CrowApp = crow::App<crow::CORSHandler>;
     void setupRoutes(CrowApp& app);
     void setupCORS(CrowApp& app);
@@ -97,11 +100,11 @@ private:
         const std::string& privateKeyPem);
     bool validateToken(const std::string& token) const;
     bool validateSessionToken(const std::string& token) const;
+    bool validateBrowserSessionToken(const std::string& token) const;
     bool exchangeBrowserBootstrap(
         const std::string& bootstrap,
         std::string& token);
     bool validateRequestToken(const crow::request& req) const;
-    bool validateAnyToken(const std::string& token) const;
     enum class UploadAction { Preflight, Chunk, WholeFile, Cancel };
     enum class UploadPrincipal { Session, TrustedDevice, NativeGrant };
     struct UploadAuthorization {
@@ -142,6 +145,8 @@ private:
     mutable std::mutex m_authMutex;
     std::string m_browserBootstrap;
     std::chrono::steady_clock::time_point m_browserBootstrapExpiresAt{};
+    mutable std::unordered_map<std::string, std::chrono::steady_clock::time_point>
+        m_browserSessions;
     std::string m_settingsJson = R"({"autoDelete": false, "darkMode": true})";
     std::mutex m_settingsMutex;
 };

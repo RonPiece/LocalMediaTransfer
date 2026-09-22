@@ -9,11 +9,24 @@ namespace LocalMediaTransfer.WindowsClient;
 public sealed class DiscoveryClient
 {
     private const int MaxDestinations = 1024;
+    private static readonly string[] VirtualInterfaceHints =
+    [
+        "virtual", "vmware", "hyper-v", "vethernet", "tailscale",
+        "zerotier", "wireguard", "vpn", "teamviewer"
+    ];
+
+    internal sealed record DiscoverySubnet(
+        IPAddress Address,
+        IPAddress Mask,
+        NetworkInterfaceType InterfaceType,
+        string Name,
+        string Description,
+        bool HasGateway);
 
     public async Task<IReadOnlyList<DiscoveredReceiver>> ScanAsync(
         string environment, int discoveryPort, CancellationToken cancellationToken)
     {
-        var destinations = EnumerateDestinations().Take(MaxDestinations).ToArray();
+        var destinations = EnumerateDestinations().ToArray();
         using var udp = new UdpClient(AddressFamily.InterNetwork);
         byte[] query = Encoding.UTF8.GetBytes(
             JsonSerializer.Serialize(new { type = "lmt-discovery-query", version = 2 }));
@@ -100,36 +113,125 @@ public sealed class DiscoveryClient
 
     internal static IEnumerable<IPAddress> EnumerateDestinations()
     {
-        var seen = new HashSet<uint>();
+        var subnets = new List<DiscoverySubnet>();
         foreach (NetworkInterface network in NetworkInterface.GetAllNetworkInterfaces())
         {
-            if (network.OperationalStatus != OperationalStatus.Up ||
-                network.NetworkInterfaceType is NetworkInterfaceType.Loopback or NetworkInterfaceType.Tunnel)
+            if (network.OperationalStatus != OperationalStatus.Up)
                 continue;
-            foreach (UnicastIPAddressInformation unicast in network.GetIPProperties().UnicastAddresses)
+            IPInterfaceProperties properties;
+            try { properties = network.GetIPProperties(); }
+            catch (NetworkInformationException) { continue; }
+            bool hasGateway = properties.GatewayAddresses.Any(gateway =>
+                gateway.Address.AddressFamily == AddressFamily.InterNetwork &&
+                !gateway.Address.Equals(IPAddress.Any));
+            foreach (UnicastIPAddressInformation unicast in properties.UnicastAddresses)
             {
                 if (unicast.Address.AddressFamily != AddressFamily.InterNetwork ||
                     unicast.IPv4Mask is null || !IsPrivate(unicast.Address)) continue;
-                uint local = ToUInt32(unicast.Address);
-                uint mask = ToUInt32(unicast.IPv4Mask);
-                uint networkAddress = local & mask;
-                uint broadcast = networkAddress | ~mask;
-                uint first = networkAddress + 1;
-                uint last = broadcast - 1;
-                if ((ulong)last - first + 1 > MaxDestinations)
+                subnets.Add(new DiscoverySubnet(
+                    unicast.Address,
+                    unicast.IPv4Mask,
+                    network.NetworkInterfaceType,
+                    network.Name,
+                    network.Description,
+                    hasGateway));
+            }
+        }
+        return EnumerateDestinations(subnets);
+    }
+
+    internal static IReadOnlyList<IPAddress> EnumerateDestinations(
+        IEnumerable<DiscoverySubnet> subnets)
+    {
+        var candidates = subnets
+            .Where(subnet => ShouldScanInterface(
+                subnet.InterfaceType, subnet.Name, subnet.Description) &&
+                IsPrivate(subnet.Address))
+            .OrderByDescending(subnet => subnet.HasGateway)
+            .ThenBy(subnet => InterfacePriority(subnet.InterfaceType))
+            .Select(subnet => EnumerateSubnet(subnet.Address, subnet.Mask).GetEnumerator())
+            .ToList();
+        var results = new List<IPAddress>(MaxDestinations);
+        var seen = new HashSet<uint>();
+        try
+        {
+            while (candidates.Count > 0 && results.Count < MaxDestinations)
+            {
+                for (int index = candidates.Count - 1;
+                    index >= 0 && results.Count < MaxDestinations;
+                    index--)
                 {
-                    first = local > 512 ? Math.Max(first, local - 512) : first;
-                    last = Math.Min(last, first + MaxDestinations);
-                    if (last - first + 1 < MaxDestinations && last == broadcast - 1)
-                        first = Math.Max(networkAddress + 1,
-                            last - (MaxDestinations - 1));
-                }
-                for (uint candidate = first;
-                    candidate <= last && seen.Count < MaxDestinations; candidate++)
-                {
-                    if (candidate != local && seen.Add(candidate)) yield return FromUInt32(candidate);
+                    IEnumerator<IPAddress> candidate = candidates[index];
+                    if (!candidate.MoveNext())
+                    {
+                        candidate.Dispose();
+                        candidates.RemoveAt(index);
+                        continue;
+                    }
+                    if (seen.Add(ToUInt32(candidate.Current)))
+                        results.Add(candidate.Current);
                 }
             }
+        }
+        finally
+        {
+            foreach (IEnumerator<IPAddress> candidate in candidates)
+                candidate.Dispose();
+        }
+        return results;
+    }
+
+    internal static bool ShouldScanInterface(
+        NetworkInterfaceType type,
+        string name,
+        string description)
+    {
+        if (type is NetworkInterfaceType.Loopback or NetworkInterfaceType.Tunnel)
+            return false;
+        string identity = name + " " + description;
+        return !VirtualInterfaceHints.Any(hint =>
+            identity.Contains(hint, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static int InterfacePriority(NetworkInterfaceType type) => type switch
+    {
+        NetworkInterfaceType.Wireless80211 => 0,
+        NetworkInterfaceType.Ethernet or
+        NetworkInterfaceType.GigabitEthernet or
+        NetworkInterfaceType.FastEthernetFx or
+        NetworkInterfaceType.FastEthernetT => 1,
+        _ => 2
+    };
+
+    private static IEnumerable<IPAddress> EnumerateSubnet(
+        IPAddress address,
+        IPAddress ipv4Mask)
+    {
+        uint local = ToUInt32(address);
+        uint mask = ToUInt32(ipv4Mask);
+        uint hostMask = ~mask;
+        if (hostMask < 2 || (hostMask & (hostMask + 1)) != 0)
+            yield break;
+        uint networkAddress = local & mask;
+        uint broadcast = networkAddress | hostMask;
+        uint first = networkAddress + 1;
+        uint last = broadcast - 1;
+        ulong available = (ulong)last - first + 1;
+        if (available > MaxDestinations)
+        {
+            ulong halfWindow = MaxDestinations / 2;
+            first = local > halfWindow
+                ? Math.Max(first, local - (uint)halfWindow)
+                : first;
+            last = Math.Min(last, first + MaxDestinations - 1);
+            if ((ulong)last - first + 1 < MaxDestinations && last == broadcast - 1)
+                first = Math.Max(networkAddress + 1,
+                    last - (MaxDestinations - 1));
+        }
+        for (uint candidate = first; candidate <= last; candidate++)
+        {
+            if (candidate != local) yield return FromUInt32(candidate);
+            if (candidate == uint.MaxValue) yield break;
         }
     }
 

@@ -9,6 +9,7 @@ var tests = new (string Name, Func<Task> Run)[]
     ("confirmation proof test vector", ConfirmationProofVector),
     ("manual address validation", ManualAddressValidation),
     ("discovery uses packet source address", DiscoverySourceAddress),
+    ("discovery skips virtual adapters and shares physical scan budget", DiscoveryAdapterSelection),
     ("transfer source limits and stable IDs", TransferSourceValidation),
     ("retry classification", RetryClassification),
     ("invalid certificate pins fail before transport", InvalidCertificatePin),
@@ -89,6 +90,41 @@ static Task DiscoverySourceAddress()
     Assert(receiver?.NativeWindows?.PairingAvailable == true, "Capability was not parsed.");
     Assert(DiscoveryClient.ParseResponse(packet, IPAddress.Parse("203.0.113.4"),
         "production") is null, "Public discovery response was accepted.");
+    return Task.CompletedTask;
+}
+
+static Task DiscoveryAdapterSelection()
+{
+    Assert(!DiscoveryClient.ShouldScanInterface(
+        System.Net.NetworkInformation.NetworkInterfaceType.Ethernet,
+        "Tailscale", "Tailscale Tunnel"),
+        "Named virtual adapter was eligible for LAN discovery.");
+    Assert(DiscoveryClient.ShouldScanInterface(
+        System.Net.NetworkInformation.NetworkInterfaceType.Wireless80211,
+        "Wi-Fi", "Physical wireless adapter"),
+        "Physical Wi-Fi adapter was excluded from LAN discovery.");
+
+    var destinations = DiscoveryClient.EnumerateDestinations([
+        new DiscoveryClient.DiscoverySubnet(
+            IPAddress.Parse("169.254.83.107"), IPAddress.Parse("255.255.0.0"),
+            System.Net.NetworkInformation.NetworkInterfaceType.Ethernet,
+            "Tailscale", "Tailscale Tunnel", false),
+        new DiscoveryClient.DiscoverySubnet(
+            IPAddress.Parse("192.168.50.20"), IPAddress.Parse("255.255.255.0"),
+            System.Net.NetworkInformation.NetworkInterfaceType.Wireless80211,
+            "Wi-Fi", "Physical wireless adapter", true),
+        new DiscoveryClient.DiscoverySubnet(
+            IPAddress.Parse("10.10.10.20"), IPAddress.Parse("255.255.255.0"),
+            System.Net.NetworkInformation.NetworkInterfaceType.Ethernet,
+            "Ethernet", "Physical ethernet adapter", true)
+    ]);
+    Assert(destinations.Any(address => address.ToString().StartsWith("192.168.50.")),
+        "Wi-Fi subnet was not scanned.");
+    Assert(destinations.Any(address => address.ToString().StartsWith("10.10.10.")),
+        "Ethernet subnet was starved by the shared discovery cap.");
+    Assert(destinations.All(address => !address.ToString().StartsWith("169.254.")),
+        "Excluded virtual subnet consumed discovery destinations.");
+    Assert(destinations.Count <= 1024, "Discovery exceeded its global safety cap.");
     return Task.CompletedTask;
 }
 
