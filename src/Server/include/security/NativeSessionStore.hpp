@@ -39,6 +39,8 @@ public:
         const nlohmann::json& body);
     bool approvePairing(const std::string& requestId);
     bool denyPairing(const std::string& requestId);
+    Result revokeCurrentDevice(const std::string& credential,
+        const std::string& ip);
 
     Result requestTransfer(const nlohmann::json& body,
         const std::string& credential, const std::string& ip);
@@ -57,7 +59,7 @@ public:
         bool skipExactDuplicates);
     void markFileTerminal(const std::string& transferId,
         const std::string& fileId);
-    void revokeDevice(const std::string& deviceId);
+    bool revokeDevice(const std::string& deviceId);
     void revokeAll();
 
     static std::string computeSecurityCode(const std::string& environment,
@@ -68,7 +70,13 @@ public:
         const std::string& requestId, const std::string& clientNonce);
 
 private:
-    enum class PairState { Pending, Confirmed, Approved, Denied };
+    enum class PairState {
+        Pending,
+        SenderConfirmed,
+        ReceiverConfirmed,
+        Approved,
+        Denied
+    };
     enum class TransferState { Pending, Approved, Denied, Cancelled };
 
     struct PairingRequest {
@@ -114,9 +122,11 @@ private:
         const std::string& right);
     static bool isHex(const std::string& value, size_t length);
     static bool isSafeIdentifier(const std::string& value, size_t maxLength);
+    static bool isActivePairingState(PairState state);
     static void appendCanonical(std::string& output,
         const std::string& value);
     void pruneLocked();
+    void revokeDeviceLocked(const std::string& deviceId);
     bool pairingRateLimitedLocked(const std::string& ip);
     std::optional<std::string> transferTokenLocked(
         const TransferRequest& transfer) const;

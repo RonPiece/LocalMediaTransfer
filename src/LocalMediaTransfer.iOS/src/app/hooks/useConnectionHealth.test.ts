@@ -1,20 +1,18 @@
 import { act, renderHook, waitFor } from '@testing-library/react-native';
+import { AppState } from 'react-native';
 
 import { api } from '@/api/ApiClient';
 import { useConnectionHealth } from './useConnectionHealth';
-
-jest.mock('react-native', () => ({
-  AppState: {
-    addEventListener: jest.fn(() => ({ remove: jest.fn() })),
-  },
-}));
 
 jest.mock('@/api/ApiClient', () => ({
   api: { pingServer: jest.fn().mockResolvedValue(true) },
 }));
 
 describe('useConnectionHealth', () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.spyOn(AppState, 'addEventListener').mockReturnValue({ remove: jest.fn() });
+  });
   afterEach(() => {
     jest.useRealTimers();
     jest.restoreAllMocks();
@@ -22,7 +20,7 @@ describe('useConnectionHealth', () => {
 
   it('does not connect while the user is on the connection screen', async () => {
     const { result } = renderHook(() => useConnectionHealth({
-      appState: 'connection',
+      appState: 'connect',
       setIsServerConnected: jest.fn(),
     }));
 
@@ -33,7 +31,7 @@ describe('useConnectionHealth', () => {
 
   it('uses a non-destructive authenticated check for an open dashboard', async () => {
     const setIsServerConnected = jest.fn();
-    const { result } = renderHook(() => useConnectionHealth({ appState: 'dashboard', setIsServerConnected }));
+    const { result } = renderHook(() => useConnectionHealth({ appState: 'home', setIsServerConnected }));
 
     await waitFor(() => expect(result.current.status).toBe('connected'));
     expect(api.pingServer).toHaveBeenCalledWith({ notifyUnauthorized: false });
@@ -52,7 +50,7 @@ describe('useConnectionHealth', () => {
     (api.pingServer as jest.Mock).mockResolvedValue(false);
     const setIsServerConnected = jest.fn();
     const { result } = renderHook(() => useConnectionHealth({
-      appState: 'dashboard',
+      appState: 'home',
       setIsServerConnected,
       scheduler,
     }));

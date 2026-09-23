@@ -1,7 +1,7 @@
 import React from 'react';
 import { Image, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { theme } from '@/theme';
+import { useThemePalette } from '@/theme';
 
 // iOS HIG navigation bar:
 // - Left: back chevron (<) or "Cancel" text uses theme.colors.primary.
@@ -29,8 +29,9 @@ export default function AppHeader({
   doneText = 'Done',
   doneColor,
 }: AppHeaderProps) {
+  const palette = useThemePalette();
   return (
-    <View className="border-b-[0.5px] border-border h-[44px] flex-row items-center bg-surface">
+    <View className="border-b-[0.5px] border-border dark:border-border-dark h-[44px] flex-row items-center bg-surface dark:bg-surface-dark">
       <View className="w-20 items-start pl-3">
         {onClose ? (
           closeStyle === 'back' ? (
@@ -41,8 +42,8 @@ export default function AppHeader({
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               className="flex-row items-center"
             >
-              <Ionicons name="chevron-back" size={22} color={theme.colors.primary} />
-              <Text className="text-primary text-[17px]">Back</Text>
+              <Ionicons name="chevron-back" size={22} color={palette.primary} />
+              <Text className="text-primary dark:text-primary-dark text-[17px]">Back</Text>
             </TouchableOpacity>
           ) : (
             <TouchableOpacity
@@ -51,7 +52,7 @@ export default function AppHeader({
               onPress={onClose}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
-              <Text className="text-primary text-[17px]">Cancel</Text>
+              <Text className="text-primary dark:text-primary-dark text-[17px]">Cancel</Text>
             </TouchableOpacity>
           )
         ) : showIcon ? (
@@ -64,7 +65,7 @@ export default function AppHeader({
 
       <Text
         numberOfLines={1}
-        className="flex-1 text-center text-[17px] font-semibold text-on-surface"
+        className="flex-1 text-center text-[17px] font-semibold text-on-surface dark:text-on-surface-dark"
       >
         {title}
       </Text>
@@ -77,7 +78,7 @@ export default function AppHeader({
             onPress={onDone}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            <Text className="text-[17px] font-semibold" style={{ color: doneColor || theme.colors.primary }}>{doneText}</Text>
+            <Text className="text-[17px] font-semibold" style={{ color: doneColor || palette.primary }}>{doneText}</Text>
           </TouchableOpacity>
         ) : null}
       </View>

@@ -93,23 +93,30 @@ describe('useTransferController', () => {
       averageMediaMBps: 10, peakMediaMBps: 10, currentEncodedMBps: 10,
     }));
 
-    act(() => jest.advanceTimersByTime(1000));
+    act(() => jest.advanceTimersByTime(5000));
     expect(result.current.etaText).toBe('Calculating…');
-    act(() => jest.advanceTimersByTime(1000));
-    expect(result.current.etaText).toBe('About 1 min');
-
-    act(() => jest.advanceTimersByTime(4000));
-    expect(result.current.etaText).toBe('Calculating…');
-
     act(() => callbacks.progress({
-      currentAsset: assets[0], bytesSent: 10_000_000, totalBytes: 650_000_000,
-      acknowledgedMediaBytes: 10_000_000, plannedUploadMediaBytes: 650_000_000, rateSampledAt: 7000,
+      currentAsset: assets[0], bytesSent: 50_000_000, totalBytes: 650_000_000,
+      acknowledgedMediaBytes: 50_000_000, plannedUploadMediaBytes: 650_000_000, rateSampledAt: 6000,
       currentIndex: 0, status: 'uploading', currentMediaMBps: 10,
       preparationComplete: true,
       averageMediaMBps: 10, peakMediaMBps: 10, currentEncodedMBps: 10,
     }));
     act(() => jest.advanceTimersByTime(1000));
     expect(result.current.etaText).toBe('About 1 min');
+
+    act(() => jest.advanceTimersByTime(5000));
+    expect(result.current.etaText).toBe('Calculating…');
+
+    act(() => callbacks.progress({
+      currentAsset: assets[0], bytesSent: 10_000_000, totalBytes: 650_000_000,
+      acknowledgedMediaBytes: 100_000_000, plannedUploadMediaBytes: 650_000_000, rateSampledAt: 12000,
+      currentIndex: 0, status: 'uploading', currentMediaMBps: 10,
+      preparationComplete: true,
+      averageMediaMBps: 10, peakMediaMBps: 10, currentEncodedMBps: 10,
+    }));
+    act(() => jest.advanceTimersByTime(1000));
+    expect(result.current.etaText).toBe('About 50s');
     unmount();
   });
 
@@ -155,8 +162,23 @@ describe('useTransferController', () => {
       peakMediaMBps: 10,
       currentEncodedMBps: 10,
     }));
-    act(() => jest.advanceTimersByTime(1000));
+    act(() => jest.advanceTimersByTime(5000));
     expect(result.current.etaText).toBe('Calculating…');
+    act(() => callbacks.progress({
+      currentAsset: assets[1],
+      bytesSent: 50_000_000,
+      totalBytes: 100_000_000,
+      acknowledgedMediaBytes: 50_000_000,
+      plannedUploadMediaBytes: 100_000_000,
+      rateSampledAt: 11000,
+      currentIndex: 1,
+      status: 'uploading',
+      preparationComplete: true,
+      currentMediaMBps: 10,
+      averageMediaMBps: 10,
+      peakMediaMBps: 10,
+      currentEncodedMBps: 10,
+    }));
     act(() => jest.advanceTimersByTime(1000));
     expect(result.current.etaText).not.toBe('Calculating…');
     unmount();
@@ -232,6 +254,33 @@ describe('useTransferController', () => {
       checked: 100,
       total: 188,
     });
+    unmount();
+  });
+
+  it('grows the transfer denominator as additional components are discovered', () => {
+    const { result, unmount } = renderHook(() => useTransferController({ assets, onCancel: jest.fn() }));
+
+    act(() => callbacks.progress({
+      currentAsset: assets[0], bytesSent: 0, totalBytes: 0,
+      acknowledgedMediaBytes: 0, plannedUploadMediaBytes: 0, rateSampledAt: 0,
+      currentIndex: 0, status: 'preparing', preparationActivity: 'preparing',
+      preparationComplete: false, preparedFiles: 1, readyFiles: 3, totalFiles: 2,
+      currentMediaMBps: 0, averageMediaMBps: 0, peakMediaMBps: 0, currentEncodedMBps: 0,
+    }));
+    act(() => jest.advanceTimersByTime(100));
+    expect(result.current.totalTransferFiles).toBe(3);
+
+    act(() => {
+      for (let index = 1; index <= 4; index += 1) {
+        callbacks.fileStatus({
+          assetId: assets[Math.min(index - 1, assets.length - 1)].id,
+          itemId: `discovered-component-${index}`,
+          status: 'uploading',
+          transferFilename: `component-${index}.mov`,
+        });
+      }
+    });
+    expect(result.current.totalTransferFiles).toBe(4);
     unmount();
   });
 

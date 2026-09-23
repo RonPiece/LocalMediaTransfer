@@ -46,7 +46,7 @@ window.I18n = {
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             this.strings = await response.json();
         } catch (error) {
-            console.warn('Failed to load language file, falling back to English', error);
+            console.warn('Local Media Transfer could not load the preferred language.');
             this.lang = 'en';
             this.dir = 'ltr';
             const response = await fetch(`/static/i18n/en.json?v=${window.LMT_FRONTEND_VERSION || '1'}`);
@@ -146,5 +146,3 @@ window.I18n = {
         });
     }
 };
-
-console.log('i18n loader available');

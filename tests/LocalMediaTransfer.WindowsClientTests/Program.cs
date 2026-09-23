@@ -9,12 +9,14 @@ var tests = new (string Name, Func<Task> Run)[]
     ("confirmation proof test vector", ConfirmationProofVector),
     ("manual address validation", ManualAddressValidation),
     ("discovery uses packet source address", DiscoverySourceAddress),
+    ("discovery skips virtual adapters and shares physical scan budget", DiscoveryAdapterSelection),
     ("transfer source limits and stable IDs", TransferSourceValidation),
     ("retry classification", RetryClassification),
     ("invalid certificate pins fail before transport", InvalidCertificatePin),
     ("pinned TLS stalled body cancels", () => PinnedNetworkCancellation.RunAsync(false)),
     ("pinned TLS trickling body cancels", () => PinnedNetworkCancellation.RunAsync(true)),
     ("invalid approval identifiers are typed errors", InvalidApprovalIdentifiers),
+    ("authenticated unpair request", AuthenticatedUnpairRequest),
     ("DPAPI trust persistence and corruption", TrustPersistence)
 };
 
@@ -92,6 +94,41 @@ static Task DiscoverySourceAddress()
     return Task.CompletedTask;
 }
 
+static Task DiscoveryAdapterSelection()
+{
+    Assert(!DiscoveryClient.ShouldScanInterface(
+        System.Net.NetworkInformation.NetworkInterfaceType.Ethernet,
+        "Tailscale", "Tailscale Tunnel"),
+        "Named virtual adapter was eligible for LAN discovery.");
+    Assert(DiscoveryClient.ShouldScanInterface(
+        System.Net.NetworkInformation.NetworkInterfaceType.Wireless80211,
+        "Wi-Fi", "Physical wireless adapter"),
+        "Physical Wi-Fi adapter was excluded from LAN discovery.");
+
+    var destinations = DiscoveryClient.EnumerateDestinations([
+        new DiscoveryClient.DiscoverySubnet(
+            IPAddress.Parse("169.254.83.107"), IPAddress.Parse("255.255.0.0"),
+            System.Net.NetworkInformation.NetworkInterfaceType.Ethernet,
+            "Tailscale", "Tailscale Tunnel", false),
+        new DiscoveryClient.DiscoverySubnet(
+            IPAddress.Parse("192.168.50.20"), IPAddress.Parse("255.255.255.0"),
+            System.Net.NetworkInformation.NetworkInterfaceType.Wireless80211,
+            "Wi-Fi", "Physical wireless adapter", true),
+        new DiscoveryClient.DiscoverySubnet(
+            IPAddress.Parse("10.10.10.20"), IPAddress.Parse("255.255.255.0"),
+            System.Net.NetworkInformation.NetworkInterfaceType.Ethernet,
+            "Ethernet", "Physical ethernet adapter", true)
+    ]);
+    Assert(destinations.Any(address => address.ToString().StartsWith("192.168.50.")),
+        "Wi-Fi subnet was not scanned.");
+    Assert(destinations.Any(address => address.ToString().StartsWith("10.10.10.")),
+        "Ethernet subnet was starved by the shared discovery cap.");
+    Assert(destinations.All(address => !address.ToString().StartsWith("169.254.")),
+        "Excluded virtual subnet consumed discovery destinations.");
+    Assert(destinations.Count <= 1024, "Discovery exceeded its global safety cap.");
+    return Task.CompletedTask;
+}
+
 static Task TransferSourceValidation()
 {
     string root = CreateTestRoot();
@@ -162,6 +199,57 @@ static async Task InvalidApprovalIdentifiers()
     throw new InvalidOperationException("Invalid approval IDs did not produce a typed error.");
 }
 
+static async Task AuthenticatedUnpairRequest()
+{
+    var receiver = new TrustedReceiver("server", "Receiver", "test", "192.168.1.20",
+        8443, new string('a', 64), new string('b', 64), DateTimeOffset.UtcNow);
+    HttpMethod? observedMethod = null;
+    string? observedPath = null;
+    string? observedCredential = null;
+    using (var client = new HttpClient(new CallbackHandler(request =>
+    {
+        observedMethod = request.Method;
+        observedPath = request.RequestUri?.AbsolutePath;
+        observedCredential = request.Headers.TryGetValues(
+            "X-Device-Credential", out var values) ? values.Single() : null;
+        return new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("{\"ok\":true,\"status\":\"unpaired\"}",
+                Encoding.UTF8, "application/json")
+        };
+    })) { BaseAddress = receiver.HttpsBaseUri })
+    {
+        Assert(await PairingClient.UnpairWithClientAsync(client, receiver,
+            CancellationToken.None), "Successful remote unpair was not reported.");
+    }
+    Assert(observedMethod == HttpMethod.Delete &&
+        observedPath == "/native/v1/devices/current",
+        "Unpair did not use the scoped DELETE endpoint.");
+    Assert(observedCredential == receiver.Credential,
+        "Unpair did not authenticate with the trusted-device credential.");
+
+    using var rejectedClient = new HttpClient(new CallbackHandler(_ =>
+        new HttpResponseMessage(HttpStatusCode.Unauthorized)
+        {
+            Content = new StringContent("{\"error\":\"credential_rejected\"}",
+                Encoding.UTF8, "application/json")
+        })) { BaseAddress = receiver.HttpsBaseUri };
+    Assert(!await PairingClient.UnpairWithClientAsync(rejectedClient, receiver,
+        CancellationToken.None),
+        "An already-revoked credential was not treated as remotely absent.");
+    using var malformedClient = new HttpClient(new CallbackHandler(_ =>
+        new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("{}", Encoding.UTF8, "application/json")
+        })) { BaseAddress = receiver.HttpsBaseUri };
+    try
+    {
+        await PairingClient.UnpairWithClientAsync(malformedClient, receiver, CancellationToken.None);
+        throw new InvalidOperationException("Missing unpair acknowledgement was accepted.");
+    }
+    catch (NativeClientException exception) when (exception.Code == "invalid_server_response") { }
+}
+
 static Task TrustPersistence()
 {
     string root = CreateTestRoot();
@@ -221,4 +309,11 @@ sealed class StubHandler(HttpResponseMessage response) : HttpMessageHandler
 {
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,
         CancellationToken cancellationToken) => Task.FromResult(response);
+}
+
+sealed class CallbackHandler(
+    Func<HttpRequestMessage, HttpResponseMessage> callback) : HttpMessageHandler
+{
+    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,
+        CancellationToken cancellationToken) => Task.FromResult(callback(request));
 }

@@ -151,11 +151,13 @@ bool PairingStore::trustCredentialHash(
         return false;
     }
     std::lock_guard lock(m_mutex);
+    auto previous = m_trusted;
     m_trusted.erase(std::remove_if(m_trusted.begin(), m_trusted.end(),
         [&](const auto& value) { return value.id == id; }), m_trusted.end());
     m_trusted.push_back({id, name, credentialHash, ip, unixNow(),
         clientType, authorizationMode});
-    saveLocked();
+    try { saveLocked(); }
+    catch (...) { m_trusted.swap(previous); return false; }
     return true;
 }
 
@@ -164,11 +166,13 @@ bool PairingStore::approve(const std::string& id) {
     pruneLocked();
     auto item = std::find_if(m_pending.begin(), m_pending.end(), [&](const auto& value) { return value.id == id; });
     if (item == m_pending.end()) return false;
+    auto previous = m_trusted;
     m_trusted.erase(std::remove_if(m_trusted.begin(), m_trusted.end(), [&](const auto& value) { return value.id == id; }), m_trusted.end());
     m_trusted.push_back({item->id, item->name, item->credentialHash, item->lastIp,
         unixNow(), item->clientType, item->authorizationMode});
+    try { saveLocked(); }
+    catch (...) { m_trusted.swap(previous); return false; }
     m_pending.erase(item);
-    saveLocked();
     return true;
 }
 
@@ -182,19 +186,25 @@ bool PairingStore::deny(const std::string& id) {
 
 bool PairingStore::revoke(const std::string& id) {
     std::lock_guard lock(m_mutex);
+    auto previous = m_trusted;
     const auto oldSize = m_trusted.size();
     m_trusted.erase(std::remove_if(m_trusted.begin(), m_trusted.end(),
         [&](const auto& value) { return value.id == id; }), m_trusted.end());
     if (m_trusted.size() == oldSize) return false;
-    saveLocked();
+    try { saveLocked(); }
+    catch (...) { m_trusted.swap(previous); throw; }
+    m_pending.erase(std::remove_if(m_pending.begin(), m_pending.end(),
+        [&](const auto& value) { return value.id == id; }), m_pending.end());
     return true;
 }
 
 void PairingStore::revokeAll() {
     std::lock_guard<std::mutex> lock(m_mutex);
+    auto previous = m_trusted;
     m_trusted.clear();
+    try { saveLocked(); }
+    catch (...) { m_trusted.swap(previous); throw; }
     m_pending.clear();
-    saveLocked();
 }
 
 std::string PairingStore::devicesJson() const {
@@ -221,7 +231,14 @@ void PairingStore::saveLocked() const {
             {"authorizationMode", item.authorizationMode}});
     }
     const auto temp = path.string() + ".tmp";
-    { std::ofstream output(temp, std::ios::trunc); output << json{{"version", 2}, {"devices", devices}}.dump(2); }
+    {
+        std::ofstream output;
+        output.exceptions(std::ios::failbit | std::ios::badbit);
+        output.open(temp, std::ios::trunc);
+        output << json{{"version", 2}, {"devices", devices}}.dump(2);
+        output.flush();
+        output.close();
+    }
     if (!MoveFileExW(std::filesystem::path(temp).c_str(), path.c_str(),
             MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
         std::error_code ec;

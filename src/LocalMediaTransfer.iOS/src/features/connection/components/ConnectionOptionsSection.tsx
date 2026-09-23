@@ -2,7 +2,7 @@ import React from 'react';
 import { Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { connectionText } from '../content/connectionText';
-import { theme } from '@/theme';
+import { useThemePalette } from '@/theme';
 import {
   Card,
   Divider,
@@ -46,10 +46,11 @@ export function ConnectionOptionsSection({
   onAllowInsecureHttpChange: (enabled: boolean) => void;
   onExplainUnencryptedHttp: () => void;
 }) {
+  const palette = useThemePalette();
   return (
     <View className="w-full mb-3">
       <SectionLabel>{connectionText.connectionOptionsTitle}</SectionLabel>
-      <Card>
+      <Card className="dark:bg-surface-dark border border-border dark:border-border-dark">
         <TouchableOpacity
           accessibilityRole="button"
           accessibilityState={{ expanded: manualEntryOpen }}
@@ -59,19 +60,19 @@ export function ConnectionOptionsSection({
         >
           <IconTile icon="create-outline" />
           <View className="flex-1">
-            <Text className="text-[17px] text-on-surface">{connectionText.manualEntryTitle}</Text>
-            <Text className="text-[13px] text-on-surface-variant leading-[18px] mt-0.5">
+            <Text className="text-[17px] text-on-surface dark:text-on-surface-dark">{connectionText.manualEntryTitle}</Text>
+            <Text className="text-[13px] text-on-surface-variant dark:text-on-surface-variant-dark leading-[18px] mt-0.5">
               {connectionText.manualEntrySubtitle}
             </Text>
           </View>
-          <Ionicons name={manualEntryOpen ? 'chevron-up' : 'chevron-down'} size={18} color={theme.colors.onSurfaceVariant} />
+          <Ionicons name={manualEntryOpen ? 'chevron-up' : 'chevron-down'} size={18} color={palette.onSurfaceVariant} />
         </TouchableOpacity>
 
         {manualEntryOpen && (
           <View className="px-4 pb-4">
             <Divider className="mb-3" inset={false} />
             <SectionLabel className="mb-2">{connectionText.manualServerAddressLabel}</SectionLabel>
-            <View className="bg-background rounded-xl overflow-hidden">
+            <View className="bg-background dark:bg-background-dark rounded-xl overflow-hidden">
               <TextField
                 value={ip}
                 onChangeText={onIpChange}

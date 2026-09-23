@@ -91,9 +91,9 @@ name, including `(2)`, `(3)`, and later collision suffixes.
 - Prepare and preflight all items in sequential windows of at most 250.
 - Begin uploading only when final planned file and byte totals are known.
 - Start ETA estimation only when uploading starts.
-- Honor this mode for every selection size. Large selections can retain all
-  prepared temporary media until upload begins and therefore require
-  significantly more free device storage.
+- Honor this mode through one 250-item native preparation window. Larger native
+  selections automatically use bounded streaming and disclose that safety
+  adjustment, preventing unbounded prepared temporary-media retention.
 
 ### Transfer while preparing
 
@@ -102,9 +102,11 @@ name, including `(2)`, `(3)`, and later collision suffixes.
   workers while later windows are prepared. Native streaming uses 16 selected
   assets per preparation window and a two-item ready queue so session-owned
   temporary files are released continuously.
-- Keep the top-level state stable as `Transferring while preparing` after the
-  first acknowledged upload. Show media analyzed and bytes transferred as
-  simultaneous progress.
+- Keep the top-level state stable as `Transferring while preparing media` after
+  the first acknowledged upload. Use separate compact preparation and transfer
+  rows, with media left, acknowledged bytes, and speed grouped below them.
+- Do not expose bounded-window duplicate counts such as `0 of 16` or transient
+  queue state in the normal streaming UI; retain them in diagnostics.
 - Do not show ETA until preparation finishes and final planned bytes are known;
   show elapsed time instead.
 
@@ -123,24 +125,24 @@ These values are independent and monotonic:
 - Planned upload bytes after definite preflight skips.
 - Acknowledged bytes accepted by successful server responses.
 
-During an active transfer, the circular progress indicator always uses analyzed
-selected assets divided by selected assets and is labelled `assets`. Native
-progress is coalesced for UI responsiveness but does not wait for a complete
-window. After expansion is authoritative, terminal files divided by expanded
-files appears as a separate file-transfer bar; skipped and failed items advance
-that bar because they are terminal. Reusing one percentage with two
-denominators is forbidden because it can appear to move backward.
+Before upload overlaps preparation, the circular progress indicator uses
+analyzed selected assets divided by selected assets and is labelled `assets`.
+During overlap, fixed-height preparation and transfer rows replace that large
+ring and show only session-wide monotonic values. Native progress is coalesced
+for UI responsiveness but does not wait for a complete window. After expansion
+is authoritative, the ring returns with a changed label and unit, resets for the
+transfer phase, and uses terminal files divided by expanded transfer entries.
+Skipped and failed items advance it because they are terminal.
 
 Before upload, duplicate preflight may become the main `Checking for
 duplicates` phase. It exposes only truthful stages: possible-match lookup,
 sender content checking, and Windows verification. A stage-local count does not
 advance until the corresponding sender work or receiver response completes.
 After streaming upload starts, the stable top-level state remains
-`Transferring while preparing` and duplicate work becomes secondary status.
-Queue saturation is shown only after dwell as quiet catch-up context and must
-not be presented as slow PhotoKit work. Extended explanation is progressively
-disclosed from a compact status row, and Recent Activity expands into a
-virtualized page sheet.
+`Transferring while preparing media`; bounded-window duplicate and queue states
+stay out of the normal UI because they are transient implementation details.
+Extended explanation is progressively disclosed from a compact status row, and
+Recent Activity expands into a virtualized page sheet.
 
 Live speed is rolling current media throughput in decimal MB/s. Completion
 shows average and peak media throughput. ETA uses acknowledged bytes and final

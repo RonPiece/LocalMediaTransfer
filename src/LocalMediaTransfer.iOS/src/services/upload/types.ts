@@ -167,6 +167,7 @@ export interface GlobalProgress {
   thermalState?: ThermalState;
   thermalControl?: 'normal' | 'reduced' | 'paused';
   preparationMode?: PreparationMode;
+  automaticallyStreamsLargeSelection?: boolean;
 }
 
 export type UploadSummary = {
@@ -189,6 +190,7 @@ export type UploadSummary = {
   skippedBytes: number;
   avoidedBytes: number;
   finalizationDuplicateBytes: number;
+  preparationDurationMs?: number;
   uploadDurationMs: number;
   averageMediaMBps: number;
   peakMediaMBps: number;

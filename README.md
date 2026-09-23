@@ -41,12 +41,21 @@ pinned-HTTPS flow, and Browser transfer remains a compatibility option.
 
 1. On a receiving Windows PC, open **Receive**.
 2. For another Windows PC, open pairing for two minutes; on the sender open
-   **Send**, scan or enter the private IPv4 address, and compare the security code.
+   **Send**, scan or enter the private IPv4 address, and compare the security
+   code shown immediately on both computers. Either person may confirm first;
+   pairing completes only after both confirm the same code.
 3. Choose up to 1,000 files and request transfer approval.
 4. For iPhone, scan the separate iPhone QR code and approve the device.
 5. Use **Browser transfer (compatibility)** only when a native client is
    unavailable. Create its single-use five-minute link manually, then copy it
    or let the other phone, tablet, or computer scan the separate browser QR.
+   Opening the link once creates a temporary browser-only session that survives
+   refresh and reopening; create another one-time link for another device.
+
+On Windows, **Forget** first revokes the sender on the receiver over the pinned
+HTTPS connection, then removes the sender's local saved credential. If the
+receiver is unavailable, the app clearly asks whether to forget only the local
+copy. Denying or completing a pairing never blocks a new attempt as “pending.”
 
 ```mermaid
 flowchart LR
@@ -75,6 +84,13 @@ After opening the Windows app:
 - keep HTTPS enabled for normal use;
 - scan the QR code from the iPhone app;
 - approve new iPhones before they can transfer files.
+
+The destination contains a `Local Media Transfer Data` folder for the local
+duplicate index and legacy upload metadata. It is application data rather than
+transferred media. Upgrades rename the older `_dont_delete` folder in place.
+If both folders already exist, independent files merge without overwriting
+collisions. The legacy SQLite database and its journals stay together in the
+old folder; the current duplicate index is rebuilt from transferred files.
 
 ### iPhone
 

@@ -10,7 +10,9 @@ window.UploadManager = {
     SPEED_WINDOW_MS: 2000,
     AGG_ALPHA: 0.2,
     SINGLE_FILE_MAX_BYTES: window.TransferLimits.WholeFileBytes,
-    chunkSizeBytes: 32 * 1024 * 1024,
+    chunkSizeBytes: 16 * 1024 * 1024,
+    configReady: Promise.resolve(),
+    CONFIG_TIMEOUT_MS: 10000,
     isMobile: window.Utils?.isMobileLike?.() ??
         /iPhone|iPad|iPod|Android/i.test(navigator.userAgent),
 
@@ -24,7 +26,6 @@ window.UploadManager = {
     displaySpeedEMA: 0,
     lastSpeedReportTs: 0,
     speedInterval: null,
-    heartbeatInterval: null,
     stallWatchInterval: null,
     lastProgressTs: 0,
     sessionId: null,
@@ -51,7 +52,7 @@ window.UploadManager = {
         this.sessionId = this.createSessionId();
         this.initElements();
         this.initEventListeners();
-        this.loadServerConfig();
+        this.configReady = this.loadServerConfig();
         // SecurityManager is initialized by app.js before this module. Its
         // initialization is idempotent for direct/legacy callers.
         this.initTokenHandling();
@@ -62,7 +63,8 @@ window.UploadManager = {
             addFiles: this.addFiles.bind(this),
             uploadFiles: this.uploadFiles.bind(this),
             resetFiles: this.resetFiles.bind(this),
-            getQueue: () => this.fileQueue
+            getQueue: () => this.fileQueue,
+            getTimingSummary: () => this.getTimingSummary()
         };
         window.addMoreFiles = () => {
             if (this.isUploadInProgress) return;
@@ -77,32 +79,14 @@ window.UploadManager = {
             this.resetFiles();
         };
 
-        console.log('Upload manager initialized');
         this.logClientEvent('INFO', 'ui_initialized', 'Upload manager initialized', {
             frontendVersion: window.LMT_FRONTEND_VERSION || 'unknown',
-            userAgent: navigator.userAgent,
-            platform: navigator.platform || '',
-            maxTouchPoints: navigator.maxTouchPoints || 0,
             iosLike: window.Utils?.isIOSLike?.() || false,
-            path: window.location.pathname,
             mobile: this.isMobile
         });
-
-        this.startHeartbeat();
     },
 
     installRuntimeTelemetry() {
-        document.addEventListener('visibilitychange', () => {
-            this.logClientEvent('INFO', 'visibility_changed', 'Document visibility changed', {
-                visibilityState: document.visibilityState,
-                hidden: document.hidden
-            });
-        });
-
-        window.addEventListener('pagehide', () => {
-            this.logClientEvent('WARN', 'pagehide', 'Page hidden/unloaded by browser');
-        });
-
         window.addEventListener('offline', () => {
             this.logClientEvent('WARN', 'network_offline', 'Browser reported offline state');
         });
@@ -110,21 +94,6 @@ window.UploadManager = {
         window.addEventListener('online', () => {
             this.logClientEvent('INFO', 'network_online', 'Browser reported online state');
         });
-    },
-
-    startHeartbeat() {
-        if (this.heartbeatInterval) {
-            clearInterval(this.heartbeatInterval);
-        }
-
-        this.heartbeatInterval = setInterval(() => {
-            this.logClientEvent('INFO', 'heartbeat', 'Client heartbeat', {
-                running: this.running,
-                pending: this.pendingCount,
-                successCount: this.successCount,
-                errorCount: this.errorCount
-            });
-        }, 20000);
     },
 
     startStallWatchdog() {
@@ -185,9 +154,7 @@ window.UploadManager = {
                 body: JSON.stringify(payload),
                 keepalive: true
             });
-        } catch (error) {
-            console.warn('client_log failed', error);
-        }
+        } catch (error) {}
     },
 
     reportSpeedSample(bytesPerSecond, force = false) {
@@ -283,28 +250,69 @@ window.UploadManager = {
     },
 
     async loadServerConfig() {
+        const fallback = this.isMobile
+            ? { chunkSizeBytes: 8 * 1024 * 1024, parallelFiles: 2 }
+            : { chunkSizeBytes: 16 * 1024 * 1024, parallelFiles: 3 };
+        this.chunkSizeBytes = fallback.chunkSizeBytes;
+        this.CONCURRENCY = fallback.parallelFiles;
+        this.SINGLE_FILE_MAX_BYTES = window.TransferLimits.WholeFileBytes;
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), this.CONFIG_TIMEOUT_MS);
+
         try {
-            const res = await fetch('/config');
+            const res = await fetch('/config', { signal: controller.signal });
             if (!res.ok) {
                 return;
             }
 
             const cfg = await res.json();
             const defaultSingle = this.SINGLE_FILE_MAX_BYTES;
-            const defaultChunk = this.chunkSizeBytes;
 
-            this.SINGLE_FILE_MAX_BYTES = cfg?.shared?.singleFileMaxBytes || defaultSingle;
+            const boundedInteger = (value, maximum, fallbackValue) =>
+                Number.isSafeInteger(value) && value > 0 && value <= maximum
+                    ? value : fallbackValue;
+            this.SINGLE_FILE_MAX_BYTES = boundedInteger(
+                cfg?.shared?.singleFileMaxBytes, defaultSingle, defaultSingle);
 
-            if (this.isMobile) {
-                this.chunkSizeBytes = cfg?.mobile?.chunkSizeBytes || defaultChunk;
-                this.CONCURRENCY = cfg?.mobile?.parallelFiles || this.CONCURRENCY;
-            } else {
-                this.chunkSizeBytes = cfg?.desktop?.chunkSizeBytes || defaultChunk;
-                this.CONCURRENCY = cfg?.desktop?.parallelFiles || this.CONCURRENCY;
-            }
+            const browserConfig = this.isMobile
+                ? (cfg?.browser?.mobile || cfg?.mobile)
+                : (cfg?.browser?.desktop || cfg?.desktop);
+            this.chunkSizeBytes = boundedInteger(browserConfig?.chunkSizeBytes,
+                window.TransferLimits.MaxChunkBytes, fallback.chunkSizeBytes);
+            this.CONCURRENCY = boundedInteger(browserConfig?.parallelFiles,
+                6, fallback.parallelFiles);
         } catch (error) {
-            console.warn('Failed to load /config, using defaults', error);
+        } finally {
+            clearTimeout(timeout);
         }
+    },
+
+    getTimingSummary() {
+        const timing = this.fileQueue.reduce((summary, file) => {
+            const value = file.transferTiming;
+            if (!value) return summary;
+            summary.requestCount += value.requestCount || 0;
+            summary.requestDurationMs += value.requestDurationMs || 0;
+            summary.serverDurationMs += value.serverDurationMs || 0;
+            summary.serverWriteDurationMs += value.serverWriteDurationMs || 0;
+            summary.serverFinalizeDurationMs += value.serverFinalizeDurationMs || 0;
+            summary.maxRequestDurationMs = Math.max(
+                summary.maxRequestDurationMs,
+                value.maxRequestDurationMs || 0);
+            return summary;
+        }, {
+            requestCount: 0,
+            requestDurationMs: 0,
+            serverDurationMs: 0,
+            serverWriteDurationMs: 0,
+            serverFinalizeDurationMs: 0,
+            maxRequestDurationMs: 0
+        });
+
+        return Object.fromEntries(Object.entries(timing).map(([key, value]) => [
+            key,
+            Number.isFinite(value) ? Math.round(value * 10) / 10 : 0
+        ]));
     },
 
     initElements() {
@@ -447,6 +455,18 @@ window.UploadManager = {
             return;
         }
 
+        // Own the queue before the first await: clicks, drop and Reset must all
+        // remain blocked while the receiver configuration is loading.
+        this.isUploadInProgress = true;
+        this.setUploadUiState(true);
+        try {
+            await this.configReady;
+        } catch {
+            this.isUploadInProgress = false;
+            this.setUploadUiState(false);
+            return;
+        }
+
         const failedDoneFiles = this.fileQueue.filter(f => f.done && f.failed);
         failedDoneFiles.forEach((file) => {
             file.done = false;
@@ -462,12 +482,12 @@ window.UploadManager = {
         });
 
         if (this.fileQueue.every(file => file.done)) {
+            this.isUploadInProgress = false;
+            this.setUploadUiState(false);
             window.Modals.showAlreadyUploadedModal();
             return;
         }
 
-        this.isUploadInProgress = true;
-        this.setUploadUiState(true);
         this.sessionId = this.createSessionId();
         this.logSequence = 0;
         this.lastSpeedReportTs = 0;
@@ -597,7 +617,8 @@ window.UploadManager = {
                 errorCount: this.errorCount,
                 queueSize: this.fileQueue.length,
                 skippedBytes: this.skippedBytes,
-                uploadedBytes: this.networkBytesUploaded
+                uploadedBytes: this.networkBytesUploaded,
+                timing: this.getTimingSummary()
             });
         } finally {
             if (this.totalTimerInterval) {
@@ -807,5 +828,3 @@ window.UploadManager = {
         }
     }
 };
-
-console.log('🚀 Upload manager loaded');

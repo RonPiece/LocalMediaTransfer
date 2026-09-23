@@ -114,7 +114,7 @@ export function useQrScanner({
         connectionText.cameraUnavailableMessage,
       );
     }
-  }, [permission?.granted, requestPermission]);
+  }, [permission, requestPermission]);
 
   return {
     isScanning,

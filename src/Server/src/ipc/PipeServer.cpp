@@ -380,6 +380,13 @@ void PipeServer::sendTrustedDevices(const std::string& devicesJson) {
     } catch (...) {}
 }
 
+void PipeServer::sendBrowserLinkConsumed() {
+    sendMessage("browser_link_consumed", json{
+        {"type", "browser_link_consumed"},
+        {"data", json::object()}
+    }.dump());
+}
+
 void PipeServer::sendMessage(const std::string& type, const std::string& payload) {
     if (!m_connected) return;
     if (m_authenticationRequired &&

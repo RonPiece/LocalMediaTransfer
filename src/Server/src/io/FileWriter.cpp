@@ -264,6 +264,28 @@ std::string sanitizeWindowsUtf8Filename(const std::string& original) {
 
 } // namespace
 
+FileWriter::FileHandle::~FileHandle() { closeResources(); }
+
+void FileWriter::FileHandle::closeResources() noexcept {
+    if (mappingWindow && mappingWindow->view) {
+#ifdef _WIN32
+        UnmapViewOfFile(mappingWindow->view);
+#else
+        munmap(mappingWindow->view, static_cast<size_t>(mappingWindow->length));
+#endif
+        *mappingWindow = {};
+    }
+#ifdef _WIN32
+    if (hMapping) CloseHandle(hMapping);
+    if (hFile != INVALID_HANDLE_VALUE) CloseHandle(hFile);
+    hMapping = nullptr;
+    hFile = INVALID_HANDLE_VALUE;
+#else
+    if (fd >= 0) close(fd);
+    fd = -1;
+#endif
+}
+
 FileWriter::FileHandle::FileHandle(FileHandle&& other) noexcept {
     *this = std::move(other);
 }
@@ -272,6 +294,8 @@ FileWriter::FileHandle& FileWriter::FileHandle::operator=(FileHandle&& other) no
     if (this == &other) {
         return *this;
     }
+
+    closeResources();
 
     fileId = std::move(other.fileId);
     originalName = std::move(other.originalName);
@@ -285,6 +309,7 @@ FileWriter::FileHandle& FileWriter::FileHandle::operator=(FileHandle&& other) no
     streamingHashValid = other.streamingHashValid;
     writeMutex = std::move(other.writeMutex);
     finalization = std::move(other.finalization);
+    mappingWindow = std::move(other.mappingWindow);
 #ifdef _WIN32
     hFile = other.hFile;
     hMapping = other.hMapping;
@@ -763,29 +788,41 @@ bool FileWriter::writeMappedRange(
 
     while (remaining > 0) {
         const uint64_t alignedOffset = (currentOffset / granularity) * granularity;
-        const uint64_t viewDelta = currentOffset - alignedOffset;
-        const uint64_t available = std::min(
-            MappingWindowBytes,
-            target.totalSize - alignedOffset);
-        const uint64_t copyBytes = std::min(remaining, available - viewDelta);
-
-        void* view = MapViewOfFile(
-            target.hMapping,
-            FILE_MAP_WRITE,
-            static_cast<DWORD>(alignedOffset >> 32),
-            static_cast<DWORD>(alignedOffset & 0xFFFFFFFFULL),
-            static_cast<SIZE_T>(available));
-        if (!view) {
-            spdlog::error("MapViewOfFile failed at offset {}: {}", alignedOffset, GetLastError());
-            return false;
+        auto& window = *target.mappingWindow;
+        const bool containsOffset = window.view &&
+            currentOffset >= window.offset &&
+            currentOffset < window.offset + window.length;
+        if (!containsOffset) {
+            if (!releaseMappedView(target, true)) return false;
+            window.offset = alignedOffset;
+            window.length = std::min(
+                MappingWindowBytes,
+                target.totalSize - alignedOffset);
+            window.view = MapViewOfFile(
+                target.hMapping,
+                FILE_MAP_WRITE,
+                static_cast<DWORD>(alignedOffset >> 32),
+                static_cast<DWORD>(alignedOffset & 0xFFFFFFFFULL),
+                static_cast<SIZE_T>(window.length));
+            if (!window.view) {
+                spdlog::error("MapViewOfFile failed at offset {}: {}", alignedOffset, GetLastError());
+                window.offset = 0;
+                window.length = 0;
+                return false;
+            }
         }
 
-        const bool copied = copyMapped(static_cast<char*>(view) + viewDelta,
+        const uint64_t viewDelta = currentOffset - window.offset;
+        const uint64_t copyBytes = std::min(
+            remaining,
+            window.length - viewDelta);
+        const bool copied = copyMapped(static_cast<char*>(window.view) + viewDelta,
             currentData, static_cast<size_t>(copyBytes), storageFault("copy"));
-        const bool flushed = copied && !storageFault("view-flush") &&
-            FlushViewOfFile(view, static_cast<SIZE_T>(available)) != 0;
-        const bool unmapped = UnmapViewOfFile(view) != 0;
-        if (!flushed || !unmapped) return false;
+        if (!copied) {
+            releaseMappedView(target, false);
+            return false;
+        }
+        window.dirty = true;
 
         currentOffset += copyBytes;
         currentData += copyBytes;
@@ -799,30 +836,43 @@ bool FileWriter::writeMappedRange(
 
     while (remaining > 0) {
         const uint64_t alignedOffset = (currentOffset / pageSize) * pageSize;
-        const uint64_t viewDelta = currentOffset - alignedOffset;
-        const uint64_t available = std::min(
-            MappingWindowBytes,
-            target.totalSize - alignedOffset);
-        const uint64_t copyBytes = std::min(remaining, available - viewDelta);
-
-        void* view = mmap(
-            nullptr,
-            static_cast<size_t>(available),
-            PROT_READ | PROT_WRITE,
-            MAP_SHARED,
-            target.fd,
-            static_cast<off_t>(alignedOffset));
-        if (view == MAP_FAILED) {
-            spdlog::error("mmap failed at offset {}", alignedOffset);
-            return false;
+        auto& window = *target.mappingWindow;
+        const bool containsOffset = window.view &&
+            currentOffset >= window.offset &&
+            currentOffset < window.offset + window.length;
+        if (!containsOffset) {
+            if (!releaseMappedView(target, true)) return false;
+            window.offset = alignedOffset;
+            window.length = std::min(
+                MappingWindowBytes,
+                target.totalSize - alignedOffset);
+            window.view = mmap(
+                nullptr,
+                static_cast<size_t>(window.length),
+                PROT_READ | PROT_WRITE,
+                MAP_SHARED,
+                target.fd,
+                static_cast<off_t>(alignedOffset));
+            if (window.view == MAP_FAILED) {
+                window.view = nullptr;
+                window.offset = 0;
+                window.length = 0;
+                spdlog::error("mmap failed at offset {}", alignedOffset);
+                return false;
+            }
         }
 
+        const uint64_t viewDelta = currentOffset - window.offset;
+        const uint64_t copyBytes = std::min(
+            remaining,
+            window.length - viewDelta);
         const bool copied = !storageFault("copy");
-        if (copied) memcpy(static_cast<char*>(view) + viewDelta, currentData, static_cast<size_t>(copyBytes));
-        const bool flushed = copied && !storageFault("view-flush") &&
-            msync(view, static_cast<size_t>(available), MS_SYNC) == 0;
-        const bool unmapped = munmap(view, static_cast<size_t>(available)) == 0;
-        if (!flushed || !unmapped) return false;
+        if (copied) memcpy(static_cast<char*>(window.view) + viewDelta, currentData, static_cast<size_t>(copyBytes));
+        if (!copied) {
+            releaseMappedView(target, false);
+            return false;
+        }
+        window.dirty = true;
 
         currentOffset += copyBytes;
         currentData += copyBytes;
@@ -831,6 +881,44 @@ bool FileWriter::writeMappedRange(
 #endif
 
     return true;
+}
+
+bool FileWriter::releaseMappedView(const WriteTarget& target, bool flush) {
+    if (!target.mappingWindow || !target.mappingWindow->view) return true;
+    auto& window = *target.mappingWindow;
+    bool flushed = true;
+    if (flush && window.dirty) {
+        flushed = !storageFault("view-flush");
+#ifdef _WIN32
+        if (flushed) {
+            flushed = FlushViewOfFile(
+                window.view,
+                static_cast<SIZE_T>(window.length)) != 0;
+        }
+#else
+        if (flushed) {
+            flushed = msync(
+                window.view,
+                static_cast<size_t>(window.length),
+                MS_SYNC) == 0;
+        }
+#endif
+    }
+#ifdef _WIN32
+    const bool unmapped = !storageFault("view-unmap") && UnmapViewOfFile(window.view) != 0;
+#else
+    const bool unmapped = !storageFault("view-unmap") && munmap(
+        window.view,
+        static_cast<size_t>(window.length)) == 0;
+#endif
+    // Retain ownership on failure so abort/close can retry. Losing this pointer
+    // would leak the view and can keep the temporary file locked on Windows.
+    if (!unmapped) return false;
+    window.view = nullptr;
+    window.offset = 0;
+    window.length = 0;
+    window.dirty = false;
+    return flushed && unmapped;
 }
 
 ChunkWriteStatus FileWriter::writeChunk(const std::string& fileId,
@@ -901,6 +989,7 @@ ChunkWriteStatus FileWriter::writeChunk(const std::string& fileId,
             }
 
             writeTarget.totalSize = handle.totalSize;
+            writeTarget.mappingWindow = handle.mappingWindow;
             {
                 std::lock_guard<std::mutex> stateLock(handle.finalization->mutex);
                 handle.finalization->lastActivity = m_limits.now();
@@ -1072,7 +1161,9 @@ FileFinalizeResult FileWriter::finalizeFileResult(
 
         if (fs::exists(finalPath)) {
             const std::string existingHash =
-                HashEngine::computeFileHash(finalPath.u8string());
+                localHandle.skipExactDuplicates
+                    ? HashEngine::computeFileHash(finalPath.u8string())
+                    : std::string{};
             if (localHandle.skipExactDuplicates &&
                 !existingHash.empty() &&
                 existingHash == fullHash) {
@@ -1286,10 +1377,19 @@ bool FileWriter::storageFault(const char* operation) const {
 }
 
 bool FileWriter::flushFile(FileHandle& handle) {
+    WriteTarget target;
+    target.totalSize = handle.totalSize;
+    target.mappingWindow = handle.mappingWindow;
+#ifdef _WIN32
+    target.hMapping = handle.hMapping;
+#else
+    target.fd = handle.fd;
+#endif
+    if (!releaseMappedView(target, true)) return false;
     if (storageFault("file-flush")) return false;
 #ifdef _WIN32
-    // Views were flushed before unmapping; flush the file metadata/device
-    // buffers before publishing success. Storage hardware must honor flushes.
+    // The final dirty view is flushed above. Flush file metadata/device buffers
+    // once before publication instead of forcing every received chunk to disk.
     return FlushFileBuffers(handle.hFile) != 0;
 #else
     return fsync(handle.fd) == 0;
@@ -1297,7 +1397,12 @@ bool FileWriter::flushFile(FileHandle& handle) {
 }
 
 void FileWriter::closeHandle(FileHandle& handle) {
+    WriteTarget target;
+    target.totalSize = handle.totalSize;
+    target.mappingWindow = handle.mappingWindow;
 #ifdef _WIN32
+    target.hMapping = handle.hMapping;
+    if (!releaseMappedView(target, false)) handle.closeResources();
     if (handle.hMapping) {
         CloseHandle(handle.hMapping);
         handle.hMapping = nullptr;
@@ -1307,6 +1412,8 @@ void FileWriter::closeHandle(FileHandle& handle) {
         handle.hFile = INVALID_HANDLE_VALUE;
     }
 #else
+    target.fd = handle.fd;
+    if (!releaseMappedView(target, false)) handle.closeResources();
     if (handle.fd >= 0) {
         close(handle.fd);
         handle.fd = -1;

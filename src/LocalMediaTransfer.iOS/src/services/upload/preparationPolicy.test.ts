@@ -6,15 +6,17 @@ import {
 } from './preparationPolicy';
 
 describe('resolvePreparationPolicy', () => {
-  it('preserves an explicit prepare-first choice for large installed-app selections', () => {
+  it('automatically streams large installed-app selections to bound temporary storage', () => {
     expect(resolvePreparationPolicy({
       requestedMode: 'prepare-first',
       nativeAvailable: true,
+      selectedAssetCount: MAX_PREPARE_FIRST_ASSETS + 1,
     })).toEqual({
       requestedMode: 'prepare-first',
-      effectiveMode: 'prepare-first',
-      windowSize: MAX_PREPARE_FIRST_ASSETS,
-      queueCapacity: MAX_PREPARE_FIRST_ASSETS,
+      effectiveMode: 'streaming',
+      automaticallyStreamsLargeSelection: true,
+      windowSize: STREAMING_PREPARATION_WINDOW_SIZE,
+      queueCapacity: STREAMING_READY_QUEUE_CAPACITY,
     });
   });
 
@@ -22,6 +24,7 @@ describe('resolvePreparationPolicy', () => {
     expect(resolvePreparationPolicy({
       requestedMode: 'prepare-first',
       nativeAvailable: true,
+      selectedAssetCount: MAX_PREPARE_FIRST_ASSETS,
     }).effectiveMode).toBe('prepare-first');
   });
 
@@ -29,12 +32,15 @@ describe('resolvePreparationPolicy', () => {
     expect(resolvePreparationPolicy({
       requestedMode: 'streaming',
       nativeAvailable: true,
+      selectedAssetCount: 1,
     }).effectiveMode).toBe('streaming');
     expect(resolvePreparationPolicy({
       requestedMode: 'prepare-first',
       nativeAvailable: false,
+      selectedAssetCount: MAX_PREPARE_FIRST_ASSETS + 1,
     })).toEqual(expect.objectContaining({
       effectiveMode: 'prepare-first',
+      automaticallyStreamsLargeSelection: false,
       windowSize: MAX_PREPARE_FIRST_ASSETS,
     }));
   });

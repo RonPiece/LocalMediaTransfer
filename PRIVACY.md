@@ -34,8 +34,9 @@ only when the user follows a link.
   from Settings.
 - Uninstall can optionally delete LocalAppData settings, logs, history, and
   benchmark data.
-- The duplicate index is stored under the upload directory's `_dont_delete`
-  folder and can be rebuilt by the server.
+- The duplicate index is stored under the upload directory's
+  `Local Media Transfer Data` folder and can be rebuilt by the server. Existing
+  `_dont_delete` folders are migrated locally during startup.
 
 ## Network scope
 

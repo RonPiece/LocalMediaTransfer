@@ -7,6 +7,7 @@
 
 #include "server/HttpServer.hpp"
 #include "common/TransferLimits.hpp"
+#include "config/StoragePaths.hpp"
 #include "security/PairingStore.hpp"
 #include "security/NativeSessionStore.hpp"
 #include "io/FileWriter.hpp"
@@ -41,9 +42,34 @@
 #include <openssl/crypto.h>
 #include <openssl/ssl.h>
 #include <openssl/hmac.h>
+#include <openssl/rand.h>
 
 using json = nlohmann::json;
 namespace fs = std::filesystem;
+
+static double elapsedMilliseconds(
+    const std::chrono::steady_clock::time_point& started) {
+    return std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - started).count();
+}
+
+static void addServerTiming(
+    crow::response& response,
+    const std::chrono::steady_clock::time_point& requestStarted,
+    const std::vector<std::pair<const char*, double>>& phases) {
+    std::ostringstream value;
+    value << std::fixed << std::setprecision(2);
+    bool first = true;
+    for (const auto& [name, duration] : phases) {
+        if (!first) value << ", ";
+        first = false;
+        value << name << ";dur=" << std::max(0.0, duration);
+    }
+    if (!first) value << ", ";
+    value << "app;dur=" << std::max(0.0, elapsedMilliseconds(requestStarted));
+    response.add_header("Server-Timing", value.str());
+    response.add_header("Access-Control-Expose-Headers", "Server-Timing");
+}
 
 static std::vector<unsigned char> decodeBase64(const std::string& encoded) {
     if (encoded.empty()) return {};
@@ -157,8 +183,10 @@ static bool isSensitiveLogDataKey(const std::string& key) {
     return normalized == "token" || normalized == "credential" ||
         normalized == "password" || normalized == "secret" ||
         normalized == "url" || normalized == "path" ||
-        normalized == "filename" || normalized == "transferfilename" ||
-        normalized == "savedfilename" || normalized == "assetid" ||
+        normalized == "file" || normalized == "filename" ||
+        normalized == "transferfilename" ||
+        normalized == "savedfilename" || normalized == "existingname" ||
+        normalized == "assetid" ||
         normalized == "deviceid" || normalized == "serverid" ||
         normalized == "certificatefingerprint";
 }
@@ -190,22 +218,22 @@ static std::string computeFileSha256(const fs::path& path) {
 // Serializes the final append only; timestamp and line construction happen outside it.
 static std::mutex g_metadataMutex;
 
-// ─── Helper: ensure _dont_delete metadata folder exists ───
+// ─── Helper: ensure the app-managed upload metadata folder exists ───
 static std::string ensureMetadataFolder(const std::string& uploadDir) {
-    fs::path metaDir = fs::path(uploadDir) / "_dont_delete";
+    fs::path metaDir = fs::u8path(uploadDir) /
+        lmt::StoragePaths::MetadataDirectoryName;
     fs::create_directories(metaDir);
 
-    // Create README if it doesn't exist
+    // Keep the app-owned explanation current after legacy-folder migration.
     fs::path readmePath = metaDir / "README.txt";
-    if (!fs::exists(readmePath)) {
-        std::ofstream readme(readmePath);
-        if (readme.is_open()) {
-            readme << "Local Network Media Transfer - Metadata Files\n"
-                   << "===============================================\n\n"
-                   << "hashes.db    - SQLite database for duplicate detection (SHA-256 hashes)\n"
-                   << "_index.txt   - Upload history log\n\n"
-                   << "DO NOT DELETE these files.\n";
-        }
+    std::ofstream readme(readmePath, std::ios::trunc);
+    if (readme.is_open()) {
+        readme << "Local Media Transfer - Application Data\n"
+               << "=======================================\n\n"
+               << "hashes.db    - SQLite database for duplicate detection (SHA-256 hashes)\n"
+               << "_index.txt   - Upload history log\n\n"
+               << "These files are managed by Local Media Transfer. Removing this folder\n"
+               << "does not remove transferred media, but resets local duplicate metadata.\n";
     }
     return metaDir.string();
 }
@@ -234,7 +262,9 @@ static void appendUploadMetadata(const std::string& uploadDir,
         // A short lock is still required so concurrent append operations cannot
         // interleave bytes in the shared history file.
         std::lock_guard<std::mutex> lock(g_metadataMutex);
-        fs::path indexPath = fs::path(uploadDir) / "_dont_delete" / "_index.txt";
+        fs::path indexPath = fs::u8path(uploadDir) /
+            lmt::StoragePaths::MetadataDirectoryName /
+            lmt::StoragePaths::UploadIndexName;
         std::ofstream f(indexPath, std::ios::app);
         if (f.is_open()) {
             f << line.str();
@@ -422,6 +452,19 @@ void HttpServer::setupRoutes(CrowApp& app) {
                 {"retryable", false}}});
     });
 
+    CROW_ROUTE(app, "/native/v1/devices/current").methods("DELETE"_method)
+    ([this, nativeResponse](const crow::request& req) {
+        if (!m_nativeSessionStore) {
+            return nativeResponse(NativeSessionStore::Result{404,
+                json{{"error", "native_transfer_unavailable"},
+                     {"message", "Native Windows transfer is unavailable."},
+                     {"retryable", false}}});
+        }
+        return nativeResponse(m_nativeSessionStore->revokeCurrentDevice(
+            req.get_header_value("X-Device-Credential"),
+            req.remote_ip_address));
+    });
+
     CROW_ROUTE(app, "/native/v1/transfers/requests").methods("POST"_method)
     ([this, nativeResponse](const crow::request& req) {
         if (!m_nativeSessionStore || req.body.size() > 512 * 1024) {
@@ -545,9 +588,26 @@ void HttpServer::setupRoutes(CrowApp& app) {
         res.add_header("Content-Type", "application/json; charset=utf-8");
         res.add_header("Access-Control-Allow-Origin", "*");
 
-        if (validateAnyToken(getTokenFromRequest(req))) {
+        const std::string token = getTokenFromRequest(req);
+        if (validateSessionToken(token)) {
             response = {{"valid", true}, {"environment", m_runtimeEnvironment},
-                {"scope", validateSessionToken(getTokenFromRequest(req)) ? "pairing" : "authenticated"}};
+                {"scope", "pairing"}};
+            res.code = 200;
+        } else if (validateBrowserSessionToken(token)) {
+            response = {{"valid", true}, {"environment", m_runtimeEnvironment},
+                {"scope", "browser"},
+                {"idleLifetimeSeconds", BrowserSessionIdleLifetimeSeconds}};
+            res.code = 200;
+        } else if (validateToken(token)) {
+            response = {{"valid", true}, {"environment", m_runtimeEnvironment},
+                {"scope", "authenticated"}};
+            res.code = 200;
+        } else if (m_pairingStore &&
+            m_pairingStore->findDeviceByCredential(token).has_value()) {
+            // Native Windows identity credentials can prove remembered trust
+            // here but still cannot authorize upload routes without a grant.
+            response = {{"valid", true}, {"environment", m_runtimeEnvironment},
+                {"scope", "trusted"}};
             res.code = 200;
         } else {
             response = {{"valid", false}, {"error", "Invalid token"},
@@ -692,6 +752,8 @@ void HttpServer::setupRoutes(CrowApp& app) {
             {"environment", m_runtimeEnvironment},
             {"browserBootstrapLifetimeSeconds",
              BrowserBootstrapLifetimeSeconds},
+            {"browserSessionIdleLifetimeSeconds",
+             BrowserSessionIdleLifetimeSeconds},
             {"mobile", {
                 {"chunkSizeBytes", lmt::TransferLimits::CompatibilityChunkBytes},
                 {"parallelFiles", 5},
@@ -701,6 +763,18 @@ void HttpServer::setupRoutes(CrowApp& app) {
                 {"chunkSizeBytes", lmt::TransferLimits::NativeChunkBytes},
                 {"parallelFiles", 6},
                 {"sequentialChunksPerFile", true},
+            }},
+            {"browser", {
+                {"mobile", {
+                    {"chunkSizeBytes", lmt::TransferLimits::NativeChunkBytes},
+                    {"parallelFiles", 2},
+                    {"sequentialChunksPerFile", true},
+                }},
+                {"desktop", {
+                    {"chunkSizeBytes", 16ULL * 1024ULL * 1024ULL},
+                    {"parallelFiles", 3},
+                    {"sequentialChunksPerFile", true},
+                }}
             }},
             {"shared", {
                 {"singleFileMaxBytes", lmt::TransferLimits::WholeFileBytes},
@@ -1147,6 +1221,7 @@ void HttpServer::setupRoutes(CrowApp& app) {
     CROW_ROUTE(app, "/upload_single")
     .methods("POST"_method)
     ([this](const crow::request& req) {
+        const auto requestStarted = std::chrono::steady_clock::now();
         const std::string encodedHeaderFilename = req.get_header_value("X-Filename");
         const std::string headerFilename = urlDecode(encodedHeaderFilename);
 
@@ -1176,7 +1251,9 @@ void HttpServer::setupRoutes(CrowApp& app) {
             }
             const bool skipExactDuplicates =
                 skipExactDuplicatesForRequest(req);
+            const auto parseStarted = std::chrono::steady_clock::now();
             crow::multipart::message msg(req);
+            const double parseDurationMs = elapsedMilliseconds(parseStarted);
 
             spdlog::info("Multipart message parsed, {} parts found", msg.parts.size());
 
@@ -1241,13 +1318,20 @@ void HttpServer::setupRoutes(CrowApp& app) {
                     spdlog::info("Initializing file '{}' with id '{}', size {} bytes", 
                                 filename, fileId, part.body.size());
 
-                    if (m_fileWriter->initFile(
+                    const auto initStarted = std::chrono::steady_clock::now();
+                    const bool initialized = m_fileWriter->initFile(
                             fileId,
                             filename,
                             part.body.size(),
                             1,
-                            skipExactDuplicates)) {
-                        if (m_fileWriter->writeChunk(fileId, 0, part.body.data(), part.body.size()) !=
+                            skipExactDuplicates);
+                    const double initDurationMs = elapsedMilliseconds(initStarted);
+                    if (initialized) {
+                        const auto writeStarted = std::chrono::steady_clock::now();
+                        const auto writeStatus = m_fileWriter->writeChunk(
+                            fileId, 0, part.body.data(), part.body.size());
+                        const double writeDurationMs = elapsedMilliseconds(writeStarted);
+                        if (writeStatus !=
                             ChunkWriteStatus::Success) {
                             spdlog::error("writeChunk failed for '{}'", filename);
                             json err = {{"error", "Failed to write file data"}, {"code", 500}};
@@ -1256,8 +1340,11 @@ void HttpServer::setupRoutes(CrowApp& app) {
                             return res;
                         }
 
+                        const auto finalizeStarted = std::chrono::steady_clock::now();
                         FileFinalizeResult finalizeResult =
                             m_fileWriter->finalizeFileResult(fileId);
+                        const double finalizeDurationMs =
+                            elapsedMilliseconds(finalizeStarted);
                         if (finalizeResult.disposition ==
                             FileFinalizeDisposition::NameConflict) {
                             json err = {
@@ -1335,6 +1422,12 @@ void HttpServer::setupRoutes(CrowApp& app) {
                         };
                         res.code = 200;
                         res.body = success.dump();
+                        addServerTiming(res, requestStarted, {
+                            {"parse", parseDurationMs},
+                            {"init", initDurationMs},
+                            {"write", writeDurationMs},
+                            {"finalize", finalizeDurationMs}
+                        });
                         return res;
                     } else {
                         spdlog::error("initFile failed for '{}' (id: {})", filename, fileId);
@@ -1432,6 +1525,7 @@ void HttpServer::setupRoutes(CrowApp& app) {
             if (exchangeBrowserBootstrap(bootstrap, token)) {
                 res.code = 200;
                 res.body = json{{"token", token},
+                    {"sessionIdleLifetimeSeconds", BrowserSessionIdleLifetimeSeconds},
                     {"environment", m_runtimeEnvironment}}.dump();
             } else {
                 res.code = 403;
@@ -1449,6 +1543,7 @@ void HttpServer::setupRoutes(CrowApp& app) {
     CROW_ROUTE(app, "/upload_chunk")
     .methods("POST"_method)
     ([this](const crow::request& req) {
+        const auto requestStarted = std::chrono::steady_clock::now();
         crow::response res;
         res.add_header("Access-Control-Allow-Origin", "*");
         res.add_header("Content-Type", "application/json; charset=utf-8");
@@ -1500,6 +1595,7 @@ void HttpServer::setupRoutes(CrowApp& app) {
             }
 
             // Decode and validate the first body before reserving disk space.
+            const auto decodeStarted = std::chrono::steady_clock::now();
             std::vector<unsigned char> decodedChunk;
             const bool base64Encoded =
                 req.get_header_value("X-Content-Transfer-Encoding") == "base64";
@@ -1510,21 +1606,27 @@ void HttpServer::setupRoutes(CrowApp& app) {
                 chunkData = reinterpret_cast<const char*>(decodedChunk.data());
                 chunkSize = decodedChunk.size();
             }
+            const double decodeDurationMs = elapsedMilliseconds(decodeStarted);
             if (chunkSize == 0 || chunkSize > fileSize || chunkSize > lmt::TransferLimits::MaxChunkBytes) {
                 res.code = 400;
                 res.body = json{{"error", "Invalid chunk size"}}.dump();
                 return res;
             }
             const auto storageId = authorization->ownerPrefix + fileId;
+            double initDurationMs = 0.0;
             if (chunkIndex == 0) {
-                if (!m_fileWriter->initFile(
+                const auto initStarted = std::chrono::steady_clock::now();
+                const bool initialized = m_fileWriter->initFile(
                         storageId,
                         filename,
                         fileSize,
                         totalChunks,
-                        skipExactDuplicates)) {
+                        skipExactDuplicates);
+                initDurationMs = elapsedMilliseconds(initStarted);
+                if (!initialized) {
                     res.code = 409;
                     res.body = json{{"error", "Receiver could not start this file. Restart its upload; if it still fails, check file-size limits, free space and folder access, and wait for other uploads to finish."}}.dump();
+                    addServerTiming(res, requestStarted, {{"decode", decodeDurationMs}, {"init", initDurationMs}});
                     return res;
                 }
             }
@@ -1556,6 +1658,8 @@ void HttpServer::setupRoutes(CrowApp& app) {
                     res.code = 500;
                     res.body = json{{"error", "Receiver could not write this file. Check free space and folder access, then restart its upload."}}.dump();
                 }
+                addServerTiming(res, requestStarted, {{"decode", decodeDurationMs},
+                    {"init", initDurationMs}, {"write", writeDurationMs}});
                 return res;
             }
 
@@ -1582,6 +1686,8 @@ void HttpServer::setupRoutes(CrowApp& app) {
                         res.code = 503;
                         res.add_header("Retry-After", "1");
                         res.body = json{{"error", "Upload is still finalizing"}}.dump();
+                        addServerTiming(res, requestStarted, {{"write", writeDurationMs},
+                            {"finalize", finalizeDurationMs}});
                         return res;
                 }
                 if (finalizeResult.disposition ==
@@ -1600,6 +1706,8 @@ void HttpServer::setupRoutes(CrowApp& app) {
                         FileFinalizeDisposition::Duplicate) {
                     res.code = 400;
                     res.body = json{{"error", "Receiver could not finish saving this file. Check free space and folder access, then restart its upload."}}.dump();
+                    addServerTiming(res, requestStarted, {{"write", writeDurationMs},
+                        {"finalize", finalizeDurationMs}});
                     return res;
                 }
 
@@ -1674,6 +1782,12 @@ void HttpServer::setupRoutes(CrowApp& app) {
 
             res.code = 200;
             res.body = response.dump();
+            addServerTiming(res, requestStarted, {
+                {"decode", decodeDurationMs},
+                {"init", initDurationMs},
+                {"write", writeDurationMs},
+                {"finalize", finalizeDurationMs}
+            });
             return res;
 
         } catch (const std::exception& e) {
@@ -1820,16 +1934,8 @@ bool HttpServer::validateToken(const std::string& token) const {
     if (sessionToken.empty()) {
         return false;
     }
-    return token == sessionToken ||
+    return token == sessionToken || validateBrowserSessionToken(token) ||
         (m_pairingStore && m_pairingStore->validateCredential(token));
-}
-
-bool HttpServer::validateAnyToken(const std::string& token) const {
-    // Verification establishes validity, not upload authority. The iOS pairing
-    // flow probes this endpoint before asking for receiver approval.
-    if (validateSessionToken(token)) return true;
-    if (validateToken(token)) return true;
-    return m_pairingStore && m_pairingStore->findDeviceByCredential(token).has_value();
 }
 
 std::optional<HttpServer::UploadAuthorization> HttpServer::authorizeUpload(
@@ -1849,9 +1955,13 @@ std::optional<HttpServer::UploadAuthorization> HttpServer::authorizeUpload(
             if (m_config.token.empty()) return std::nullopt;
             sessionCredential = context.credential == m_config.token;
         }
-        if (!sessionCredential && (!m_pairingStore ||
+        const bool browserCredential = !sessionCredential &&
+            validateBrowserSessionToken(context.credential);
+        if (!sessionCredential && !browserCredential && (!m_pairingStore ||
             !m_pairingStore->validateCredential(context.credential))) return std::nullopt;
-        context.principal = sessionCredential ? UploadPrincipal::Session : UploadPrincipal::TrustedDevice;
+        context.principal = sessionCredential || browserCredential
+            ? UploadPrincipal::Session
+            : UploadPrincipal::TrustedDevice;
     }
     context.ownerPrefix = credentialOwnerPrefix(context.credential);
     return context;
@@ -1898,9 +2008,13 @@ asio::ssl::context HttpServer::createTlsContext(
 
 void HttpServer::setToken(const std::string& token) {
     std::lock_guard<std::mutex> lock(m_authMutex);
+    const bool changed = m_config.token != token;
     m_config.token = token;
-    m_browserBootstrap.clear();
-    m_browserBootstrapExpiresAt = {};
+    if (changed) {
+        m_browserBootstrap.clear();
+        m_browserBootstrapExpiresAt = {};
+        m_browserSessions.clear();
+    }
 }
 
 void HttpServer::beginNativePairingWindow() {
@@ -1927,12 +2041,14 @@ bool HttpServer::denyNativeTransfer(const std::string& requestId) {
     return m_nativeSessionStore && m_nativeSessionStore->denyTransfer(requestId);
 }
 
-void HttpServer::revokeNativeDevice(const std::string& deviceId) {
-    if (m_nativeSessionStore) m_nativeSessionStore->revokeDevice(deviceId);
+bool HttpServer::revokeNativeDevice(const std::string& deviceId) {
+    return m_nativeSessionStore ? m_nativeSessionStore->revokeDevice(deviceId)
+        : m_pairingStore && m_pairingStore->revoke(deviceId);
 }
 
 void HttpServer::revokeAllNativeSessions() {
     if (m_nativeSessionStore) m_nativeSessionStore->revokeAll();
+    else if (m_pairingStore) m_pairingStore->revokeAll();
 }
 
 bool HttpServer::validateSessionToken(const std::string& token) const {
@@ -1954,6 +2070,21 @@ bool HttpServer::validateSessionToken(const std::string& token) const {
         CRYPTO_memcmp(token.data(), expected.data(), expected.size()) == 0;
 }
 
+bool HttpServer::validateBrowserSessionToken(const std::string& token) const {
+    if (token.empty()) return false;
+    std::lock_guard<std::mutex> lock(m_authMutex);
+    const auto session = m_browserSessions.find(token);
+    if (session == m_browserSessions.end()) return false;
+    const auto now = std::chrono::steady_clock::now();
+    if (now >= session->second) {
+        m_browserSessions.erase(session);
+        return false;
+    }
+    session->second = now +
+        std::chrono::seconds(BrowserSessionIdleLifetimeSeconds);
+    return true;
+}
+
 bool HttpServer::setBrowserBootstrap(const std::string& bootstrap) {
     if (bootstrap.size() != 64 ||
         !std::all_of(bootstrap.begin(), bootstrap.end(), [](unsigned char value) {
@@ -1972,20 +2103,48 @@ bool HttpServer::setBrowserBootstrap(const std::string& bootstrap) {
 bool HttpServer::exchangeBrowserBootstrap(
     const std::string& bootstrap,
     std::string& token) {
-    std::lock_guard<std::mutex> lock(m_authMutex);
-    if (bootstrap.size() != m_browserBootstrap.size() ||
-        bootstrap.empty() ||
-        std::chrono::steady_clock::now() > m_browserBootstrapExpiresAt ||
-        CRYPTO_memcmp(
-            bootstrap.data(),
-            m_browserBootstrap.data(),
-            bootstrap.size()) != 0) {
-        return false;
+    {
+        std::lock_guard<std::mutex> lock(m_authMutex);
+        const auto now = std::chrono::steady_clock::now();
+        if (bootstrap.size() != m_browserBootstrap.size() ||
+            bootstrap.empty() ||
+            now > m_browserBootstrapExpiresAt ||
+            CRYPTO_memcmp(
+                bootstrap.data(),
+                m_browserBootstrap.data(),
+                bootstrap.size()) != 0 ||
+            m_config.token.empty()) {
+            return false;
+        }
+
+        unsigned char randomBytes[32];
+        if (RAND_bytes(randomBytes, sizeof(randomBytes)) != 1) return false;
+        std::ostringstream encoded;
+        encoded << std::hex << std::setfill('0');
+        for (unsigned char value : randomBytes)
+            encoded << std::setw(2) << static_cast<unsigned int>(value);
+        token = encoded.str();
+
+        for (auto session = m_browserSessions.begin();
+            session != m_browserSessions.end();) {
+            if (now >= session->second) session = m_browserSessions.erase(session);
+            else ++session;
+        }
+        if (m_browserSessions.size() >= MaxBrowserSessions) {
+            const auto oldest = std::min_element(
+                m_browserSessions.begin(), m_browserSessions.end(),
+                [](const auto& left, const auto& right) {
+                    return left.second < right.second;
+                });
+            if (oldest != m_browserSessions.end()) m_browserSessions.erase(oldest);
+        }
+        m_browserSessions[token] = now +
+            std::chrono::seconds(BrowserSessionIdleLifetimeSeconds);
+        m_browserBootstrap.clear();
+        m_browserBootstrapExpiresAt = {};
     }
-    token = m_config.token;
-    m_browserBootstrap.clear();
-    m_browserBootstrapExpiresAt = {};
-    return !token.empty();
+    if (m_pipeServer) m_pipeServer->sendBrowserLinkConsumed();
+    return true;
 }
 
 void HttpServer::run(std::atomic<bool>& running) {

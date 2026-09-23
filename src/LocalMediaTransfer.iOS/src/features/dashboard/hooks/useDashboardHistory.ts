@@ -48,11 +48,20 @@ export function normalizeHistoryItems(value: unknown): HistoryItem[] {
 }
 
 export function historyStatus(item: HistoryItem): string {
+  if (item.completionStatus === 'cancelled') return 'Canceled';
+  if (item.completionStatus === 'fatal') return 'Failed';
   const failed = item.failedFiles ?? 0;
   const uploaded = item.uploadedFiles ?? 0;
   const skipped = item.skippedFiles ?? 0;
+  const terminalFiles = uploaded + skipped + failed;
+  const expandedFiles = item.expandedFiles ?? item.selectedFiles;
+  // Receivers predating completionStatus can still expose an interrupted
+  // session through a real expanded-file total that exceeds every terminal
+  // outcome. Preserve that cancellation signal instead of calling it complete.
+  if (failed === 0 && expandedFiles !== undefined && terminalFiles < expandedFiles) return 'Canceled';
   if (failed > 0) return failed === uploaded + skipped + failed ? 'Failed' : 'Completed with errors';
   if (uploaded === 0 && skipped > 0) return 'Skipped duplicates';
+  if (item.completionStatus === 'mixed') return 'Completed with errors';
   return 'Completed';
 }
 

@@ -62,12 +62,70 @@ bundle does not require a new identifier.
 
 ## Development versus installed behavior
 
+### Native TEST development client
+
+For Fast Refresh while retaining the custom Swift module:
+
+1. Commit and push the intended branch.
+2. Run **Actions** > **Build unsigned iOS IPA** > **Run workflow**, select the
+   `development` build profile, and select the TEST application environment.
+3. Download and extract the
+   `LocalMediaTransfer-test-development-unsigned-ipa` artifact.
+4. Sign and install `LocalMediaTransfer-test-development-unsigned.ipa` with
+   Sideloadly using the same free-signing steps above.
+5. On Windows, from `src\LocalMediaTransfer.iOS`, start Metro with:
+
+   ```powershell
+   npm run start:dev-client
+   ```
+
+   This command selects the TEST environment and the development client's
+   dedicated `exp+ronthedev-local-media-transfer-iphone-2026-test` URL scheme.
+
+6. Keep the iPhone and Windows PC on the same local network. Scan Metro's QR
+   code with the iPhone Camera, or open the TEST development client and select
+   the detected development server.
+
+Metro's QR is only the first QR in this workflow: it opens the JavaScript bundle
+and Fast Refresh connection over development-only LAN HTTP on port `8081`. To
+pair the loaded iPhone application with Local Media Transfer, open a second
+PowerShell window at the repository root, then build and launch the matching
+TEST Windows application:
+
+```powershell
+dotnet build .\src\LocalMediaTransfer.GUI\LocalMediaTransfer.GUI.csproj `
+  -c Debug -p:Platform=x64 -p:LmtEnvironment=Test
+
+& ".\src\LocalMediaTransfer.GUI\bin\x64\Debug-Test\net8.0-windows10.0.19041.0\LocalMediaTransfer.GUI.Test.exe"
+```
+
+Verify the persistent amber `TEST` banner, then scan that Windows application's
+QR from inside the loaded iPhone app. This second QR pairs the TEST client with
+the TEST server over pinned HTTPS on port `18443`. A production Windows QR is
+rejected intentionally because its environment identity, credentials, ports,
+and storage are separate.
+
+The TEST bundle identifier is separate from production, so both applications
+can remain installed. Most JavaScript, TypeScript, and style edits use Fast
+Refresh without rebuilding the IPA. Rebuild and sideload the development IPA
+after changing Swift/native code, installing or updating a native dependency,
+changing native app configuration, or upgrading Expo SDK. The development
+client is for trusted local development only and depends on the Windows Metro
+server; keep the production IPA for normal use.
+
+If the phone cannot reach Metro, verify that Windows Firewall permits Node on
+the private network, that both devices are on the same non-isolated Wi-Fi/LAN,
+and that a VPN is not replacing the advertised local address.
+
+### Expo Go compatibility mode
+
 Run the Expo development server from `src\LocalMediaTransfer.iOS` with:
 
 ```powershell
-npx expo start --offline
+npm run start:go
 ```
 
-Expo Go supports UI work, QR/manual connection, and the compatibility uploader.
-Automatic desktop discovery and the raw Swift uploader require the generated
-native application, so test those behaviors with a newly built IPA.
+The QR/manual connection and Base64 compatibility path remain available in Expo
+Go when its installed version supports this SDK. Expo Go cannot load the custom
+native module in any case. Use the TEST development-client IPA for physical-iPhone
+development; automatic discovery and raw Swift uploads require that build.

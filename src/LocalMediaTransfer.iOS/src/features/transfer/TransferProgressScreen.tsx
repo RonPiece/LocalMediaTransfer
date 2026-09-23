@@ -1,14 +1,14 @@
 import React from 'react';
-import { Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import { ScrollView, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useKeepAwake } from 'expo-keep-awake';
 
 import AppHeader from '@/components/AppHeader';
 import { MediaAsset } from '@/services/MediaScanner';
-import { theme } from '@/theme';
+import { useThemePalette } from '@/theme';
 import { RecentActivityPanel } from './components/RecentActivityPanel';
-import { TransferPhaseBanner } from './components/TransferPhaseBanner';
+import { ConcurrentTransferProgress } from './components/ConcurrentTransferProgress';
 import { TransferProgressRing } from './components/TransferProgressRing';
 import { TransferResultsModal } from './components/TransferResultsModal';
 import { TransferStatsBar } from './components/TransferStatsBar';
@@ -32,6 +32,7 @@ interface TransferProgressScreenProps {
   preparationMode?: PreparationMode;
   skipExactDuplicates?: boolean;
   includeAdditionalMediaComponents?: boolean;
+  onTerminalStateChange?: (finished: boolean) => void;
 }
 
 const ActiveTransferKeepAwake = React.memo(function ActiveTransferKeepAwake() {
@@ -46,7 +47,9 @@ export default function TransferProgressScreen({
   preparationMode = 'prepare-first',
   skipExactDuplicates = true,
   includeAdditionalMediaComponents = false,
+  onTerminalStateChange,
 }: TransferProgressScreenProps) {
+  const palette = useThemePalette();
   const {
     currentProgress,
     currentMediaMBps,
@@ -57,9 +60,7 @@ export default function TransferProgressScreen({
     isFinished,
     phase,
     hasUploadStarted,
-    queueCatchUpVisible,
     preparedFiles,
-    readyFiles,
     preparationComplete,
     activePreparationMode,
     totalTransferFiles,
@@ -87,13 +88,21 @@ export default function TransferProgressScreen({
   const skipCount = summary.skipped;
   const successCount = summary.success;
   const processedCount = successCount + skipCount + errorCount;
-  const displayedTotalFiles = completionSummary?.expandedFiles ?? totalTransferFiles;
-  const ringCompleted = isFinished ? processedCount : preparedFiles;
-  const ringTotal = isFinished ? displayedTotalFiles : assets.length;
+  const displayedTotalFiles = Math.max(
+    completionSummary?.expandedFiles ?? totalTransferFiles,
+    processedCount,
+  );
+  const transferPhaseActive = preparationComplete || isFinished;
+  const ringCompleted = transferPhaseActive ? processedCount : preparedFiles;
+  const ringTotal = transferPhaseActive ? displayedTotalFiles : assets.length;
   const itemsRemaining = preparationComplete
     ? Math.max(0, displayedTotalFiles - processedCount)
     : Math.max(0, assets.length - preparedFiles);
   const progressBytes = currentProgress?.acknowledgedMediaBytes || 0;
+  const streamingOverlapActive = !isFinished
+    && !preparationComplete
+    && activePreparationMode === 'streaming'
+    && hasUploadStarted;
   const selectedBytes = completionSummary?.selectedBytes ?? currentProgress?.totalBytes ?? 0;
   const transferredBytes = completionSummary?.uploadedBytes ?? progressBytes;
   const showRemainingTime = preparationComplete && hasUploadStarted;
@@ -103,8 +112,8 @@ export default function TransferProgressScreen({
     ? 'Final transfer size is still being determined.'
     : undefined;
   const finalColor = errorCount === 0
-    ? theme.colors.success
-    : (successCount + skipCount > 0 ? theme.colors.warning : theme.colors.error);
+    ? palette.success
+    : (successCount + skipCount > 0 ? palette.warning : palette.error);
 
   const showAllResultsModal = React.useCallback(() => {
     setShowOnlyErrors(false);
@@ -116,55 +125,71 @@ export default function TransferProgressScreen({
   }, [setShowAllResults, setShowOnlyErrors]);
   const closeResultsModal = React.useCallback(() => setShowAllResults(false), [setShowAllResults]);
 
+  React.useEffect(() => {
+    onTerminalStateChange?.(isFinished);
+  }, [isFinished, onTerminalStateChange]);
+
   return (
-    <View className="flex-1 bg-background">
+    <View className="flex-1 bg-background dark:bg-background-dark">
       {!isFinished && <ActiveTransferKeepAwake />}
-      <SafeAreaView edges={['top']} className="bg-surface">
+      <SafeAreaView edges={['top']} className="bg-surface dark:bg-surface-dark">
         <AppHeader title={transferText.title} />
       </SafeAreaView>
 
-      <View className="flex-1 px-6 pb-2" style={{ paddingTop: compactHeight ? 12 : 24 }}>
-        <TransferPhaseBanner
-          isFinished={isFinished}
-          preparedFiles={preparedFiles}
-          readyFiles={readyFiles}
-          totalAssets={assets.length}
-          expandedFiles={displayedTotalFiles}
-          preparationComplete={preparationComplete}
-          preparationMode={activePreparationMode}
-          phase={phase}
-          hasUploadStarted={hasUploadStarted}
-          queueCatchUpVisible={queueCatchUpVisible}
-          acknowledgedMediaBytes={progressBytes}
-          currentMediaMBps={currentMediaMBps}
-          duplicateCheck={duplicateCheck}
-        />
+      <ScrollView
+        className="flex-1"
+        contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 24, paddingBottom: isFinished ? 96 : 8, paddingTop: compactHeight ? 12 : 24 }}
+      >
+        {!isFinished && (
+          <ConcurrentTransferProgress
+            preparedAssets={preparedFiles}
+            totalAssets={assets.length}
+            processedFiles={processedCount}
+            totalFiles={displayedTotalFiles}
+            preparationComplete={preparationComplete}
+            hasUploadStarted={hasUploadStarted}
+            phase={phase}
+            duplicateStage={duplicateCheck.stage}
+            includeAdditionalMediaComponents={includeAdditionalMediaComponents}
+            compact={compactHeight}
+          />
+        )}
 
-        <TransferProgressRing
-          size={ringSize}
-          compactHeight={compactHeight}
-          isFinished={isFinished}
-          finalColor={finalColor}
-          completedItems={ringCompleted}
-          totalItems={ringTotal}
-          unit={isFinished ? 'files' : 'assets'}
-          phaseLabel={isFinished
-            ? 'Transfer complete'
-            : preparationComplete
-              ? 'Media analyzed'
-              : 'Analyzing media'}
-        />
+        {!isFinished && !streamingOverlapActive && (
+          <TransferProgressRing
+            size={ringSize}
+            compactHeight={compactHeight}
+            isFinished={isFinished}
+            finalColor={finalColor}
+            completedItems={ringCompleted}
+            totalItems={ringTotal}
+            unit={transferPhaseActive ? 'files' : 'assets'}
+            phaseLabel={isFinished
+              ? 'Transfer complete'
+              : preparationComplete
+                ? 'Files processed'
+                : 'Analyzing media'}
+          />
+        )}
+
+        {skipCount > 0 && !isFinished && (
+          <View className="rounded-[16px] bg-warning/10 border border-warning/25 px-4 py-3 mb-4 flex-row items-center">
+            <Ionicons name="play-skip-forward-outline" size={20} color={palette.warning} />
+            <Text className="text-warning dark:text-warning-dark text-[13px] font-semibold ml-2 flex-1">
+              {skipCount.toLocaleString()} {skipCount === 1 ? 'duplicate' : 'duplicates'} skipped · SHA-256 verified
+            </Text>
+          </View>
+        )}
 
         {!isFinished && (
           <TransferStatsBar
             itemsRemaining={itemsRemaining}
             remainingLabel={preparationComplete ? transferText.filesLeft : 'Media left to analyze'}
+            transferredBytes={streamingOverlapActive ? progressBytes : undefined}
             currentMediaMBps={currentMediaMBps}
             timeLabel={timeLabel}
             timeText={timeText}
             timeHint={timeHint}
-            processedFiles={preparationComplete ? processedCount : undefined}
-            totalFiles={preparationComplete ? displayedTotalFiles : undefined}
           />
         )}
 
@@ -183,6 +208,9 @@ export default function TransferProgressScreen({
             avoidedBytes={completionSummary?.avoidedBytes ?? 0}
             finalizationDuplicateBytes={completionSummary?.finalizationDuplicateBytes ?? 0}
             elapsedSeconds={elapsedSeconds}
+            preparationSeconds={completionSummary?.preparationDurationMs === undefined
+              ? undefined
+              : Math.round(completionSummary.preparationDurationMs / 1000)}
             averageMediaMBps={averageMediaMBps}
             peakMediaMBps={peakMediaMBps}
             resultCount={resultList.length}
@@ -195,29 +223,38 @@ export default function TransferProgressScreen({
           <RecentActivityPanel items={recentFiles} compact={compactHeight} />
         )}
 
-        {isFinished ? (
-          <TouchableOpacity
-            onPress={onComplete}
-            className={`${compactHeight ? 'mt-2' : 'mt-4'} w-full h-14 rounded-xl items-center justify-center flex-row bg-primary border border-primary/20`}
-          >
-            <Ionicons name="checkmark-circle-outline" size={20} color={theme.colors.white} />
-            <Text className="text-on-primary text-lg font-semibold ml-2">{transferText.done}</Text>
-          </TouchableOpacity>
-        ) : (
+        {!isFinished && (
+          <View className={compactHeight ? 'mt-2' : 'mt-4'}>
           <TouchableOpacity
             onPress={cancelTransfer}
-            className={`${compactHeight ? 'mt-2' : 'mt-4'} w-full h-14 rounded-xl items-center justify-center flex-row bg-error/10 border border-error/20`}
+            className="w-full h-14 rounded-xl items-center justify-center flex-row bg-error/10 border border-error/20"
           >
-            <Ionicons name="close-circle-outline" size={20} color={theme.colors.error} />
+            <Ionicons name="close-circle-outline" size={20} color={palette.error} />
             <Text className="text-error text-lg font-semibold ml-2">{transferText.cancelTransfer}</Text>
           </TouchableOpacity>
+          </View>
         )}
-      </View>
+      </ScrollView>
+
+      {isFinished && (
+        <View className="absolute left-0 right-0 bottom-0 px-6 pt-3 pb-3 bg-surface/95 dark:bg-surface-dark/95 border-t border-border dark:border-border-dark">
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel={transferText.done}
+            onPress={onComplete}
+            className="w-full h-14 rounded-xl items-center justify-center flex-row bg-primary border border-primary/20"
+          >
+            <Ionicons name="checkmark-circle-outline" size={20} color={palette.white} />
+            <Text className="text-on-primary text-lg font-semibold ml-2">{transferText.done}</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       <TransferResultsModal
         visible={showAllResults}
         showOnlyErrors={showOnlyErrors}
         errorCount={errorCount}
+        byteTotalComplete={completionSummary?.byteTotalComplete !== false}
         results={resultList}
         onClose={closeResultsModal}
       />

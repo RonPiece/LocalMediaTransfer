@@ -6,7 +6,7 @@ import { formatTransferEta, TransferEtaEstimator } from './TransferEtaEstimator'
 export function useTransferMetrics() {
   const [state, setState] = React.useState({ currentMediaMBps: 0, averageMediaMBps: 0,
     peakMediaMBps: 0, etaText: 'Calculating…', elapsedSeconds: 0 });
-  const startedAt = React.useRef(Date.now());
+  const startedAt = React.useRef<number | null>(null);
   const latest = React.useRef<GlobalProgress | null>(null);
   const estimator = React.useRef(new TransferEtaEstimator());
   const preparationComplete = React.useRef(false);
@@ -32,7 +32,7 @@ export function useTransferMetrics() {
         currentMediaMBps: progress ? progress.currentMediaMBps || 0 : previous.currentMediaMBps,
         averageMediaMBps: progress ? progress.averageMediaMBps || 0 : previous.averageMediaMBps,
         peakMediaMBps: progress ? progress.peakMediaMBps || 0 : previous.peakMediaMBps,
-        elapsedSeconds: Math.max(0, Math.floor((Date.now() - startedAt.current) / 1000)),
+        elapsedSeconds: Math.max(0, Math.floor((Date.now() - (startedAt.current ?? Date.now())) / 1000)),
         etaText: uploadObserved.current ? formatTransferEta({
           estimatedSeconds: estimator.current.estimateSeconds(Date.now()),
           hasRemainingBytes: estimator.current.hasRemainingBytes(), isFinished: false,
@@ -59,14 +59,14 @@ export function useTransferMetrics() {
   const finishMetrics = React.useCallback((summary?: UploadSummary) => {
     stopMetrics();
     setState(previous => ({ ...previous, etaText: 'Done',
-      elapsedSeconds: Math.max(1, Math.round((Date.now() - startedAt.current) / 1000)),
+      elapsedSeconds: Math.max(1, Math.round((Date.now() - (startedAt.current ?? Date.now())) / 1000)),
       averageMediaMBps: summary?.averageMediaMBps ?? previous.averageMediaMBps,
       peakMediaMBps: summary?.peakMediaMBps ?? previous.peakMediaMBps }));
   }, [stopMetrics]);
   const cancelMetrics = React.useCallback(() => {
     stopMetrics();
     setState(previous => ({ ...previous,
-      elapsedSeconds: Math.max(1, Math.round((Date.now() - startedAt.current) / 1000)) }));
+      elapsedSeconds: Math.max(1, Math.round((Date.now() - (startedAt.current ?? Date.now())) / 1000)) }));
   }, [stopMetrics]);
   return { state, beginMetrics, observeMetrics, finishMetrics, cancelMetrics, stopMetrics };
 }

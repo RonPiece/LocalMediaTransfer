@@ -71,18 +71,33 @@ not for authorizing uploads.
 
 The Windows sender uses the same credential-free version-2 unicast discovery,
 but independently owns its scan consent and enumerates active private IPv4
-adapters with the same 1,024-destination cap. It uses the datagram source
-address, not an address inside the JSON. Manual private-IPv4 entry remains
-available when receiver advertising is disabled.
+adapters with the same 1,024-destination cap. It excludes known VPN and virtual
+adapters from LAN probing, prioritizes adapters with an IPv4 gateway, and shares
+the bounded destination budget across the remaining adapters so one large
+subnet cannot starve Wi-Fi or Ethernet. Production scans use UDP `45892`; TEST
+scans use UDP `45893`. It uses the datagram source address, not an address inside
+the JSON. Manual private-IPv4 entry remains available when receiver advertising
+is disabled.
 
 Native first pairing requires the receiver to open a two-minute pairing window.
 Both PCs compare an independently computed eight-digit security code that binds
 the environment, server ID, observed certificate, client ID, nonce, and request
-ID. A confirmation HMAC and receiver approval must both succeed. Later
+ID. The receiver prompt is emitted as soon as the request is created so both
+computers show the code at the same time. Either person may confirm first; the
+server records trust only after the sender's confirmation HMAC and the receiver's
+explicit matching-code approval have both succeeded. Later
 connections use an exact certificate pin and a DPAPI-protected sender
 credential. The credential may request transfer approval but cannot upload;
 every Windows transfer receives a separate exact-manifest grant. See
 [Native Windows Transfer Protocol v1](NATIVE_WINDOWS_PROTOCOL.md).
+
+Rejected and completed pairing requests are terminal and never block an
+immediate retry; only a genuinely active comparison can report that pairing is
+already pending. Forgetting a Windows receiver performs an authenticated,
+certificate-pinned receiver revocation before deleting the sender's saved
+credential. When the receiver is offline or cannot be authenticated, the sender
+offers a clearly labeled local-only removal instead of silently claiming that
+both sides were unpaired.
 
 The GUI session token and an approved-device credential are separate
 authentication methods. Regenerating the QR/session token invalidates QR and

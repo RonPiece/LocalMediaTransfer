@@ -134,7 +134,10 @@ approval decisions.
   clipboard writes for tokens and connection links.
 - Browser links are manual, single-use five-minute credentials. Keep the
   visible countdown, copied URL, and browser QR synchronized; creating a
-  replacement must invalidate the previous server-side bootstrap.
+  replacement must invalidate the previous unused server-side bootstrap. Once
+  consumed, clear the countdown, URL, and QR immediately and offer a link for
+  another device. The resulting browser-only credential survives refresh and
+  reopening but expires after 30 minutes without an authenticated request.
 - Do not silently recover from external server conflicts.
 - Do not hide partial listener startup failures as healthy state.
 - Do not display HTTP fallback as equivalent to HTTPS.

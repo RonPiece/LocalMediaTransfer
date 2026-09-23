@@ -1,6 +1,6 @@
 import { Alert } from 'react-native';
 import { act, renderHook, waitFor } from '@testing-library/react-native';
-import * as MediaLibrary from 'expo-media-library';
+import * as MediaLibrary from 'expo-media-library/legacy';
 
 import {
   calculateMediaGridLayout,
@@ -13,7 +13,7 @@ import {
 } from './useMediaSelection';
 import { mediaScanner } from '@/services/MediaScanner';
 
-jest.mock('expo-media-library', () => ({
+jest.mock('expo-media-library/legacy', () => ({
   getAssetsAsync: jest.fn(),
   SortBy: { creationTime: 'creationTime' },
 }));

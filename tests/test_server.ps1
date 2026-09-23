@@ -598,6 +598,8 @@ Test-Feature "Security" "Authenticated client logs redact secrets and neutralize
         message = "probe`tmessage"
         data = @{
             token = $secretMarker
+            file = $secretMarker
+            existingName = $secretMarker
             selectedFiles = 3
         }
     } | ConvertTo-Json
@@ -624,6 +626,50 @@ Test-Feature "Upload" "Upload small text file (1KB)" `
         -ContentType $mp.ContentType -Body $mp.Body -Headers $headers -TimeoutSec 10
     if ($r.success -ne $true) { throw "Upload failed: $($r | ConvertTo-Json -Compress)" }
     "Saved as: $($r.filename), size: $($r.size) bytes"
+}
+
+Test-Feature "Upload" "Upload responses expose sanitized server timing" `
+    "Browser diagnostics receive parse, write, finalize, and total server durations" {
+    $client = [System.Net.Http.HttpClient]::new()
+    $request = [System.Net.Http.HttpRequestMessage]::new(
+        [System.Net.Http.HttpMethod]::Post,
+        "$BaseUrl/upload_single")
+    $request.Headers.Add("X-Upload-Token", $Token)
+    $request.Headers.Add("X-Filename", [uri]::EscapeDataString("timing.bin"))
+    $multipart = [System.Net.Http.MultipartFormDataContent]::new()
+    $multipart.Add(
+        [System.Net.Http.ByteArrayContent]::new([byte[]](1, 2, 3, 4)),
+        "file",
+        "timing.bin")
+    $request.Content = $multipart
+    try {
+        $response = $client.SendAsync($request).GetAwaiter().GetResult()
+        try {
+            $body = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+            if (-not $response.IsSuccessStatusCode) {
+                throw "HTTP $([int]$response.StatusCode): $body"
+            }
+            $values = [System.Collections.Generic.IEnumerable[string]]$null
+            if (-not $response.Headers.TryGetValues("Server-Timing", [ref]$values)) {
+                throw "Missing Server-Timing response header"
+            }
+            $timing = [string]::Join(",", $values)
+            foreach ($metric in @("parse;dur=", "write;dur=", "finalize;dur=", "app;dur=")) {
+                if (-not $timing.Contains($metric)) { throw "Missing timing metric $metric" }
+            }
+            if ($timing -match "timing\.bin|token|filename") {
+                throw "Server-Timing exposed request metadata"
+            }
+            "Timing header: $timing"
+        }
+        finally {
+            $response.Dispose()
+        }
+    }
+    finally {
+        $request.Dispose()
+        $client.Dispose()
+    }
 }
 
 Test-Feature "Upload" "Upload medium binary file (100KB)" `
@@ -968,8 +1014,9 @@ Test-Feature "Config" "GET /config returns valid configuration" `
     $r = Invoke-RestMethod -Uri "$BaseUrl/config" -Method GET -TimeoutSec 5
     if (-not $r.mobile) { throw "Missing 'mobile' config section" }
     if (-not $r.desktop) { throw "Missing 'desktop' config section" }
+    if (-not $r.browser) { throw "Missing 'browser' config section" }
     if (-not $r.shared) { throw "Missing 'shared' config section" }
-    "Mobile chunk: $($r.mobile.chunkSizeBytes), Desktop chunk: $($r.desktop.chunkSizeBytes)"
+    "Mobile chunk: $($r.mobile.chunkSizeBytes), Desktop chunk: $($r.desktop.chunkSizeBytes), Browser desktop chunk: $($r.browser.desktop.chunkSizeBytes)"
 }
 
 Test-Feature "Config" "Config has required fields for upload workers" `
@@ -979,6 +1026,14 @@ Test-Feature "Config" "Config has required fields for upload workers" `
     foreach ($field in $required) {
         if ($null -eq $r.mobile.$field) { throw "Missing mobile.$field" }
         if ($null -eq $r.desktop.$field) { throw "Missing desktop.$field" }
+        if ($null -eq $r.browser.mobile.$field) { throw "Missing browser.mobile.$field" }
+        if ($null -eq $r.browser.desktop.$field) { throw "Missing browser.desktop.$field" }
+    }
+    if ($r.browser.mobile.chunkSizeBytes -ne 8388608 -or
+        $r.browser.mobile.parallelFiles -ne 2 -or
+        $r.browser.desktop.chunkSizeBytes -ne 16777216 -or
+        $r.browser.desktop.parallelFiles -ne 3) {
+        throw "Browser upload tuning does not match the comparison profiles."
     }
     if ($null -eq $r.shared.singleFileMaxBytes) { throw "Missing shared.singleFileMaxBytes" }
     "All required config fields present"
@@ -1089,8 +1144,8 @@ Test-Feature "CORS" "OPTIONS preflight returns allowed methods" `
 Write-Host ""
 Write-Host "--- 8. Metadata & File Persistence ---" -ForegroundColor White
 
-Test-Feature "Metadata" "Upload metadata is logged to _dont_delete/_index.txt" `
-    "Legacy: appends timestamp, original name, saved name, IP to _index.txt" {
+Test-Feature "Metadata" "Upload metadata is logged to Local Media Transfer Data/_index.txt" `
+    "Appends timestamp, original name, saved name, IP to the app-managed index" {
     $marker = "metadata_test_" + [guid]::NewGuid().ToString("N").Substring(0,8)
     $content = [System.Text.Encoding]::UTF8.GetBytes("Metadata tracking test: $marker")
     $mp = Build-MultipartBody -FileName "$marker.txt" -FileContent $content
@@ -1099,7 +1154,7 @@ Test-Feature "Metadata" "Upload metadata is logged to _dont_delete/_index.txt" `
         -ContentType $mp.ContentType -Body $mp.Body -Headers $headers -TimeoutSec 10
     if ($r.success -ne $true) { throw "Upload failed" }
 
-    $indexPath = Join-Path $uploadRootDir "_dont_delete\_index.txt"
+    $indexPath = Join-Path $uploadRootDir "Local Media Transfer Data\_index.txt"
     if (Test-Path $indexPath) {
         $indexContent = Get-Content $indexPath -Tail 5 -ErrorAction SilentlyContinue
         $found = $indexContent | Where-Object { $_ -match $marker }
@@ -1113,9 +1168,9 @@ Test-Feature "Metadata" "Upload metadata is logged to _dont_delete/_index.txt" `
     }
 }
 
-Test-Feature "Metadata" "File hash persisted in _dont_delete/hashes.db" `
+Test-Feature "Metadata" "File hash persisted in Local Media Transfer Data/hashes.db" `
     "Current engine stores duplicate hashes in SQLite (hashes.db)" {
-    $dbPath = Join-Path $uploadRootDir "_dont_delete\hashes.db"
+    $dbPath = Join-Path $uploadRootDir "Local Media Transfer Data\hashes.db"
     if (-not (Test-Path $dbPath)) {
         throw "hashes.db not found at $dbPath"
     }

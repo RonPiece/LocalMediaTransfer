@@ -52,6 +52,11 @@
                                 Content="Pair a Windows computer"
                                 Click="PairWindows_Click"
                                 AutomationProperties.Name="Open Windows computer pairing for two minutes" />
+                        <Button x:Name="CloseWindowsPairingButton"
+                                Content="Close pairing"
+                                Click="CloseWindowsPairing_Click"
+                                Visibility="Collapsed"
+                                AutomationProperties.Name="Close Windows computer pairing now" />
                         <ToggleSwitch x:Name="NearbyReceiverToggle"
                                       Header="Allow nearby Windows discovery"
                                       Toggled="NearbyReceiverToggle_Toggled"
@@ -179,7 +184,9 @@
                                                 </ComboBox>
                                             </StackPanel>
 
-                                            <Grid ColumnSpacing="8">
+                                            <Grid x:Name="BrowserLinkPanel"
+                                                  Visibility="Collapsed"
+                                                  ColumnSpacing="8">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="*" />
                                                     <ColumnDefinition Width="Auto" />
@@ -222,7 +229,7 @@
                                             <InfoBar Severity="Informational"
                                                      IsOpen="True"
                                                      IsClosable="False"
-                                                     Message="Anyone with this complete link can use this transfer session until it expires. Share it only with the intended device." />
+                                                     Message="This link can be opened once within five minutes. Opening it creates a temporary browser session that survives refresh and reopening on that browser. Create another link for a different device." />
 
                                             <Grid ColumnSpacing="8">
                                                 <Grid.ColumnDefinitions>
@@ -230,7 +237,7 @@
                                                     <ColumnDefinition Width="*" />
                                                 </Grid.ColumnDefinitions>
                                                 <Button x:Name="RefreshBrowserLinkButton"
-                                                        Content="Create browser link"
+                                                        Content="Create one-time link"
                                                         Click="RefreshBrowserLink_Click"
                                                         HorizontalAlignment="Stretch" />
                                                 <Button x:Name="OpenBrowserBtn"

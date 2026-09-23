@@ -1,6 +1,6 @@
 const BYTES_PER_MB = 1_000_000;
 const ETA_HALF_LIFE_MS = 5000;
-const ETA_WARMUP_MS = 1500;
+const ETA_WARMUP_MS = 5000;
 const MAX_NATIVE_PROGRESS_BYTES = 8 * 1024 * 1024;
 const MIN_STALE_MS = 5000;
 const MAX_STALE_MS = 30000;
@@ -16,6 +16,7 @@ export class TransferEtaEstimator {
   private firstSampleAt: number | null = null;
   private lastSampleAt: number | null = null;
   private smoothedSeconds: number | null = null;
+  private warmedUp = false;
   private staleAfterMs = MIN_STALE_MS;
   private remainingBytes = 0;
 
@@ -43,6 +44,18 @@ export class TransferEtaEstimator {
       return;
     }
 
+    // A 5-second rolling throughput window starts mostly empty. Replacing the
+    // provisional value during that window prevents one tiny first file from
+    // seeding a multi-minute ETA that takes a long time to decay.
+    if (!this.warmedUp) {
+      this.lastSampleAt = sampledAt;
+      this.smoothedSeconds = rawSeconds;
+      if (sampledAt - this.firstSampleAt >= ETA_WARMUP_MS) {
+        this.warmedUp = true;
+      }
+      return;
+    }
+
     const deltaMs = sampledAt - this.lastSampleAt;
     const agedEstimate = Math.max(0, this.smoothedSeconds - deltaMs / 1000);
     const alpha = 1 - Math.pow(2, -deltaMs / ETA_HALF_LIFE_MS);
@@ -55,7 +68,7 @@ export class TransferEtaEstimator {
     if (this.firstSampleAt === null || this.lastSampleAt === null || this.smoothedSeconds === null) {
       return null;
     }
-    if (now - this.firstSampleAt < ETA_WARMUP_MS) return null;
+    if (!this.warmedUp || now - this.firstSampleAt < ETA_WARMUP_MS) return null;
     if (now - this.lastSampleAt > this.staleAfterMs) return null;
     return Math.max(0, this.smoothedSeconds - (now - this.lastSampleAt) / 1000);
   }

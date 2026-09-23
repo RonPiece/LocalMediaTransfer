@@ -49,6 +49,12 @@ describe('DashboardScreen', () => {
     expect(formatHistoryDate(undefined)).toBe('Date unavailable');
     expect(historyStatus({ uploadedFiles: 2, skippedFiles: 1, failedFiles: 0 })).toBe('Completed');
     expect(historyStatus({ uploadedFiles: 1, failedFiles: 1 })).toBe('Completed with errors');
+    expect(historyStatus({
+      expandedFiles: 448,
+      uploadedFiles: 447,
+      skippedFiles: 0,
+      failedFiles: 0,
+    })).toBe('Canceled');
   });
 
   it('normalizes stable history keys when the server omits session IDs', () => {

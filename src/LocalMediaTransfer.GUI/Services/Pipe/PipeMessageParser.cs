@@ -13,6 +13,7 @@ namespace LocalMediaTransfer.GUI.Services
         NativePairingRequest,
         NativeTransferRequest,
         TrustedDevices,
+        BrowserLinkConsumed,
         CommandResult
     }
 
@@ -114,6 +115,9 @@ namespace LocalMediaTransfer.GUI.Services
                     "trusted_devices" => PipeParseResult.Parsed(new PipeMessage(
                         PipeMessageKind.TrustedDevices,
                         ParseTrustedDevices(data))),
+                    "browser_link_consumed" => PipeParseResult.Parsed(new PipeMessage(
+                        PipeMessageKind.BrowserLinkConsumed,
+                        null)),
                     "command_result" => PipeParseResult.Parsed(new PipeMessage(
                         PipeMessageKind.CommandResult,
                         new CommandResultData

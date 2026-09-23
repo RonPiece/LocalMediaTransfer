@@ -1,5 +1,5 @@
 import { NativeEvents, nativeEventRecord, parseNativeProgressEvent } from './nativeEvents';
-import { EventEmitter, requireNativeModule } from 'expo-modules-core';
+import { EventEmitter, requireNativeModule } from 'expo';
 import {
   discoveryPortForEnvironment,
   iosClientEnvironment,
@@ -474,7 +474,7 @@ export function expectedServerEnvironment(): ClientServerEnvironment {
   return iosClientEnvironment(nativeModule !== null);
 }
 
-// expo-modules-core types do not expose the generated native module event map.
+// Expo's module types do not expose the generated native module event map.
 // Keep the cast at this boundary instead of leaking `any` into callers.
 const nativeEventEmitter = nativeModule ? new EventEmitter<NativeEvents>(nativeModule as unknown as InstanceType<typeof EventEmitter>) : null;
 

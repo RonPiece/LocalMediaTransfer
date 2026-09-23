@@ -22,7 +22,8 @@ Discovery remains protocol version 2. A capable response and `/config` add:
 ```
 
 Windows sender scans are user initiated, cover active private IPv4 adapters,
-exclude loopback and public destinations, and stop at 1,024 destinations. The
+exclude loopback, public, and known VPN/virtual destinations, share work across
+eligible physical adapters, and stop at 1,024 destinations. The
 UDP response source is authoritative for the endpoint. Manual entry accepts a
 private IPv4 address and optional HTTPS port, then probes
 `GET /native/v1/identity`; it does not bypass pairing or TLS verification.
@@ -37,6 +38,7 @@ credential, and a new 256-bit nonce. Pairing uses:
 - `POST /native/v1/pairing/requests/{requestId}/confirm`
 - `POST /native/v1/pairing/requests/{requestId}/status`
 - `DELETE /native/v1/pairing/requests/{requestId}`
+- `DELETE /native/v1/devices/current`
 
 The pairing-only HTTPS client accepts the currently valid self-signed leaf only
 long enough to capture it. It is isolated from normal HTTP clients. Both sides
@@ -54,7 +56,10 @@ The first 32 digest bits modulo 100,000,000 are formatted as `1234 5678`. The
 server never returns this code over HTTP. Sender confirmation supplies
 HMAC-SHA-256 using the candidate credential over the length-prefixed domain
 `LMT-WINDOWS-PAIR-CONFIRM-V1`, request ID, and client nonce. Trust is finalized
-only after the proof and the receiver's explicit approval.
+only after the proof and the receiver's explicit approval. The server sends the
+receiver's local named-pipe prompt when the request is created, before sender
+confirmation, so both computers display the code concurrently. The two
+confirmations are order-independent; neither one alone establishes trust.
 
 The receiver stores only the credential hash with `clientType=windows` and
 `authorizationMode=approval_required`. Older schema records migrate as
@@ -65,7 +70,19 @@ has no bypass; the user must forget and pair again.
 
 Limits are five pairing attempts per source per ten minutes, five pending
 globally, and one pending per client ID. Pairing is rejected outside local
-receiver subnets or when the window is closed/expired.
+receiver subnets or when the window is closed/expired. Only Pending,
+SenderConfirmed, and ReceiverConfirmed requests consume those active slots.
+Denied and Approved are terminal results: they remain briefly available for
+status polling but do not block a new user-initiated pairing attempt.
+
+The sender's Forget action first calls `DELETE /native/v1/devices/current` over
+certificate-pinned HTTPS with its long-term device credential. The receiver
+revokes the matching credential, cancels its active transfer grants, removes
+retained pairing state for that device, and refreshes the trusted-device UI.
+The sender removes its local DPAPI-protected credential after confirmed remote
+revocation. If the receiver cannot be contacted securely, the user must
+explicitly choose whether to forget only the local copy; the UI warns that the
+receiver may still retain the trust record.
 
 ## Transfer authorization
 

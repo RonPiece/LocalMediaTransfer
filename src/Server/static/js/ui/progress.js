@@ -30,7 +30,6 @@ window.ProgressTracker = {
             aggregateProgress: document.getElementById('aggregateProgress'),
             aggregateProgressBar: document.getElementById('aggregateProgressBar')
         };
-        console.log('Progress tracker initialized');
     },
 
     // Render individual file item
@@ -320,5 +319,3 @@ window.ProgressTracker = {
         this.applyProgressTransform(aggregateBar, percent);
     }
 };
-
-console.log('📊 Progress tracker loaded');

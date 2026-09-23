@@ -167,6 +167,8 @@ export class ApiClient {
         failedFiles: typeof item.failedFiles === 'number' ? item.failedFiles : undefined,
         averageSpeedMBps: typeof item.averageSpeedMBps === 'number' ? item.averageSpeedMBps : undefined,
         peakSpeedMBps: typeof item.peakSpeedMBps === 'number' ? item.peakSpeedMBps : undefined,
+        selectedFiles: typeof item.selectedFiles === 'number' ? item.selectedFiles : undefined,
+        totalDurationMs: typeof item.totalDurationMs === 'number' ? item.totalDurationMs : undefined,
         selectedAssets: typeof item.selectedAssets === 'number' ? item.selectedAssets : undefined,
         expandedFiles: typeof item.expandedFiles === 'number' ? item.expandedFiles : undefined,
         selectedBytes: typeof item.selectedBytes === 'number' ? item.selectedBytes : undefined,
@@ -187,6 +189,15 @@ export class ApiClient {
         avoidedBytes: typeof item.avoidedBytes === 'number' ? item.avoidedBytes : undefined,
         finalizationDuplicateBytes: typeof item.finalizationDuplicateBytes === 'number'
           ? item.finalizationDuplicateBytes
+          : undefined,
+        checkDurationMs: typeof item.checkDurationMs === 'number' ? item.checkDurationMs : undefined,
+        uploadDurationMs: typeof item.uploadDurationMs === 'number' ? item.uploadDurationMs : undefined,
+        retries: typeof item.retries === 'number' ? item.retries : undefined,
+        completionStatus: item.completionStatus === 'completed' ||
+          item.completionStatus === 'mixed' ||
+          item.completionStatus === 'cancelled' ||
+          item.completionStatus === 'fatal'
+          ? item.completionStatus
           : undefined,
         files: Array.isArray(item.files)
           ? item.files.filter(file => typeof file === 'object' && file !== null) as TransferHistoryItem['files']

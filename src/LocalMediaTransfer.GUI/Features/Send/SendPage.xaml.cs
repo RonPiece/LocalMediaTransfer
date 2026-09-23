@@ -119,7 +119,9 @@ public sealed partial class SendPage : Page
         try
         {
             IReadOnlyList<DiscoveredReceiver> found = await _discovery.ScanAsync(
-                ApplicationEnvironment.Current.Name, 45892, _activity.Token);
+                ApplicationEnvironment.Current.Name,
+                ApplicationEnvironment.Current.DiscoveryPort,
+                _activity.Token);
             IReadOnlyList<TrustedReceiver> trusted = _trustStore!.Load();
             _receivers.Clear();
             foreach (TrustedReceiver saved in trusted.OrderByDescending(item => item.LastSeen))
@@ -196,6 +198,7 @@ public sealed partial class SendPage : Page
     private void ReceiverList_SelectionChanged(object sender,
         SelectionChangedEventArgs e)
     {
+        if (_state is SendState.Pairing or SendState.Searching || IsTransferActive()) return;
         ReceiverItem? selected = ReceiverList.SelectedItem as ReceiverItem;
         ConnectButton.IsEnabled = selected is not null;
         ForgetButton.IsEnabled = selected?.Trusted is not null;
@@ -222,6 +225,11 @@ public sealed partial class SendPage : Page
         if (selected.Discovered?.SupportsNativeWindows != true)
         {
             SetError("This receiver does not support native Windows transfer. Use Browser transfer on its Receive page.");
+            return;
+        }
+        if (selected.Discovered.NativeWindows?.PairingAvailable != true)
+        {
+            SetError("Windows pairing is closed on the receiver. Open pairing there, then scan again.");
             return;
         }
 
@@ -256,7 +264,14 @@ public sealed partial class SendPage : Page
         catch (Exception exception) { SetError(exception.Message); }
     }
 
-    private void Forget_Click(object sender, RoutedEventArgs e)
+    private async void Forget_Click(object sender, RoutedEventArgs e)
+    {
+        if (_state is SendState.Pairing or SendState.Searching || IsTransferActive()) return;
+        try { await ForgetSelectedAsync(); }
+        catch (Exception exception) { SetError(exception.Message); }
+    }
+
+    private async System.Threading.Tasks.Task ForgetSelectedAsync()
     {
         if (_trustStoreCorrupt)
         {
@@ -270,11 +285,52 @@ public sealed partial class SendPage : Page
             return;
         }
         if (ReceiverList.SelectedItem is not ReceiverItem { Trusted: not null } selected) return;
-        _trustStore!.Forget(selected.Trusted.ServerId);
-        if (_connectedReceiver?.ServerId == selected.Trusted.ServerId) _connectedReceiver = null;
+        TrustedReceiver trusted = selected.Trusted;
+        TrustedReceiver endpoint = selected.Discovered is null ? trusted : trusted with
+        {
+            Address = selected.Discovered.Address,
+            HttpsPort = selected.Discovered.HttpsPort
+        };
+        ForgetButton.IsEnabled = false;
+        SetState(SendState.Pairing, "Revoking this computer on the receiver…");
+        bool remoteRevoked;
+        try
+        {
+            remoteRevoked = await _pairing.UnpairAsync(endpoint, CancellationToken.None);
+        }
+        catch (Exception exception)
+        {
+            bool forgetLocally = await DialogService.ConfirmAsync(XamlRoot,
+                "Receiver could not be reached",
+                "Local Media Transfer could not revoke this computer on the receiver. " +
+                "The receiver may still list this computer as trusted.\n\n" +
+                "Forget the saved connection only on this computer?\n\n" +
+                exception.Message,
+                "Forget Locally", "Keep Pairing", ContentDialogButton.Close);
+            if (!forgetLocally)
+            {
+                ForgetButton.IsEnabled = true;
+                SetState(SendState.ReceiverSelected,
+                    "Pairing kept because receiver-side revocation was not confirmed.");
+                return;
+            }
+            RemoveLocalTrust(trusted);
+            SetState(SendState.ReceiverSelected,
+                "Forgot locally. Receiver-side trust could not be revoked; remove this computer on the receiver if it is still listed.");
+            return;
+        }
+
+        RemoveLocalTrust(trusted);
+        SetState(SendState.ReceiverSelected, remoteRevoked
+            ? "Unpaired on both computers. Open pairing on the receiver to pair again."
+            : "The receiver no longer trusted this computer. The local saved connection was removed.");
+    }
+
+    private void RemoveLocalTrust(TrustedReceiver trusted)
+    {
+        _trustStore!.Forget(trusted.ServerId);
+        if (_connectedReceiver?.ServerId == trusted.ServerId) _connectedReceiver = null;
         LoadRememberedReceivers();
-        SetState(SendState.ReceiverSelected,
-            "Receiver forgotten. Open pairing on it before pairing again.");
     }
 
     private async void ChooseFiles_Click(object sender, RoutedEventArgs e)
@@ -422,11 +478,15 @@ public sealed partial class SendPage : Page
         CancelButton.IsEnabled = state is SendState.Searching or SendState.Pairing or
             SendState.WaitingForApproval or SendState.Uploading or SendState.Preparing;
         bool busy = state is SendState.Preparing or SendState.WaitingForApproval or
-            SendState.Uploading;
+            SendState.Uploading or SendState.Pairing or SendState.Searching;
         FilesList.IsEnabled = !busy;
         ClearFilesButton.IsEnabled = !busy && _files.Count > 0;
         ReceiverList.IsEnabled = !busy;
         ConnectButton.IsEnabled = !busy && ReceiverList.SelectedItem is not null;
+        ForgetButton.IsEnabled = !busy && (_trustStoreCorrupt ||
+            ReceiverList.SelectedItem is ReceiverItem { Trusted: not null });
+        ScanButton.IsEnabled = !busy;
+        ManualAddressButton.IsEnabled = !busy;
     }
 
     private void SetError(string message) => SetState(SendState.Error, message);
@@ -475,7 +535,10 @@ public sealed partial class SendPage : Page
             DisplayName = name;
             Details = changed ? $"{address} · Identity changed — pair again" :
                 trusted is not null ? $"{address} · Trusted (certificate pinned)" :
-                discovered?.SupportsNativeWindows == true ? $"{address} · Available to pair" :
+                discovered?.NativeWindows is { PairingAvailable: true }
+                    ? $"{address} · Windows pairing is open" :
+                discovered?.SupportsNativeWindows == true
+                    ? $"{address} · Windows pairing is closed" :
                 $"{address} · Browser transfer available";
         }
         public DiscoveredReceiver? Discovered { get; }

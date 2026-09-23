@@ -20,6 +20,7 @@ namespace LocalMediaTransfer.GUI.Features.Dashboard
         private Microsoft.UI.Dispatching.DispatcherQueueTimer? _pairingTimer;
         private Microsoft.UI.Dispatching.DispatcherQueueTimer? _browserLinkTimer;
         private int _pairingSecondsRemaining;
+        private bool _isPairingWindowOpen;
 
         public DashboardViewModel ViewModel { get; } = new();
 
@@ -43,6 +44,7 @@ namespace LocalMediaTransfer.GUI.Features.Dashboard
                 _mainWindow = mainWindow;
                 _pipeClient = mainWindow.PipeClient;
                 _pipeClient.ConnectionChanged += OnPipeConnectionChanged;
+                _pipeClient.BrowserLinkConsumed += OnBrowserLinkConsumed;
                 mainWindow.PendingApprovalsChanged += OnPendingApprovalsChanged;
                 OnPendingApprovalsChanged(mainWindow.PendingApprovalCount);
                 
@@ -51,7 +53,11 @@ namespace LocalMediaTransfer.GUI.Features.Dashboard
                 _ = RefreshIosPairingAsync(mainWindow);
                 if (ViewModel.IsBrowserLinkFresh)
                 {
-                    StartBrowserLinkCountdown();
+                    if (ViewModel.MarkBrowserLinkConsumed(
+                        _pipeClient.BrowserLinkConsumptionVersion))
+                        _ = UpdateBrowserLinkPresentationAsync(refreshQr: false);
+                    else
+                        StartBrowserLinkCountdown();
                 }
             }
         }
@@ -63,6 +69,7 @@ namespace LocalMediaTransfer.GUI.Features.Dashboard
             if (_pipeClient != null)
             {
                 _pipeClient.ConnectionChanged -= OnPipeConnectionChanged;
+                _pipeClient.BrowserLinkConsumed -= OnBrowserLinkConsumed;
             }
             if (_mainWindow != null)
                 _mainWindow.PendingApprovalsChanged -= OnPendingApprovalsChanged;
@@ -220,6 +227,14 @@ namespace LocalMediaTransfer.GUI.Features.Dashboard
             await UpdateBrowserLinkPresentationAsync(refreshQr: ViewModel.IsBrowserLinkFresh);
         }
 
+        private void OnBrowserLinkConsumed(long consumptionVersion) =>
+            DispatcherQueue.TryEnqueue(async () =>
+            {
+                if (!ViewModel.MarkBrowserLinkConsumed(consumptionVersion)) return;
+                _browserLinkTimer?.Stop();
+                await UpdateBrowserLinkPresentationAsync(refreshQr: false);
+            });
+
         private void StartBrowserLinkCountdown()
         {
             _browserLinkTimer?.Stop();
@@ -245,15 +260,22 @@ namespace LocalMediaTransfer.GUI.Features.Dashboard
             ConnectionUrl.Text = ViewModel.ConnectionUrl;
             CopyUrlBtn.IsEnabled = active;
             OpenBrowserBtn.IsEnabled = active;
+            BrowserLinkPanel.Visibility = active ? Visibility.Visible : Visibility.Collapsed;
             BrowserQrPanel.Visibility = active ? Visibility.Visible : Visibility.Collapsed;
+            OpenBrowserBtn.Visibility = active ? Visibility.Visible : Visibility.Collapsed;
+            Grid.SetColumnSpan(RefreshBrowserLinkButton, active ? 1 : 2);
             RefreshBrowserLinkButton.Content = active
-                ? "Replace browser link"
-                : "Create browser link";
+                ? "Replace one-time link"
+                : ViewModel.BrowserLinkWasConsumed
+                    ? "Create link for another device"
+                    : "Create one-time link";
             BrowserLinkStatusText.Text = active
-                ? $"Available for up to {BrowserTransferSession.FormatRemaining(ViewModel.BrowserLinkRemainingSeconds)} · first successful use consumes it"
-                : ViewModel.ConnectionUrl.StartsWith("Error:", StringComparison.Ordinal)
-                    ? "Link creation failed · check the receiver and try again"
-                    : "No active link · create one when you are ready to share";
+                ? $"Waiting for first use · expires in {BrowserTransferSession.FormatRemaining(ViewModel.BrowserLinkRemainingSeconds)}"
+                : ViewModel.BrowserLinkWasConsumed
+                    ? "Connected · one-time link used"
+                    : ViewModel.ConnectionUrl.StartsWith("Error:", StringComparison.Ordinal)
+                        ? "Link creation failed · check the receiver and try again"
+                        : "No active link · create one when you are ready to share";
 
             if (active && refreshQr)
             {
@@ -292,48 +314,127 @@ namespace LocalMediaTransfer.GUI.Features.Dashboard
                     "Wait until the local server is running, then try again.");
                 return;
             }
-            PairWindowsButton.IsEnabled = false;
-            PipeCommandAcknowledgement result =
-                await _pipeClient.BeginNativePairingAcknowledgedAsync();
-            PairWindowsButton.IsEnabled = true;
-            NativeReceiverStatus.Text = result.Success
-                ? "Pairing is open for two minutes. On the sending computer, open Send and scan or enter this computer's private IPv4 address."
-                : "Pairing could not be opened: " + result.Error;
-            if (result.Success) StartPairingCountdown();
+            SetPairingControls(isOpen: false, isBusy: true);
+            try
+            {
+                PipeCommandAcknowledgement result =
+                    await _pipeClient.BeginNativePairingAcknowledgedAsync();
+                NativeReceiverStatus.Text = result.Success
+                    ? "Pairing is open for two minutes. On the sending computer, open Send and scan or enter this computer's private IPv4 address."
+                    : "Pairing could not be opened: " + result.Error;
+                if (result.Success)
+                    StartPairingCountdown();
+                else
+                    SetPairingControls(isOpen: false, isBusy: false);
+            }
+            catch (Exception exception)
+            {
+                SetPairingControls(isOpen: false, isBusy: false);
+                NativeReceiverStatus.Text =
+                    "Pairing could not be opened: " + exception.Message;
+            }
         }
 
         private void StartPairingCountdown()
         {
             _pairingTimer?.Stop();
             _pairingSecondsRemaining = 120;
+            _isPairingWindowOpen = true;
+            SetPairingControls(isOpen: true, isBusy: false);
             _pairingTimer = DispatcherQueue.CreateTimer();
             _pairingTimer.Interval = TimeSpan.FromSeconds(1);
             _pairingTimer.Tick += async (_, _) =>
             {
+                if (!_isPairingWindowOpen) return;
                 _pairingSecondsRemaining--;
                 if (_pairingSecondsRemaining > 0)
                 {
-                    NativeReceiverStatus.Text =
-                        $"Windows pairing open · {_pairingSecondsRemaining / 60}:{_pairingSecondsRemaining % 60:D2} remaining";
+                    NativeReceiverStatus.Text = PairingCountdownText();
                     return;
                 }
-                _pairingTimer?.Stop();
-                if (_pipeClient?.IsConnected == true)
-                    await _pipeClient.EndNativePairingAcknowledgedAsync();
-                NativeReceiverStatus.Text =
-                    "Ready. Windows pairing is closed; every incoming transfer requires approval.";
+                await CloseWindowsPairingAsync(userRequested: false);
             };
             _pairingTimer.Start();
         }
+
+        private async void CloseWindowsPairing_Click(object sender, RoutedEventArgs e) =>
+            await CloseWindowsPairingAsync(userRequested: true);
+
+        private async Task CloseWindowsPairingAsync(bool userRequested)
+        {
+            if (!_isPairingWindowOpen) return;
+
+            _pairingTimer?.Stop();
+            SetPairingControls(isOpen: true, isBusy: true);
+            PipeCommandAcknowledgement result;
+            try
+            {
+                result = _pipeClient?.IsConnected == true
+                    ? await _pipeClient.EndNativePairingAcknowledgedAsync()
+                    : PipeCommandAcknowledgement.Failed(
+                        "The authenticated local receiver service is disconnected.");
+            }
+            catch (Exception exception)
+            {
+                result = PipeCommandAcknowledgement.Failed(exception.Message);
+            }
+
+            if (result.Success || !userRequested)
+            {
+                _isPairingWindowOpen = false;
+                _pairingSecondsRemaining = 0;
+                SetPairingControls(isOpen: false, isBusy: false);
+                NativeReceiverStatus.Text =
+                    "Ready. Windows pairing is closed; every incoming transfer requires approval.";
+                return;
+            }
+
+            SetPairingControls(isOpen: true, isBusy: false);
+            NativeReceiverStatus.Text =
+                "Pairing could not be closed: " + result.Error +
+                " It will close automatically when the timer expires.";
+            _pairingTimer?.Start();
+        }
+
+        private void SetPairingControls(bool isOpen, bool isBusy)
+        {
+            PairWindowsButton.Content = isBusy && !isOpen
+                ? "Opening pairing…"
+                : isOpen ? "Pairing open" : "Pair a Windows computer";
+            PairWindowsButton.IsEnabled = !isOpen && !isBusy;
+            CloseWindowsPairingButton.Visibility = isOpen
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+            CloseWindowsPairingButton.IsEnabled = isOpen && !isBusy;
+        }
+
+        private string PairingCountdownText() =>
+            $"Windows pairing open · {_pairingSecondsRemaining / 60}:{_pairingSecondsRemaining % 60:D2} remaining";
 
         private void OnPendingApprovalsChanged(int count) => DispatcherQueue.TryEnqueue(() =>
             PendingApprovalsText.Text = count == 0 ? "No approvals pending" :
                 $"{count} approval{(count == 1 ? "" : "s")} pending");
 
         private void OnPipeConnectionChanged(bool connected) => DispatcherQueue.TryEnqueue(() =>
+        {
+            if (connected && _isPairingWindowOpen)
+            {
+                SetPairingControls(isOpen: true, isBusy: false);
+                NativeReceiverStatus.Text = PairingCountdownText();
+                return;
+            }
+
+            if (!connected && _isPairingWindowOpen)
+            {
+                _pairingTimer?.Stop();
+                _isPairingWindowOpen = false;
+                _pairingSecondsRemaining = 0;
+                SetPairingControls(isOpen: false, isBusy: false);
+            }
             NativeReceiverStatus.Text = connected
                 ? "Ready. Windows pairing is closed; every incoming transfer requires approval."
-                : "Not ready. Waiting for the authenticated local receiver service.");
+                : "Not ready. Waiting for the authenticated local receiver service.";
+        });
 
         private async void NearbyReceiverToggle_Toggled(object sender, RoutedEventArgs e)
         {

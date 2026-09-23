@@ -10,6 +10,11 @@ const workflowSource = readFileSync(
   resolve(projectRoot, '../../.github/workflows/ios-unsigned-ipa.yml'),
   'utf8',
 );
+const packageSource = readFileSync(resolve(projectRoot, 'package.json'), 'utf8');
+const nativePodspecSource = readFileSync(
+  resolve(projectRoot, 'modules/local-media-transfer-native/ios/LocalMediaTransferNative.podspec'),
+  'utf8',
+);
 
 describe('iOS build environment contract', () => {
   it('uses the same public environment value for app config and bundled code', () => {
@@ -18,7 +23,7 @@ describe('iOS build environment contract', () => {
     );
     expect(appConfigSource).not.toContain('LMT_IOS_ENVIRONMENT');
     expect(workflowSource).toContain(
-      "EXPO_PUBLIC_LMT_ENVIRONMENT: ${{ inputs.environment || 'production' }}",
+      "EXPO_PUBLIC_LMT_ENVIRONMENT: ${{ (inputs.build_profile == 'development' && 'test') || inputs.environment || 'production' }}",
     );
     expect(workflowSource).not.toMatch(/^\s+LMT_IOS_ENVIRONMENT:/m);
   });
@@ -28,5 +33,53 @@ describe('iOS build environment contract', () => {
       /environment:\s+description: iOS application environment\s+required: true\s+default: production/,
     );
     expect(workflowSource).toMatch(/options:\s+- test\s+- production/);
+  });
+
+  it('keeps the development client isolated to the TEST application', () => {
+    expect(appConfigSource).toContain(
+      'const slug = isTest ? `${config.slug}-test` : config.slug',
+    );
+    expect(appConfigSource).toContain(
+      'scheme: isTest ? `exp+${slug}` : config.scheme',
+    );
+    expect(workflowSource).toContain(
+      "inputs.build_profile == 'development' && 'test'",
+    );
+    expect(workflowSource).toContain('configuration="Debug"');
+    expect(workflowSource).toContain('expo-dev-client');
+    expect(workflowSource).toContain('expo-dev-launcher');
+    expect(workflowSource).toContain(
+      "find Pods -name 'ExpoModulesProvider.swift'",
+    );
+    expect(workflowSource).toContain(
+      'grep -q "LocalMediaTransferNativeModule" "$modules_provider"',
+    );
+    expect(workflowSource).not.toContain(
+      'Application binary is missing the native discovery/uploader module',
+    );
+    expect(workflowSource).toContain(
+      'com.ronthedev.localmediatransfer.test',
+    );
+    expect(workflowSource).toContain(
+      'exp+ronthedev-local-media-transfer-iphone-2026-test',
+    );
+    expect(workflowSource).toContain(
+      'LocalMediaTransfer-test-development-unsigned',
+    );
+    expect(workflowSource).toMatch(
+      /if \[\[ "\$LMT_IOS_BUILD_PROFILE" == release \]\]; then\s+if \[\[ ! -f "\$app\/main\.jsbundle" \]\]/,
+    );
+  });
+
+  it('uses the SDK 57 native toolchain and deployment floor', () => {
+    expect(packageSource).toContain('"expo": "~57.0.22"');
+    expect(packageSource).toContain('"react-native": "0.86.3"');
+    expect(packageSource).toContain('"@react-native/jest-preset": "0.86.3"');
+    expect(packageSource).toContain('"react-native-reanimated": "4.5.1"');
+    expect(packageSource).toContain('"react-native-worklets": "0.10.1"');
+    expect(appConfigSource).toContain("'expo-status-bar'");
+    expect(workflowSource).toContain('runs-on: macos-26');
+    expect(workflowSource).toContain('/Applications/Xcode_26.4.app/Contents/Developer');
+    expect(nativePodspecSource).toContain("s.platforms      = { :ios => '16.4' }");
   });
 });

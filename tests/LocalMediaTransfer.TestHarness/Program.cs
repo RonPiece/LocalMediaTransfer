@@ -119,8 +119,16 @@ internal static class TestHarness
             string unrelatedTemporaryFile = Path.Combine(
                 uploadDirectory,
                 ".user-notes.tmp");
+            string legacyMetadataDirectory = Path.Combine(
+                uploadDirectory,
+                "_dont_delete");
+            string metadataMigrationMarker = Path.Combine(
+                legacyMetadataDirectory,
+                "migration-marker.txt");
             await File.WriteAllBytesAsync(managedOrphan, [1, 2, 3, 4]);
             await File.WriteAllBytesAsync(unrelatedTemporaryFile, [5, 6, 7, 8]);
+            Directory.CreateDirectory(legacyMetadataDirectory);
+            await File.WriteAllTextAsync(metadataMigrationMarker, "legacy metadata");
 
             server = await StartServerAsync(context, benchmarkMode: false, allowInsecureHttp: false);
             if (File.Exists(managedOrphan))
@@ -132,6 +140,17 @@ internal static class TestHarness
             {
                 throw new InvalidOperationException(
                     "Server startup removed an unrelated user temporary file.");
+            }
+            string professionalMetadataDirectory = Path.Combine(
+                uploadDirectory,
+                "Local Media Transfer Data");
+            if (Directory.Exists(legacyMetadataDirectory) ||
+                !File.Exists(Path.Combine(
+                    professionalMetadataDirectory,
+                    "migration-marker.txt")))
+            {
+                throw new InvalidOperationException(
+                    "Legacy upload metadata was not migrated to the professional data folder.");
             }
             File.Delete(unrelatedTemporaryFile);
             await VerifyHttpsAsync(context);
@@ -622,6 +641,10 @@ internal static class TestHarness
             configBody.RootElement.GetProperty(
                 "browserBootstrapLifetimeSeconds").GetInt32(),
             "Browser bootstrap lifetime contract changed.");
+        AssertEqual(1800,
+            configBody.RootElement.GetProperty(
+                "browserSessionIdleLifetimeSeconds").GetInt32(),
+            "Browser session idle lifetime contract changed.");
 
         using HttpResponseMessage replaced = await http.PostAsJsonAsync(
             "/exchange_bootstrap",
@@ -629,20 +652,89 @@ internal static class TestHarness
         AssertEqual(HttpStatusCode.Forbidden, replaced.StatusCode,
             "Replacing a browser bootstrap left the previous link usable.");
 
-        using HttpResponseMessage first = await http.PostAsJsonAsync(
-            "/exchange_bootstrap",
-            new { bootstrap });
+        HttpResponseMessage[] exchanges = await Task.WhenAll(
+            http.PostAsJsonAsync("/exchange_bootstrap", new { bootstrap }),
+            http.PostAsJsonAsync("/exchange_bootstrap", new { bootstrap }));
+        AssertEqual(1, exchanges.Count(value => value.IsSuccessStatusCode),
+            "Concurrent bootstrap exchange did not have exactly one winner.");
+        using HttpResponseMessage first = exchanges.Single(value => value.IsSuccessStatusCode);
+        using HttpResponseMessage loser = exchanges.Single(value => !value.IsSuccessStatusCode);
+        AssertEqual(HttpStatusCode.Forbidden, loser.StatusCode,
+            "Concurrent bootstrap replay was not rejected.");
         first.EnsureSuccessStatusCode();
+        await pipe.WaitForBrowserLinkConsumedAsync(TimeSpan.FromSeconds(5));
         using JsonDocument firstBody = JsonDocument.Parse(
             await first.Content.ReadAsStringAsync());
-        AssertEqual(context.Token, firstBody.RootElement.GetProperty("token").GetString(),
-            "Bootstrap exchange returned another session token.");
+        string browserToken = firstBody.RootElement.GetProperty("token").GetString() ?? "";
+        Assert(browserToken.Length == 64 && browserToken != context.Token,
+            "Bootstrap exchange did not return a scoped browser session.");
+        AssertEqual(1800,
+            firstBody.RootElement.GetProperty("sessionIdleLifetimeSeconds").GetInt32(),
+            "Bootstrap exchange omitted the browser session lifetime.");
+
+        using (var verifyRequest = new HttpRequestMessage(
+            HttpMethod.Post, "/verify_token"))
+        {
+            verifyRequest.Headers.Add("X-Upload-Token", browserToken);
+            verifyRequest.Content = JsonContent.Create(new { });
+            using HttpResponseMessage verify = await http.SendAsync(verifyRequest);
+            verify.EnsureSuccessStatusCode();
+            using JsonDocument verifyBody = JsonDocument.Parse(
+                await verify.Content.ReadAsStringAsync());
+            AssertEqual("browser",
+                verifyBody.RootElement.GetProperty("scope").GetString(),
+                "Scoped browser session was not recognized.");
+        }
+
+        using (var preflightRequest = new HttpRequestMessage(
+            HttpMethod.Post, "/upload/preflight"))
+        {
+            preflightRequest.Headers.Add("X-Upload-Token", browserToken);
+            preflightRequest.Content = JsonContent.Create(new { files = Array.Empty<object>() });
+            using HttpResponseMessage preflight = await http.SendAsync(preflightRequest);
+            preflight.EnsureSuccessStatusCode();
+        }
 
         using HttpResponseMessage replay = await http.PostAsJsonAsync(
             "/exchange_bootstrap",
             new { bootstrap });
         AssertEqual(HttpStatusCode.Forbidden, replay.StatusCode,
             "One-time browser bootstrap was accepted twice.");
+
+        string anotherBootstrap = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
+        await pipe.SendAcknowledgedCommandAsync("set_browser_bootstrap", anotherBootstrap);
+        using HttpResponseMessage another = await http.PostAsJsonAsync(
+            "/exchange_bootstrap", new { bootstrap = anotherBootstrap });
+        another.EnsureSuccessStatusCode();
+        using JsonDocument anotherBody = JsonDocument.Parse(await another.Content.ReadAsStringAsync());
+        Assert(anotherBody.RootElement.GetProperty("token").GetString() != browserToken,
+            "Independent browser links shared a session credential.");
+        await pipe.WaitForBrowserLinkConsumedAsync(TimeSpan.FromSeconds(5));
+
+        await pipe.SendAcknowledgedCommandAsync("set_token", context.Token);
+        using (var replayedPolicyRequest = new HttpRequestMessage(
+            HttpMethod.Post, "/verify_token"))
+        {
+            replayedPolicyRequest.Headers.Add("X-Upload-Token", browserToken);
+            replayedPolicyRequest.Content = JsonContent.Create(new { });
+            using HttpResponseMessage replayedPolicy = await http.SendAsync(
+                replayedPolicyRequest);
+            replayedPolicy.EnsureSuccessStatusCode();
+        }
+
+        string rotatedToken = Convert.ToHexString(
+            RandomNumberGenerator.GetBytes(16)).ToLowerInvariant();
+        await pipe.SendAcknowledgedCommandAsync("set_token", rotatedToken);
+        using (var staleRequest = new HttpRequestMessage(
+            HttpMethod.Post, "/verify_token"))
+        {
+            staleRequest.Headers.Add("X-Upload-Token", browserToken);
+            staleRequest.Content = JsonContent.Create(new { });
+            using HttpResponseMessage stale = await http.SendAsync(staleRequest);
+            AssertEqual(HttpStatusCode.Forbidden, stale.StatusCode,
+                "Rotating the receiver token left browser sessions active.");
+        }
+        await pipe.SendAcknowledgedCommandAsync("set_token", context.Token);
 
     }
 
@@ -1291,6 +1383,7 @@ internal static class TestHarness
                 averageSpeedMBps = 1.0,
                 peakSpeedMBps = 2.0,
                 retries = 0,
+                completionStatus = "cancelled",
                 files = new object[]
                 {
                     new
@@ -1348,6 +1441,7 @@ internal static class TestHarness
             historyItem.GetProperty("additionalComponentsBytes").GetInt64() != content.Length - content.Length / 2 ||
             historyItem.GetProperty("selectedMediaFiles").GetInt32() != 1 ||
             historyItem.GetProperty("additionalComponentsFiles").GetInt32() != 2 ||
+            historyItem.GetProperty("completionStatus").GetString() != "cancelled" ||
             historyItem.GetProperty("avoidedBytes").GetInt64() != content.Length ||
             historyItem.GetProperty("finalizationDuplicateBytes").GetInt64() != content.Length ||
             skippedHistory.GetProperty("matchedName").GetString() != filename ||
@@ -1775,6 +1869,37 @@ internal static class TestHarness
             credential
         };
 
+        async Task<(string RequestId, string Credential, string Nonce)>
+            StartRetryPairingAsync()
+        {
+            string retryCredential = Convert.ToHexString(
+                RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
+            string retryNonce = Convert.ToHexString(
+                RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
+            using HttpResponseMessage response = await http.PostAsJsonAsync(
+                "/native/v1/pairing/requests", new
+                {
+                    protocolVersion = 1,
+                    environment = "test",
+                    serverId,
+                    clientId,
+                    clientName = "Harness Windows sender",
+                    clientNonce = retryNonce,
+                    credential = retryCredential
+                }, JsonOptions);
+            response.EnsureSuccessStatusCode();
+            using JsonDocument body = JsonDocument.Parse(
+                await response.Content.ReadAsStringAsync());
+            string retryRequestId = body.RootElement.GetProperty(
+                "requestId").GetString()!;
+            JsonElement prompt = await pipe.WaitForNativePairingRequestAsync(
+                TimeSpan.FromSeconds(5));
+            AssertEqual(retryRequestId,
+                prompt.GetProperty("requestId").GetString(),
+                "Receiver prompt did not match the immediate retry request.");
+            return (retryRequestId, retryCredential, retryNonce);
+        }
+
         using HttpResponseMessage closed = await http.PostAsJsonAsync(
             "/native/v1/pairing/requests", pairingBody, JsonOptions);
         AssertEqual(HttpStatusCode.Forbidden, closed.StatusCode,
@@ -1789,11 +1914,33 @@ internal static class TestHarness
         pending.EnsureSuccessStatusCode();
         using JsonDocument pendingBody = JsonDocument.Parse(await pending.Content.ReadAsStringAsync());
         string requestId = pendingBody.RootElement.GetProperty("requestId").GetString()!;
+        JsonElement receiverPrompt = await pipe.WaitForNativePairingRequestAsync(
+            TimeSpan.FromSeconds(5));
+        AssertEqual(requestId,
+            receiverPrompt.GetProperty("requestId").GetString(),
+            "Receiver did not receive the pairing prompt when the request was created.");
+        AssertEqual(9,
+            receiverPrompt.GetProperty("securityCode").GetString()?.Length ?? 0,
+            "Receiver pairing prompt omitted the formatted security code.");
+
+        // Either computer may confirm first. The credential is trusted only
+        // after both sides have independently accepted the same code.
+        await pipe.SendAcknowledgedCommandAsync("approve_native_pairing", requestId);
+        using HttpResponseMessage waitingForSender = await http.PostAsJsonAsync(
+            $"/native/v1/pairing/requests/{requestId}/status",
+            new { clientId, credential }, JsonOptions);
+        waitingForSender.EnsureSuccessStatusCode();
+        using (JsonDocument waitingBody = JsonDocument.Parse(
+            await waitingForSender.Content.ReadAsStringAsync()))
+        {
+            AssertEqual("pending", waitingBody.RootElement.GetProperty("status").GetString(),
+                "Receiver-only confirmation trusted the sender prematurely.");
+        }
+
         string proof = ComputeNativePairingProof(credential, requestId, nonce);
         using HttpResponseMessage confirmed = await http.PostAsJsonAsync(
             $"/native/v1/pairing/requests/{requestId}/confirm", new { proof }, JsonOptions);
         confirmed.EnsureSuccessStatusCode();
-        await pipe.SendAcknowledgedCommandAsync("approve_native_pairing", requestId);
         using HttpResponseMessage approved = await http.PostAsJsonAsync(
             $"/native/v1/pairing/requests/{requestId}/status",
             new { clientId, credential }, JsonOptions);
@@ -1950,7 +2097,20 @@ internal static class TestHarness
             exception.StatusCode == HttpStatusCode.Forbidden) { }
 
         await VerifyThousandFileTransferAsync(http, pipe, context, credential);
-        await pipe.SendAcknowledgedCommandAsync("revoke_device", clientId);
+        using (var unauthorizedUnpair = new HttpRequestMessage(HttpMethod.Delete,
+            "/native/v1/devices/current"))
+        {
+            using var unauthorized = await http.SendAsync(unauthorizedUnpair);
+            AssertEqual(HttpStatusCode.Unauthorized, unauthorized.StatusCode,
+                "Unpair accepted a request without the device credential.");
+        }
+        using (var unpair = new HttpRequestMessage(HttpMethod.Delete,
+            "/native/v1/devices/current"))
+        {
+            unpair.Headers.Add("X-Device-Credential", credential);
+            using HttpResponseMessage unpaired = await http.SendAsync(unpair);
+            unpaired.EnsureSuccessStatusCode();
+        }
         using (var revokedDevice = CreatePinnedHttpsClient(context)) {
             revokedDevice.DefaultRequestHeaders.Add("X-Upload-Token", credential);
             await VerifyPairingCannotTransferAsync(revokedDevice);
@@ -1972,6 +2132,20 @@ internal static class TestHarness
         AssertEqual(HttpStatusCode.Unauthorized, revoked.StatusCode,
             "Revoked Windows credential still requested a transfer.");
 
+        var senderRejectedPairing = await StartRetryPairingAsync();
+        using (var reject = new HttpRequestMessage(HttpMethod.Delete,
+            $"/native/v1/pairing/requests/{senderRejectedPairing.RequestId}"))
+        {
+            using HttpResponseMessage rejected = await http.SendAsync(reject);
+            rejected.EnsureSuccessStatusCode();
+        }
+        var receiverRejectedPairing = await StartRetryPairingAsync();
+        await pipe.SendAcknowledgedCommandAsync("deny_native_pairing",
+            receiverRejectedPairing.RequestId);
+        var afterReceiverRejection = await StartRetryPairingAsync();
+        await pipe.SendAcknowledgedCommandAsync("deny_native_pairing",
+            afterReceiverRejection.RequestId);
+
         // The sender computes the display code independently; the receiver never
         // returns it through HTTP. Keep the fingerprint in this computation so a
         // certificate change necessarily changes the code.
@@ -1981,7 +2155,12 @@ internal static class TestHarness
         await pipe.SendAcknowledgedCommandAsync("end_native_pairing", "");
         VerifyNativeDiagnosticPrivacy(context,
             [credential, nonce, clientId, requestId, transferRequestId, transferId,
-                fileId, fingerprint, "Harness Windows sender", "native-harness.bin"]);
+                fileId, fingerprint, senderRejectedPairing.Credential,
+                senderRejectedPairing.Nonce, senderRejectedPairing.RequestId,
+                receiverRejectedPairing.Credential, receiverRejectedPairing.Nonce,
+                receiverRejectedPairing.RequestId, afterReceiverRejection.Credential,
+                afterReceiverRejection.Nonce, afterReceiverRejection.RequestId,
+                "Harness Windows sender", "native-harness.bin"]);
     }
 
     private static async Task VerifyThousandFileTransferAsync(HttpClient http,
@@ -2419,6 +2598,7 @@ internal static class TestHarness
             "stress" => 11L * 4 * 101 * 1024 * 1024,
             "soak" => 15L * 1024 * 1024 * 1024,
             "standard" => 4L * (200 + 1024) * 1024 * 1024,
+            "comparison" => 9L * 4 * 256 * 1024 * 1024,
             _ => 305L * 1024 * 1024 + 4097
         };
         // Sources and receiver files coexist on the temporary drive until cleanup.
@@ -2500,8 +2680,20 @@ internal static class TestHarness
 
         string[] jsonFiles = Directory.GetFiles(exportDirectory, "*.json");
         string[] csvFiles = Directory.GetFiles(exportDirectory, "*.csv");
-        int expectedRuns = profile switch { "standard" => 4, "stress" => 11, "soak" => 3, _ => 1 };
-        int expectedFilesPerRun = profile switch { "standard" => 22, "stress" => 4, "soak" => 1, _ => 6 };
+        int expectedRuns = profile switch {
+            "standard" => 4,
+            "stress" => 11,
+            "soak" => 3,
+            "comparison" => 9,
+            _ => 1
+        };
+        int expectedFilesPerRun = profile switch {
+            "standard" => 22,
+            "stress" => 4,
+            "soak" => 1,
+            "comparison" => 4,
+            _ => 6
+        };
         if (jsonFiles.Length != expectedRuns || csvFiles.Length != expectedRuns)
         {
             throw new InvalidOperationException(
@@ -2861,10 +3053,10 @@ internal sealed record HarnessOptions(
                     break;
                 case "--benchmark-only":
                     benchmarkProfile = Next().ToLowerInvariant();
-                    if (benchmarkProfile is not ("smoke" or "standard" or "stress" or "soak"))
+                    if (benchmarkProfile is not ("smoke" or "standard" or "stress" or "soak" or "comparison"))
                     {
                         throw new ArgumentException(
-                            "--benchmark-only supports smoke, standard, stress or soak.");
+                            "--benchmark-only supports smoke, standard, stress, soak or comparison.");
                     }
                     break;
                 case "--help":
@@ -2903,7 +3095,7 @@ internal sealed record HarnessOptions(
               --keep-artifacts                Preserve the isolated temporary directory.
               --skip-large-boundary-tests     Skip 99/100/101 MiB boundary uploads.
               --ownership-only               Run only authenticated process-control checks.
-              --benchmark-only <profile>      Run smoke, standard, stress or soak in isolation.
+              --benchmark-only <profile>      Run smoke, standard, stress, soak or comparison in isolation.
               --benchmark-smoke-only          Alias for --benchmark-only smoke.
               --help                          Show this help.
             """);
@@ -2916,6 +3108,9 @@ internal sealed class PipeConnection : IAsyncDisposable
     private readonly CancellationTokenSource _cancellation = new();
     private readonly Task _drainTask;
     private readonly ConcurrentQueue<JsonElement> _metrics = new();
+    private readonly SemaphoreSlim _browserLinkConsumed = new(0, 1);
+    private readonly ConcurrentQueue<JsonElement> _nativePairingRequests = new();
+    private readonly SemaphoreSlim _nativePairingRequestReceived = new(0);
     private readonly ConcurrentDictionary<string,
         TaskCompletionSource<PipeCommandResult>> _pendingCommands = new();
     private readonly SemaphoreSlim _writeLock = new(1, 1);
@@ -2964,6 +3159,8 @@ internal sealed class PipeConnection : IAsyncDisposable
         finally
         {
             _writeLock.Dispose();
+            _browserLinkConsumed.Dispose();
+            _nativePairingRequestReceived.Dispose();
             _cancellation.Dispose();
         }
     }
@@ -2985,6 +3182,24 @@ internal sealed class PipeConnection : IAsyncDisposable
             await Task.Delay(20);
         }
         throw new TimeoutException("Expected named-pipe metrics update was not received.");
+    }
+
+    public async Task WaitForBrowserLinkConsumedAsync(TimeSpan timeout)
+    {
+        if (!await _browserLinkConsumed.WaitAsync(timeout))
+            throw new TimeoutException(
+                "Expected browser-link consumption notification was not received.");
+    }
+
+    public async Task<JsonElement> WaitForNativePairingRequestAsync(TimeSpan timeout)
+    {
+        if (!await _nativePairingRequestReceived.WaitAsync(timeout) ||
+            !_nativePairingRequests.TryDequeue(out JsonElement request))
+        {
+            throw new TimeoutException(
+                "Expected immediate native pairing prompt was not received.");
+        }
+        return request;
     }
 
     public async Task SendAcknowledgedCommandAsync(
@@ -3082,6 +3297,16 @@ internal sealed class PipeConnection : IAsyncDisposable
                     if (messageType == "metrics")
                     {
                         _metrics.Enqueue(messageData.Clone());
+                    }
+                    else if (messageType == "browser_link_consumed")
+                    {
+                        if (_browserLinkConsumed.CurrentCount == 0)
+                            _browserLinkConsumed.Release();
+                    }
+                    else if (messageType == "native_pairing_request")
+                    {
+                        _nativePairingRequests.Enqueue(messageData.Clone());
+                        _nativePairingRequestReceived.Release();
                     }
                     else if (messageType == "command_result")
                     {

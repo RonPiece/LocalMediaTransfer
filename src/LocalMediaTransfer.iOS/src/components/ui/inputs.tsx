@@ -1,6 +1,6 @@
 import React from 'react';
 import { KeyboardTypeOptions, TextInput } from 'react-native';
-import { theme } from '@/theme';
+import { useThemePalette } from '@/theme';
 
 export function TextField({
   value,
@@ -17,17 +17,18 @@ export function TextField({
   secureTextEntry?: boolean;
   textSizeClass?: string;
 }) {
+  const palette = useThemePalette();
   return (
     <TextInput
       value={value}
       onChangeText={onChangeText}
       placeholder={placeholder}
-      placeholderTextColor={theme.colors.inputPlaceholder}
+      placeholderTextColor={palette.inputPlaceholder}
       keyboardType={keyboardType}
       autoCapitalize="none"
       autoCorrect={false}
       secureTextEntry={secureTextEntry}
-      className={`h-11 px-4 ${textSizeClass} text-on-surface`}
+      className={`h-11 px-4 ${textSizeClass} text-on-surface dark:text-on-surface-dark`}
     />
   );
 }

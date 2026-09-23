@@ -52,6 +52,7 @@ public:
     void sendNativePairingRequest(const std::string& requestJson);
     void sendNativeTransferRequest(const std::string& requestJson);
     void sendTrustedDevices(const std::string& devicesJson);
+    void sendBrowserLinkConsumed();
     void sendControlResponse(const std::string& type, const std::string& dataJson);
     
     /**

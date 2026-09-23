@@ -107,7 +107,7 @@ try {
         'x:Name="ConnectionUrl"',
         'x:Name="BrowserLinkStatusText"',
         'x:Name="BrowserQrCodeImage"',
-        'Content="Create browser link"',
+        'Content="Create one-time link"',
         'IsTextSelectionEnabled="True"',
         'TextWrapping="Wrap"'
     )) {

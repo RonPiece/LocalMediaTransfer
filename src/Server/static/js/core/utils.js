@@ -56,5 +56,3 @@ window.Utils = {
 window.formatTime = window.Utils.formatTime;
 window.formatBytes = window.Utils.formatBytes;
 window.formatSpeed = window.Utils.formatSpeed;
-
-console.log('🔧 Core utilities loaded');

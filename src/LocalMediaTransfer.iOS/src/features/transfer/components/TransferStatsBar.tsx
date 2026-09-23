@@ -2,7 +2,7 @@ import React from 'react';
 import { LayoutChangeEvent, Text, useWindowDimensions, View } from 'react-native';
 
 import { transferText } from '../content/transferText';
-import { theme } from '@/theme';
+import { formatBytes } from '../transferPresentation';
 
 const SCREEN_HORIZONTAL_PADDING = 48;
 const CARD_HORIZONTAL_INSET = 18;
@@ -10,12 +10,11 @@ const CARD_HORIZONTAL_INSET = 18;
 type TransferStatsBarProps = {
   itemsRemaining: number;
   remainingLabel: string;
+  transferredBytes?: number;
   currentMediaMBps: number;
   timeLabel: string;
   timeText: string;
   timeHint?: string;
-  processedFiles?: number;
-  totalFiles?: number;
 };
 
 export function shouldUseCompactStatsLayout(availableWidth: number, fontScale: number): boolean {
@@ -25,12 +24,11 @@ export function shouldUseCompactStatsLayout(availableWidth: number, fontScale: n
 export function TransferStatsBar({
   itemsRemaining,
   remainingLabel,
+  transferredBytes,
   currentMediaMBps,
   timeLabel,
   timeText,
   timeHint,
-  processedFiles,
-  totalFiles,
 }: TransferStatsBarProps) {
   const { width, fontScale } = useWindowDimensions();
   const [measuredContentWidth, setMeasuredContentWidth] = React.useState(0);
@@ -42,68 +40,64 @@ export function TransferStatsBar({
   const measureContent = React.useCallback((event: LayoutChangeEvent) => {
     setMeasuredContentWidth(event.nativeEvent.layout.width);
   }, []);
+  const hasTransferredColumn = transferredBytes !== undefined;
+  const statHorizontalPadding = hasTransferredColumn ? 'px-2' : 'px-3';
+  const valueTextSize = hasTransferredColumn ? 'text-[16px]' : 'text-[18px]';
+  const labelTextSize = hasTransferredColumn ? 'text-[9px]' : 'text-[10px]';
 
   const filesStat = (
-    <View className="flex-1 min-w-0 items-start px-3">
-      <Text className="text-on-surface-variant text-[10px] font-bold uppercase tracking-wider">{remainingLabel}</Text>
-      <Text className="text-on-surface text-[18px] font-semibold mt-1" style={{ fontVariant: ['tabular-nums'] }}>{itemsRemaining.toLocaleString()}</Text>
+    <View className={`flex-1 min-w-0 items-start ${statHorizontalPadding}`}>
+      <Text className={`text-on-surface-variant dark:text-on-surface-variant-dark ${labelTextSize} font-bold uppercase tracking-wider`}>{remainingLabel}</Text>
+      <Text className={`text-on-surface dark:text-on-surface-dark ${valueTextSize} font-semibold mt-1`} style={{ fontVariant: ['tabular-nums'] }}>{itemsRemaining.toLocaleString()}</Text>
     </View>
   );
   const speedStat = (
-    <View className="flex-1 min-w-0 items-start px-3 border-l border-border">
-      <Text className="text-on-surface-variant text-[10px] font-bold uppercase tracking-wider">{transferText.currentSpeed}</Text>
-      <Text className="text-on-surface text-[18px] font-semibold mt-1" style={{ fontVariant: ['tabular-nums'] }}>
-        {currentMediaMBps.toFixed(1)} <Text className="text-[11px]">MB/s</Text>
+    <View className={`flex-1 min-w-0 items-start ${statHorizontalPadding} border-l border-border dark:border-border-dark`}>
+      <Text className={`text-on-surface-variant dark:text-on-surface-variant-dark ${labelTextSize} font-bold uppercase tracking-wider`}>{transferText.currentSpeed}</Text>
+      <Text className={`text-on-surface dark:text-on-surface-dark ${valueTextSize} font-semibold mt-1`} style={{ fontVariant: ['tabular-nums'] }}>
+        {currentMediaMBps.toFixed(1)} <Text className={hasTransferredColumn ? 'text-[10px]' : 'text-[11px]'}>MB/s</Text>
+      </Text>
+    </View>
+  );
+  const transferredStat = transferredBytes === undefined ? null : (
+    <View className={`flex-1 min-w-0 items-start ${statHorizontalPadding} border-l border-border dark:border-border-dark`}>
+      <Text className={`text-on-surface-variant dark:text-on-surface-variant-dark ${labelTextSize} font-bold uppercase tracking-wider`}>Transferred</Text>
+      <Text
+        className={`text-on-surface dark:text-on-surface-dark ${valueTextSize} font-semibold mt-1`}
+        style={{ fontVariant: ['tabular-nums'] }}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.82}
+      >
+        {formatBytes(transferredBytes)}
       </Text>
     </View>
   );
   const timeStat = (
     <View
       testID={compact ? 'transfer-eta-compact' : 'transfer-eta-wide'}
-      className={compact ? 'min-w-0 items-start px-3 pt-3 mt-3 border-t border-border' : 'flex-1 min-w-0 items-start px-3 border-l border-border'}
+      className={compact ? 'min-w-0 items-start px-3 pt-3 mt-3 border-t border-border dark:border-border-dark' : 'flex-1 min-w-0 items-start px-3 border-l border-border dark:border-border-dark'}
     >
-      <Text className="text-on-surface-variant text-[10px] font-bold uppercase tracking-wider">{timeLabel}</Text>
+      <Text className="text-on-surface-variant dark:text-on-surface-variant-dark text-[10px] font-bold uppercase tracking-wider">{timeLabel}</Text>
       <Text className="text-[14px] leading-5 font-semibold mt-1 text-primary">
         {timeText}
       </Text>
       {timeHint && (
-        <Text className="text-on-surface-variant text-[11px] leading-4 mt-1">{timeHint}</Text>
+        <Text className="text-on-surface-variant dark:text-on-surface-variant-dark text-[11px] leading-4 mt-1">{timeHint}</Text>
       )}
     </View>
   );
 
   return (
-    <View testID="transfer-stats-card" className="bg-surface rounded-[18px] px-2 py-4 mb-4 border border-border">
+    <View testID="transfer-stats-card" className="bg-surface dark:bg-surface-dark rounded-[18px] px-2 py-4 mb-4 border border-border dark:border-border-dark">
       <View testID="transfer-stats-content" onLayout={measureContent}>
         <View className="flex-row">
           {filesStat}
+          {transferredStat}
           {speedStat}
           {!compact && timeStat}
         </View>
         {compact && timeStat}
-        {typeof processedFiles === 'number' && typeof totalFiles === 'number' && totalFiles > 0 && (
-          <View className="px-3 pt-3 mt-3 border-t border-border">
-            <View className="flex-row justify-between mb-2">
-              <Text className="text-on-surface-variant text-[10px] font-bold uppercase tracking-wider">File transfer</Text>
-              <Text className="text-on-surface-variant text-[11px] font-semibold" style={{ fontVariant: ['tabular-nums'] }}>
-                {Math.min(processedFiles, totalFiles).toLocaleString()} of {totalFiles.toLocaleString()} processed
-              </Text>
-            </View>
-            <View
-              accessible
-              accessibilityRole="progressbar"
-              accessibilityLabel="File transfer progress"
-              accessibilityValue={{ min: 0, max: totalFiles, now: Math.min(processedFiles, totalFiles) }}
-              className="h-1.5 rounded-full overflow-hidden"
-              style={{ backgroundColor: theme.colors.progressTrack }}
-            >
-              <View
-                className="h-full rounded-full bg-primary"
-                style={{ width: `${Math.min(100, Math.max(0, processedFiles / totalFiles * 100))}%` }}
-              />
-            </View>
-          </View>
-        )}
       </View>
     </View>
   );

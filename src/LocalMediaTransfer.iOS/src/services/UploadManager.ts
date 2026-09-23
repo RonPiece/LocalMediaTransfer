@@ -127,6 +127,7 @@ export class UploadManager {
     const preparationPolicy = resolvePreparationPolicy({
       requestedMode: options.preparationMode,
       nativeAvailable: nativeCapabilities.available,
+      selectedAssetCount: assets.length,
     });
     const diagnostics = new TransferDiagnostics(
       sessionRef,
@@ -170,6 +171,7 @@ export class UploadManager {
     let nativeRetryCount = 0;
     let peakNativeResidentMemoryBytes = 0;
     let preparationDurationMs = 0;
+    let preparationCompletedElapsedMs: number | undefined;
     let filenameResolutionDurationMs = 0;
     let preflightDurationMs = 0;
     let filenameResolutionAppleCount = 0;
@@ -191,6 +193,50 @@ export class UploadManager {
     const preparedOutcomeAssetIds = new Set<string>();
     const startTime = Date.now();
     const throughput = new ThroughputTracker(startTime);
+
+    const recordTransferHistory = async (
+      completionStatus: UploadSummary['completionStatus'],
+      reportedFailedFiles: number,
+      uploadDurationMs: number,
+    ) => {
+      const expandedFiles = readyFiles + outcomes.preparationFailedFiles;
+      const historyPayload = {
+        sessionId,
+        completedAt: Date.now(),
+        selectedAssets: assets.length,
+        expandedFiles,
+        selectedFiles: expandedFiles,
+        uploadedFiles: outcomes.uploadedFiles,
+        skippedFiles: outcomes.skippedFiles,
+        failedFiles: reportedFailedFiles,
+        selectedBytes: discoveredBytes,
+        selectedMediaBytes,
+        additionalComponentsBytes,
+        selectedMediaFiles,
+        additionalComponentsFiles,
+        uploadedBytes: outcomes.successfulUploadedBytes,
+        skippedBytes: outcomes.skippedBytes,
+        avoidedBytes: outcomes.avoidedBytes,
+        finalizationDuplicateBytes: outcomes.finalizationDuplicateBytes,
+        checkDurationMs: preparationDurationMs + preflightDurationMs,
+        uploadDurationMs,
+        totalDurationMs: uploadDurationMs,
+        averageSpeedMBps: throughput.current.averageMediaMBps,
+        peakSpeedMBps: throughput.current.peakMediaMBps,
+        retries: nativeRetryCount,
+        completionStatus,
+        files: historyFiles,
+      };
+      try {
+        await api.transferHistory(historyPayload);
+      } catch {
+        try {
+          await api.transferHistory({ ...historyPayload, files: [] });
+        } catch {
+          // Transfer completion and cancellation must not depend on optional history reporting.
+        }
+      }
+    };
 
     const currentAllUploadWorkersIdleMs = () => workerActivity.idleMilliseconds();
     const markUploadWorkerBusy = () => diagnostics.recordUploadWorkerStarted(workerActivity.busy());
@@ -237,6 +283,7 @@ export class UploadManager {
       thermalState,
       thermalControl: thermal.controlMode,
       preparationMode: preparationPolicy.effectiveMode,
+      automaticallyStreamsLargeSelection: preparationPolicy.automaticallyStreamsLargeSelection,
     });
 
     const diagnosticTransferValues = (reportedFailedFiles: number) => ({
@@ -378,6 +425,7 @@ export class UploadManager {
                   thermalState,
                   thermalControl: thermal.controlMode,
                   preparationMode: preparationPolicy.effectiveMode,
+                  automaticallyStreamsLargeSelection: preparationPolicy.automaticallyStreamsLargeSelection,
                   preparationActivity,
                 });
               },
@@ -568,6 +616,7 @@ export class UploadManager {
       const finishPreparation = () => {
         if (preparationComplete) return;
         preparationComplete = true;
+        preparationCompletedElapsedMs = Date.now() - startTime;
         preparationActivity = 'complete';
         diagnostics.markPreparationComplete(queue.maxDepth);
       };
@@ -1002,6 +1051,7 @@ export class UploadManager {
         skippedBytes: outcomes.skippedBytes,
         avoidedBytes: outcomes.avoidedBytes,
         finalizationDuplicateBytes: outcomes.finalizationDuplicateBytes,
+        preparationDurationMs: preparationCompletedElapsedMs,
         uploadDurationMs,
         averageMediaMBps: throughput.current.averageMediaMBps,
         peakMediaMBps: throughput.current.peakMediaMBps,
@@ -1009,41 +1059,7 @@ export class UploadManager {
         diagnosticReportAvailable: diagnostics.reportAvailable,
       };
 
-      const historyPayload = {
-          sessionId,
-          completedAt: Date.now(),
-          selectedAssets: assets.length,
-          expandedFiles,
-          selectedFiles: expandedFiles,
-          uploadedFiles: outcomes.uploadedFiles,
-          skippedFiles: outcomes.skippedFiles,
-          failedFiles: reportedFailedFiles,
-          selectedBytes: discoveredBytes,
-          selectedMediaBytes,
-          additionalComponentsBytes,
-          selectedMediaFiles,
-          additionalComponentsFiles,
-          uploadedBytes: outcomes.successfulUploadedBytes,
-          skippedBytes: outcomes.skippedBytes,
-          avoidedBytes: outcomes.avoidedBytes,
-          finalizationDuplicateBytes: outcomes.finalizationDuplicateBytes,
-          checkDurationMs: preparationDurationMs + preflightDurationMs,
-          uploadDurationMs: summary.uploadDurationMs,
-          totalDurationMs: summary.uploadDurationMs,
-          averageSpeedMBps: throughput.current.averageMediaMBps,
-          peakSpeedMBps: throughput.current.peakMediaMBps,
-          retries: nativeRetryCount,
-          files: historyFiles,
-        };
-      try {
-        await api.transferHistory(historyPayload);
-      } catch {
-        try {
-          await api.transferHistory({ ...historyPayload, files: [] });
-        } catch {
-          // Transfer completion must not depend on optional history reporting.
-        }
-      }
+      await recordTransferHistory(completionStatus, reportedFailedFiles, summary.uploadDurationMs);
 
       await api.logClientEvent(
         reportedFailedFiles > 0 ? 'ERROR' : 'INFO',
@@ -1075,6 +1091,9 @@ export class UploadManager {
         : transferFailure(error, 'upload', 'unexpected');
       diagnostics.updateTransfer(diagnosticTransferValues(outcomes.failedFiles));
       await diagnostics.finish(this.isCancelled && !failure.fatal ? 'cancelled' : 'fatal');
+      if (this.isCancelled && !failure.fatal) {
+        await recordTransferHistory('cancelled', outcomes.failedFiles, Date.now() - startTime);
+      }
       await api.logClientEvent('ERROR', 'transfer_exception', 'iPhone transfer stopped unexpectedly', {
         sessionId,
         errorType: failure.code,
@@ -1101,6 +1120,7 @@ export class UploadManager {
           skippedBytes: outcomes.skippedBytes,
           avoidedBytes: outcomes.avoidedBytes,
           finalizationDuplicateBytes: outcomes.finalizationDuplicateBytes,
+          preparationDurationMs: preparationCompletedElapsedMs,
           uploadDurationMs: Date.now() - startTime,
           averageMediaMBps: throughput.current.averageMediaMBps,
           peakMediaMBps: throughput.current.peakMediaMBps,

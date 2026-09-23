@@ -30,6 +30,8 @@
 #include "security/NativeSessionStore.hpp"
 #include "discovery/DiscoveryServer.hpp"
 #include "config/RuntimeEnvironment.hpp"
+#include "config/StoragePaths.hpp"
+#include "config/MetadataMigration.hpp"
 #include "common/Version.hpp"
 
 #ifdef _WIN32
@@ -560,9 +562,14 @@ int main(int argc, char* argv[]) {
         auto historyStore = std::make_shared<TransferHistoryStore>();
         std::shared_ptr<BenchmarkStore> benchmarkStore;
         
-        std::filesystem::path metaDir = std::filesystem::u8path(uploadDir) / "_dont_delete";
+        const std::filesystem::path uploadPath =
+            std::filesystem::u8path(uploadDir);
+        std::filesystem::path metaDir = uploadPath /
+            lmt::StoragePaths::MetadataDirectoryName;
+        lmt::StoragePaths::migrateMetadata(uploadPath);
         std::filesystem::create_directories(metaDir);
-        std::string hashDbPath = (metaDir / "hashes.db").u8string();
+        std::string hashDbPath =
+            (metaDir / lmt::StoragePaths::HashDatabaseName).u8string();
         hashEngine->openDatabase(hashDbPath);
 
         historyStore->open(historyDbPath);
@@ -622,7 +629,7 @@ int main(int argc, char* argv[]) {
                     return {false, "invalid session token"};
                 }
                 httpServer.setToken(data);
-                spdlog::info("Token set via pipe: {}****", data.substr(0, std::min(size_t(3), data.size())));
+                spdlog::info("Session token rotated via pipe");
                 pipeServer->sendTransferHistory(historyStore->recentSessionsJson());
             } else if (type == "request_transfer_history") {
                 pipeServer->sendTransferHistory(historyStore->recentSessionsJson());
@@ -639,15 +646,13 @@ int main(int argc, char* argv[]) {
                     return {false, "pairing request is no longer pending"};
                 }
             } else if (type == "revoke_device") {
-                if (!pairingStore->revoke(data)) {
+                if (!httpServer.revokeNativeDevice(data)) {
                     return {false, "trusted device was not found"};
                 }
-                httpServer.revokeNativeDevice(data);
                 pipeServer->sendTrustedDevices(pairingStore->devicesJson());
             } else if (type == "request_trusted_devices") {
                 pipeServer->sendTrustedDevices(pairingStore->devicesJson());
             } else if (type == "revoke_all_devices") {
-                pairingStore->revokeAll();
                 httpServer.revokeAllNativeSessions();
                 pipeServer->sendTrustedDevices(pairingStore->devicesJson());
             } else if (type == "begin_native_pairing") {

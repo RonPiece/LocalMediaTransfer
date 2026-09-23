@@ -139,5 +139,3 @@
         hydrate
     };
 })();
-
-console.log('Local icons loaded');

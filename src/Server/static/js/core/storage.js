@@ -42,7 +42,6 @@ window.UploadCacheManager = class {
     
     async performCleanup() {
         try {
-            console.log(`Starting cleanup for ${this.uploadedFiles.size} uploaded files`);
             
             this.clearFileInputs();
             this.revokeAllBlobUrls();
@@ -52,10 +51,8 @@ window.UploadCacheManager = class {
             this.uploadedFiles.clear();
             this.tempObjects.clear();
             
-            console.log('Upload cleanup completed');
             
         } catch (error) {
-            console.warn('Upload cleanup failed:', error);
         }
     }
     
@@ -126,12 +123,9 @@ window.UploadCacheManager = class {
             }
             
         } catch (error) {
-            console.warn('Browser cache cleanup failed:', error);
         }
     }
 };
 
 // Global instance
 window.uploadCacheManager = new window.UploadCacheManager();
-
-console.log('💾 Storage manager loaded');

@@ -77,7 +77,7 @@ export function useTrustedConnection({
       if (!state.certificateVerified) throw new Error('The desktop certificate was not verified.');
       setConnectionSecurity({ mode: 'https', tlsVersion: state.tlsVersion, certificateVerified: true });
       setIsServerConnected(true);
-      setAppState('dashboard');
+      setAppState('home');
       return true;
     } catch (error) {
       console.warn('Trusted reconnect failed; saved trust was preserved.');
@@ -100,7 +100,7 @@ export function useTrustedConnection({
               style: 'cancel',
               onPress: () => {
                 resetConnectionAttempt();
-                setAppState('connection');
+                setAppState('connect');
                 setIsConnecting(false);
                 setPairingDesktopName(null);
               },
@@ -109,7 +109,7 @@ export function useTrustedConnection({
               text: 'Scan QR',
               onPress: () => {
                 resetConnectionAttempt();
-                setAppState('connection');
+                setAppState('connect');
                 setIsConnecting(false);
                 setPairingDesktopName(null);
                 setTimeout(requestQrScan, 500);

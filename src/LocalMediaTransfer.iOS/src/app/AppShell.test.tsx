@@ -89,7 +89,7 @@ jest.mock('react-native-safe-area-context', () => {
   };
 });
 
-jest.mock('expo-media-library', () => ({
+jest.mock('expo-media-library/legacy', () => ({
   requestPermissionsAsync: jest.fn().mockResolvedValue({ status: 'granted' }),
   getAssetsAsync: jest.fn().mockResolvedValue({ assets: [], hasNextPage: false, endCursor: '' }),
   getAlbumsAsync: jest.fn().mockResolvedValue([{ id: '1', title: 'Favorites' }]),
@@ -116,11 +116,11 @@ describe('App Routing Logic', () => {
     (api.pingServer as jest.Mock).mockResolvedValue(true);
   });
 
-  it('verifies the server and transitions to the dashboard', async () => {
+  it('verifies the server and transitions to Home', async () => {
     const { getByText, getByPlaceholderText, queryByText } = await renderApp();
 
     // Make sure we are on the ConnectionScreen initially
-    expect(getByText('Connect to Desktop')).toBeTruthy();
+    expect(getByText('Pair with a receiver on your local network')).toBeTruthy();
 
     // Enter the secure endpoint, pinned fingerprint, and one-time QR token.
     fireEvent.press(getByText('Enter Address Manually'));
@@ -130,21 +130,21 @@ describe('App Routing Logic', () => {
     fireEvent.changeText(getByPlaceholderText('Session token from Windows'), 'qr-token');
 
     // Tap connect
-    fireEvent.press(getByText('Connect'));
+    fireEvent.press(getByText('Connect Manually'));
 
     await waitFor(() => expect(api.setConfig).toHaveBeenCalledWith('https://192.168.1.50:8443', 'qr-token'));
     expect(nativeCapabilities.configureSecureConnection).toHaveBeenCalledWith('https://192.168.1.50:8443', 'ab'.repeat(32));
 
     // Verify App state transitioned only after a successful health check
     await waitFor(() => {
-      expect(getByText('Dashboard')).toBeTruthy();
+      expect(getByText('Local Media Transfer')).toBeTruthy();
     });
 
     // The ConnectionScreen should be gone
-    expect(queryByText('Connect to Desktop')).toBeNull();
+    expect(queryByText('Pair with a receiver on your local network')).toBeNull();
   });
 
-  it('waits for the trusted credential before entering the dashboard after HTTPS pairing', async () => {
+  it('waits for the trusted credential before entering Home after HTTPS pairing', async () => {
     (api.pingServer as jest.Mock)
       .mockResolvedValueOnce(true)
       .mockResolvedValueOnce(false)
@@ -155,10 +155,10 @@ describe('App Routing Logic', () => {
     fireEvent.changeText(getByPlaceholderText('192.168.1.x'), '192.168.1.50');
     fireEvent.changeText(getByPlaceholderText('SHA-256 fingerprint from Windows'), 'ab'.repeat(32));
     fireEvent.changeText(getByPlaceholderText('Session token from Windows'), 'qr-token');
-    fireEvent.press(getByText('Connect'));
+    fireEvent.press(getByText('Connect Manually'));
 
     await waitFor(() => expect(api.requestPairing).toHaveBeenCalled());
-    await waitFor(() => expect(getByText('Dashboard')).toBeTruthy());
+    await waitFor(() => expect(getByText('Local Media Transfer')).toBeTruthy());
     expect(api.pingServer).toHaveBeenNthCalledWith(2, { notifyUnauthorized: false });
     expect(api.pingServer).toHaveBeenNthCalledWith(3, { notifyUnauthorized: false });
     expect(AsyncStorage.setItem).toHaveBeenCalledWith('lmt_last_server', expect.stringContaining('"serverId"'));
@@ -172,7 +172,7 @@ describe('App Routing Logic', () => {
     fireEvent.changeText(getByPlaceholderText('192.168.1.x'), '192.168.1.50');
     fireEvent.changeText(getByPlaceholderText('SHA-256 fingerprint from Windows'), 'ab'.repeat(32));
     fireEvent.changeText(getByPlaceholderText('Session token from Windows'), 'super-secret-qr-token');
-    fireEvent.press(getByText('Connect'));
+    fireEvent.press(getByText('Connect Manually'));
 
     await waitFor(() => expect(api.logClientEvent).toHaveBeenCalledWith(
       'WARN',
@@ -222,7 +222,7 @@ describe('App Routing Logic', () => {
 
     const screen = await renderApp();
 
-    expect(screen.getByText('Connect to Desktop')).toBeTruthy();
+    expect(screen.getByText('Pair with a receiver on your local network')).toBeTruthy();
     expect(nativeCapabilities.configureSecureConnection).not.toHaveBeenCalled();
   });
 
@@ -255,7 +255,7 @@ describe('App Routing Logic', () => {
 
     fireEvent.press(screen.getByText('Trusted Desktop'));
 
-    await waitFor(() => expect(screen.getByText('Dashboard')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Local Media Transfer')).toBeTruthy());
     expect(nativeCapabilities.configureSecureConnection).toHaveBeenCalledWith(
       'https://192.168.1.50:8443',
       'cd'.repeat(32),
@@ -265,9 +265,11 @@ describe('App Routing Logic', () => {
       'approved-device-credential',
     );
 
+    fireEvent.press(screen.getByLabelText('Connect'));
+    await waitFor(() => expect(screen.getByText('Pair with a receiver on your local network')).toBeTruthy());
     fireEvent.press(screen.getByLabelText('Disconnect'));
 
-    await waitFor(() => expect(screen.getByText('Connect to Desktop')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Pair with a receiver on your local network')).toBeTruthy());
     expect(AsyncStorage.removeItem).not.toHaveBeenCalledWith('lmt_last_server');
     expect(screen.queryByTestId('mock-camera')).toBeNull();
   });
@@ -315,11 +317,11 @@ describe('App Routing Logic', () => {
     const screen = await renderApp();
 
     expect(await screen.findByText('Expo Go uses HTTP and the compatibility uploader. Install the IPA for encrypted, faster native transfers.')).toBeTruthy();
-    fireEvent.press(await screen.findByText('Scan QR Code'));
+    fireEvent.press(await screen.findByText('Scan Receiver QR'));
     fireEvent.press(await screen.findByTestId('mock-camera'));
 
     await waitFor(() => expect(api.setConfig).toHaveBeenCalledWith('http://192.168.1.5:8080', 'abcxyz'));
-    await waitFor(() => expect(screen.getByText('Dashboard')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Local Media Transfer')).toBeTruthy());
     expect(alert).not.toHaveBeenCalledWith(
       'HTTP disabled',
       expect.any(String),
