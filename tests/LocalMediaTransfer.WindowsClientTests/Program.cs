@@ -16,6 +16,7 @@ var tests = new (string Name, Func<Task> Run)[]
     ("pinned TLS stalled body cancels", () => PinnedNetworkCancellation.RunAsync(false)),
     ("pinned TLS trickling body cancels", () => PinnedNetworkCancellation.RunAsync(true)),
     ("invalid approval identifiers are typed errors", InvalidApprovalIdentifiers),
+    ("authenticated unpair request", AuthenticatedUnpairRequest),
     ("DPAPI trust persistence and corruption", TrustPersistence)
 };
 
@@ -198,6 +199,57 @@ static async Task InvalidApprovalIdentifiers()
     throw new InvalidOperationException("Invalid approval IDs did not produce a typed error.");
 }
 
+static async Task AuthenticatedUnpairRequest()
+{
+    var receiver = new TrustedReceiver("server", "Receiver", "test", "192.168.1.20",
+        8443, new string('a', 64), new string('b', 64), DateTimeOffset.UtcNow);
+    HttpMethod? observedMethod = null;
+    string? observedPath = null;
+    string? observedCredential = null;
+    using (var client = new HttpClient(new CallbackHandler(request =>
+    {
+        observedMethod = request.Method;
+        observedPath = request.RequestUri?.AbsolutePath;
+        observedCredential = request.Headers.TryGetValues(
+            "X-Device-Credential", out var values) ? values.Single() : null;
+        return new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("{\"ok\":true,\"status\":\"unpaired\"}",
+                Encoding.UTF8, "application/json")
+        };
+    })) { BaseAddress = receiver.HttpsBaseUri })
+    {
+        Assert(await PairingClient.UnpairWithClientAsync(client, receiver,
+            CancellationToken.None), "Successful remote unpair was not reported.");
+    }
+    Assert(observedMethod == HttpMethod.Delete &&
+        observedPath == "/native/v1/devices/current",
+        "Unpair did not use the scoped DELETE endpoint.");
+    Assert(observedCredential == receiver.Credential,
+        "Unpair did not authenticate with the trusted-device credential.");
+
+    using var rejectedClient = new HttpClient(new CallbackHandler(_ =>
+        new HttpResponseMessage(HttpStatusCode.Unauthorized)
+        {
+            Content = new StringContent("{\"error\":\"credential_rejected\"}",
+                Encoding.UTF8, "application/json")
+        })) { BaseAddress = receiver.HttpsBaseUri };
+    Assert(!await PairingClient.UnpairWithClientAsync(rejectedClient, receiver,
+        CancellationToken.None),
+        "An already-revoked credential was not treated as remotely absent.");
+    using var malformedClient = new HttpClient(new CallbackHandler(_ =>
+        new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("{}", Encoding.UTF8, "application/json")
+        })) { BaseAddress = receiver.HttpsBaseUri };
+    try
+    {
+        await PairingClient.UnpairWithClientAsync(malformedClient, receiver, CancellationToken.None);
+        throw new InvalidOperationException("Missing unpair acknowledgement was accepted.");
+    }
+    catch (NativeClientException exception) when (exception.Code == "invalid_server_response") { }
+}
+
 static Task TrustPersistence()
 {
     string root = CreateTestRoot();
@@ -257,4 +309,11 @@ sealed class StubHandler(HttpResponseMessage response) : HttpMessageHandler
 {
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,
         CancellationToken cancellationToken) => Task.FromResult(response);
+}
+
+sealed class CallbackHandler(
+    Func<HttpRequestMessage, HttpResponseMessage> callback) : HttpMessageHandler
+{
+    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,
+        CancellationToken cancellationToken) => Task.FromResult(callback(request));
 }

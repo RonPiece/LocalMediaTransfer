@@ -37,7 +37,6 @@ window.SecurityManager = {
         // Verify token with server
         const valid = await this.verifyTokenWithServer(this.token);
         if (!valid) {
-            this.clearBrowserAuthorization(this.token);
             this.failureReason = 'invalid';
             this.showAccessError('invalid');
             this.disableControls();
@@ -130,8 +129,13 @@ window.SecurityManager = {
                 },
                 body: JSON.stringify({})
             });
-            if (!resp.ok) return false;
+            if (!resp.ok) {
+                if (resp.status === 401 || resp.status === 403)
+                    this.clearBrowserAuthorization(token);
+                return false;
+            }
             const j = await resp.json();
+            if (j.valid === false) this.clearBrowserAuthorization(token);
             return !!j.valid;
         } catch (e) {
             return false;

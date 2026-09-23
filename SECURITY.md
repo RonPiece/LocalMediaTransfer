@@ -44,6 +44,11 @@ and maintainer availability.
 - Windows first-pairing prompts display the same derived code concurrently on
   both computers. Sender and receiver confirmations may arrive in either order,
   but neither side alone creates trust.
+- Denied and approved Windows pairing requests are terminal and do not retain an
+  active pairing slot. Windows unpairing uses the saved credential over the
+  pinned receiver connection to revoke receiver-side trust and active grants;
+  local-only removal requires an explicit warning when remote revocation cannot
+  be confirmed.
 - The browser receives a random, upload-capable browser credential through an
   explicitly created five-minute, single-use fragment bootstrap. Creating a
   replacement invalidates the previous unused link. Successful exchange

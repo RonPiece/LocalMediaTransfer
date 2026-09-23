@@ -123,6 +123,7 @@ function createContext(navigatorOverrides = {}) {
         console,
         fetch: async () => ({ ok: true, json: async () => ({}) }),
         URLSearchParams,
+        AbortController,
         Date,
         Math,
         Array,
@@ -568,7 +569,28 @@ test('desktop-mode iPadOS is detected as iOS and mobile', () => {
     assert.equal(manager.isMobile, true);
 });
 
-test('medium iPadOS video uses the whole-file compatibility path', () => {
+test('browser-specific receiver tuning is applied before upload', async () => {
+    const { context, manager } = loadManager();
+    context.fetch = async () => ({
+        ok: true,
+        json: async () => ({
+            browser: {
+                mobile: { chunkSizeBytes: 8, parallelFiles: 2 },
+                desktop: { chunkSizeBytes: 16, parallelFiles: 3 }
+            },
+            desktop: { chunkSizeBytes: 4, parallelFiles: 6 },
+            shared: { singleFileMaxBytes: 100 }
+        })
+    });
+
+    await manager.loadServerConfig();
+
+    assert.equal(manager.chunkSizeBytes, 16);
+    assert.equal(manager.CONCURRENCY, 3);
+    assert.equal(manager.SINGLE_FILE_MAX_BYTES, 100);
+});
+
+test('iPadOS files above the server whole-file limit use chunked upload', () => {
     const { workers } = loadWorkers({
         userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15) AppleWebKit/605.1.15 Version/18.0 Safari/605.1.15',
         platform: 'MacIntel',
@@ -577,37 +599,29 @@ test('medium iPadOS video uses the whole-file compatibility path', () => {
     const manager = { SINGLE_FILE_MAX_BYTES: 100 * 1024 * 1024 };
     const meta = { file: { size: 192 * 1024 * 1024 } };
 
-    assert.equal(workers.shouldUseChunkedUpload(meta, manager), false);
+    assert.equal(workers.shouldUseChunkedUpload(meta, manager), true);
 });
 
-test('large iOS transfers are serialized', async () => {
-    const { workers } = loadWorkers({
-        userAgent: 'Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X)',
-        platform: 'iPad',
-        maxTouchPoints: 5
+test('server timing is accumulated without recording request metadata', () => {
+    const { workers } = loadWorkers();
+    const meta = {};
+    const originalNow = Date.now;
+    Date.now = () => 1250;
+    try {
+        workers.recordRequestTiming(meta, 1000, {
+            getResponseHeader: () => 'app;dur=40.5, write;dur=25, finalize;dur=10'
+        });
+    } finally {
+        Date.now = originalNow;
+    }
+    assert.deepEqual(JSON.parse(JSON.stringify(meta.transferTiming)), {
+        requestCount: 1,
+        requestDurationMs: 250,
+        serverDurationMs: 40.5,
+        serverWriteDurationMs: 25,
+        serverFinalizeDurationMs: 10,
+        maxRequestDurationMs: 250
     });
-    let active = 0;
-    let peak = 0;
-    let releaseFirst;
-    const firstGate = new Promise(resolve => { releaseFirst = resolve; });
-
-    const first = workers.withIOSLargeTransfer(async () => {
-        active++;
-        peak = Math.max(peak, active);
-        await firstGate;
-        active--;
-    });
-    const second = workers.withIOSLargeTransfer(async () => {
-        active++;
-        peak = Math.max(peak, active);
-        active--;
-    });
-
-    await Promise.resolve();
-    releaseFirst();
-    await Promise.all([first, second]);
-
-    assert.equal(peak, 1);
 });
 
 test('queue mutation is blocked while an upload is active', () => {
@@ -791,7 +805,7 @@ test('browser authorization survives refresh and clears after server rejection',
     const expired = loadSecurity(authorizationStore);
     expired.context.window.location.search = '';
     expired.context.window.location.hash = '';
-    expired.context.fetch = async () => ({ ok: false });
+    expired.context.fetch = async () => ({ ok: false, status: 403 });
     await expired.security.init();
 
     assert.equal(expired.security.failureReason, 'invalid');
@@ -1151,6 +1165,30 @@ test('chunk retries are counted through the retry callback', async () => {
     assert.equal(retries, 1);
 });
 
+test('chunk upload does not retry terminal client errors', async () => {
+    const { context, workers } = loadWorkers();
+    let attempts = 0;
+    context.XMLHttpRequest = class {
+        constructor() {
+            this.upload = {};
+            this.status = 409;
+            this.responseText = '{"error":"conflict"}';
+        }
+        open() {}
+        setRequestHeader() {}
+        getResponseHeader() { return ''; }
+        send() {
+            attempts++;
+            this.onload();
+        }
+    };
+
+    await assert.rejects(workers.uploadChunkXHR(
+        '/upload_chunk', {}, { size: 4 }, 1000, 2, () => {}, () => {}),
+    /conflict/);
+    assert.equal(attempts, 1);
+});
+
 test('client lifecycle telemetry includes the upload token', async () => {
     const { context, manager } = loadManager();
     let request = null;
@@ -1168,4 +1206,96 @@ test('client lifecycle telemetry includes the upload token', async () => {
     assert.equal(body.path, '/');
     assert.equal(body.href, undefined);
     assert.equal(JSON.stringify(body).includes('token=test'), false);
+});
+
+test('configuration wait owns the queue and prevents duplicate worker sets', async () => {
+    const { manager } = loadManager();
+    let release;
+    manager.configReady = new Promise(resolve => { release = resolve; });
+    manager.logClientEvent = () => {};
+    manager.fileQueue = [{ done: false, size: 5 }];
+    manager.CONCURRENCY = 1;
+    manager.setUploadUiState = () => {};
+    manager.startStallWatchdog = manager.stopStallWatchdog = () => {};
+    let calls = 0;
+    manager.worker = async () => { calls++; manager.fileQueue[0].done = true; };
+    const first = manager.uploadFiles();
+    await manager.uploadFiles();
+    assert.equal(manager.isUploadInProgress, true);
+    assert.equal(manager.addFiles([{ name: 'blocked.bin', size: 1 }]), false);
+    manager.resetFiles();
+    assert.equal(manager.fileQueue.length, 1);
+    release();
+    await first;
+    assert.equal(calls, 1);
+    assert.equal(manager.isUploadInProgress, false);
+});
+
+test('malformed, failed and stalled configuration uses bounded defaults', async () => {
+    for (const bad of [-1, 0, 1.5, '16', {}, Number.MAX_SAFE_INTEGER, Infinity]) {
+        const { context, manager } = loadManager();
+        context.fetch = async () => ({ ok: true, json: async () => ({
+            shared: { singleFileMaxBytes: bad },
+            browser: { desktop: { chunkSizeBytes: bad, parallelFiles: bad } }
+        }) });
+        await manager.loadServerConfig();
+        assert.equal(manager.SINGLE_FILE_MAX_BYTES, 100 * 1024 * 1024);
+        assert.equal(manager.chunkSizeBytes, 16 * 1024 * 1024);
+        assert.equal(manager.CONCURRENCY, 3);
+    }
+    const { context, manager } = loadManager();
+    context.fetch = async () => ({ ok: false });
+    await manager.loadServerConfig();
+    assert.equal(manager.CONCURRENCY, 3);
+    manager.CONFIG_TIMEOUT_MS = 1;
+    context.fetch = (_url, { signal }) => new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(new Error('aborted')));
+    });
+    await manager.loadServerConfig();
+    assert.equal(manager.chunkSizeBytes, 16 * 1024 * 1024);
+});
+
+test('all browsers chunk above the exact 100 MiB whole-request boundary', () => {
+    for (const userAgent of ['Desktop', 'iPhone', 'Android']) {
+        const { workers } = loadWorkers({ userAgent });
+        const manager = { SINGLE_FILE_MAX_BYTES: 100 * 1024 * 1024 };
+        for (const [size, chunked] of [[100 * 1024 * 1024, false],
+            [100 * 1024 * 1024 + 1, true], [101 * 1024 * 1024, true]]) {
+            assert.equal(workers.shouldUseChunkedUpload({ file: { size } }, manager), chunked);
+        }
+    }
+});
+
+test('final chunk requires explicit completion even on HTTP success', async () => {
+    for (const body of ['', '{}', 'null', '{"complete":false}', 'invalid']) {
+        const { workers } = loadWorkers();
+        workers.uploadChunkXHR = async () => body;
+        const meta = { file: { name: 'synthetic.bin', size: 1, slice: () => ({ size: 1 }) } };
+        await assert.rejects(workers.uploadChunked(meta, { chunkSizeBytes: 1 }), /invalid response/);
+    }
+});
+
+test('temporary verification failures retain saved browser authorization', async () => {
+    for (const response of [null, { ok: false, status: 503 }]) {
+        const saved = new Map([['lmt.browser.authorization.v1', 'browser-credential']]);
+        const { context, security } = loadSecurity(saved);
+        context.window.location.search = '';
+        context.fetch = async () => { if (!response) throw new Error('offline'); return response; };
+        await security.init();
+        assert.equal(security.isValid, false);
+        assert.equal(saved.get('lmt.browser.authorization.v1'), 'browser-credential');
+    }
+});
+
+test('timing parser allows only bounded known numeric phases and reset clears totals', () => {
+    const { workers } = loadWorkers();
+    assert.deepEqual(JSON.parse(JSON.stringify(workers.parseServerTiming(
+        'app;dur=1e308, write;dur=-1, finalize;dur=Infinity, secret;dur=12, decode;dur=2'))),
+    { decode: 2 });
+    const { manager } = loadManager();
+    manager.fileQueue = [{ transferTiming: { requestCount: 2, requestDurationMs: 20 } }];
+    assert.equal(manager.getTimingSummary().requestCount, 2);
+    manager.logClientEvent = () => {};
+    manager.resetFiles();
+    assert.equal(manager.getTimingSummary().requestCount, 0);
 });

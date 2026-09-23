@@ -52,6 +52,11 @@ pinned-HTTPS flow, and Browser transfer remains a compatibility option.
    Opening the link once creates a temporary browser-only session that survives
    refresh and reopening; create another one-time link for another device.
 
+On Windows, **Forget** first revokes the sender on the receiver over the pinned
+HTTPS connection, then removes the sender's local saved credential. If the
+receiver is unavailable, the app clearly asks whether to forget only the local
+copy. Denying or completing a pairing never blocks a new attempt as “pending.”
+
 ```mermaid
 flowchart LR
     iPhone["iPhone app"] -->|"Pinned HTTPS upload"| Server["Local C++ server"]
@@ -83,6 +88,9 @@ After opening the Windows app:
 The destination contains a `Local Media Transfer Data` folder for the local
 duplicate index and legacy upload metadata. It is application data rather than
 transferred media. Upgrades rename the older `_dont_delete` folder in place.
+If both folders already exist, independent files merge without overwriting
+collisions. The legacy SQLite database and its journals stay together in the
+old folder; the current duplicate index is rebuilt from transferred files.
 
 ### iPhone
 

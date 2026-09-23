@@ -628,6 +628,50 @@ Test-Feature "Upload" "Upload small text file (1KB)" `
     "Saved as: $($r.filename), size: $($r.size) bytes"
 }
 
+Test-Feature "Upload" "Upload responses expose sanitized server timing" `
+    "Browser diagnostics receive parse, write, finalize, and total server durations" {
+    $client = [System.Net.Http.HttpClient]::new()
+    $request = [System.Net.Http.HttpRequestMessage]::new(
+        [System.Net.Http.HttpMethod]::Post,
+        "$BaseUrl/upload_single")
+    $request.Headers.Add("X-Upload-Token", $Token)
+    $request.Headers.Add("X-Filename", [uri]::EscapeDataString("timing.bin"))
+    $multipart = [System.Net.Http.MultipartFormDataContent]::new()
+    $multipart.Add(
+        [System.Net.Http.ByteArrayContent]::new([byte[]](1, 2, 3, 4)),
+        "file",
+        "timing.bin")
+    $request.Content = $multipart
+    try {
+        $response = $client.SendAsync($request).GetAwaiter().GetResult()
+        try {
+            $body = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+            if (-not $response.IsSuccessStatusCode) {
+                throw "HTTP $([int]$response.StatusCode): $body"
+            }
+            $values = [System.Collections.Generic.IEnumerable[string]]$null
+            if (-not $response.Headers.TryGetValues("Server-Timing", [ref]$values)) {
+                throw "Missing Server-Timing response header"
+            }
+            $timing = [string]::Join(",", $values)
+            foreach ($metric in @("parse;dur=", "write;dur=", "finalize;dur=", "app;dur=")) {
+                if (-not $timing.Contains($metric)) { throw "Missing timing metric $metric" }
+            }
+            if ($timing -match "timing\.bin|token|filename") {
+                throw "Server-Timing exposed request metadata"
+            }
+            "Timing header: $timing"
+        }
+        finally {
+            $response.Dispose()
+        }
+    }
+    finally {
+        $request.Dispose()
+        $client.Dispose()
+    }
+}
+
 Test-Feature "Upload" "Upload medium binary file (100KB)" `
     "Tests binary data handling through multipart" {
     $content = Get-TestFileContent -SizeBytes (100 * 1024)
@@ -970,8 +1014,9 @@ Test-Feature "Config" "GET /config returns valid configuration" `
     $r = Invoke-RestMethod -Uri "$BaseUrl/config" -Method GET -TimeoutSec 5
     if (-not $r.mobile) { throw "Missing 'mobile' config section" }
     if (-not $r.desktop) { throw "Missing 'desktop' config section" }
+    if (-not $r.browser) { throw "Missing 'browser' config section" }
     if (-not $r.shared) { throw "Missing 'shared' config section" }
-    "Mobile chunk: $($r.mobile.chunkSizeBytes), Desktop chunk: $($r.desktop.chunkSizeBytes)"
+    "Mobile chunk: $($r.mobile.chunkSizeBytes), Desktop chunk: $($r.desktop.chunkSizeBytes), Browser desktop chunk: $($r.browser.desktop.chunkSizeBytes)"
 }
 
 Test-Feature "Config" "Config has required fields for upload workers" `
@@ -981,6 +1026,14 @@ Test-Feature "Config" "Config has required fields for upload workers" `
     foreach ($field in $required) {
         if ($null -eq $r.mobile.$field) { throw "Missing mobile.$field" }
         if ($null -eq $r.desktop.$field) { throw "Missing desktop.$field" }
+        if ($null -eq $r.browser.mobile.$field) { throw "Missing browser.mobile.$field" }
+        if ($null -eq $r.browser.desktop.$field) { throw "Missing browser.desktop.$field" }
+    }
+    if ($r.browser.mobile.chunkSizeBytes -ne 8388608 -or
+        $r.browser.mobile.parallelFiles -ne 2 -or
+        $r.browser.desktop.chunkSizeBytes -ne 16777216 -or
+        $r.browser.desktop.parallelFiles -ne 3) {
+        throw "Browser upload tuning does not match the comparison profiles."
     }
     if ($null -eq $r.shared.singleFileMaxBytes) { throw "Missing shared.singleFileMaxBytes" }
     "All required config fields present"

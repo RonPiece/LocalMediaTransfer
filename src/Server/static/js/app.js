@@ -6,7 +6,7 @@
 (async function initApp() {
     'use strict';
 
-    const assetVersion = '20260922.2';
+    const assetVersion = '20260923.1';
     window.LMT_FRONTEND_VERSION = assetVersion;
 
     // Module loading configuration

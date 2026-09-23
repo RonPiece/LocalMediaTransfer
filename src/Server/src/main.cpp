@@ -31,6 +31,7 @@
 #include "discovery/DiscoveryServer.hpp"
 #include "config/RuntimeEnvironment.hpp"
 #include "config/StoragePaths.hpp"
+#include "config/MetadataMigration.hpp"
 #include "common/Version.hpp"
 
 #ifdef _WIN32
@@ -563,44 +564,9 @@ int main(int argc, char* argv[]) {
         
         const std::filesystem::path uploadPath =
             std::filesystem::u8path(uploadDir);
-        const std::filesystem::path legacyMetaDir = uploadPath /
-            lmt::StoragePaths::LegacyMetadataDirectoryName;
         std::filesystem::path metaDir = uploadPath /
             lmt::StoragePaths::MetadataDirectoryName;
-        if (std::filesystem::exists(legacyMetaDir)) {
-            if (!std::filesystem::exists(metaDir)) {
-                std::error_code migrationError;
-                std::filesystem::rename(legacyMetaDir, metaDir, migrationError);
-                if (migrationError) {
-                    throw std::runtime_error(
-                        "Unable to migrate legacy Local Media Transfer data folder: " +
-                        migrationError.message());
-                }
-            } else {
-                // A prior interrupted/preview startup may already have created
-                // the new folder. Preserve every conflicting file and move only
-                // legacy entries whose destination does not exist.
-                for (const auto& entry :
-                    std::filesystem::directory_iterator(legacyMetaDir)) {
-                    const auto target = metaDir / entry.path().filename();
-                    if (std::filesystem::exists(target)) continue;
-                    std::error_code migrationError;
-                    std::filesystem::rename(entry.path(), target, migrationError);
-                    if (migrationError) {
-                        throw std::runtime_error(
-                            "Unable to merge legacy Local Media Transfer data: " +
-                            migrationError.message());
-                    }
-                }
-                std::error_code cleanupError;
-                if (std::filesystem::is_empty(legacyMetaDir, cleanupError) &&
-                    !cleanupError) {
-                    std::filesystem::remove(legacyMetaDir, cleanupError);
-                }
-            }
-            spdlog::info("Migrated legacy upload metadata to '{}'",
-                lmt::StoragePaths::MetadataDirectoryName);
-        }
+        lmt::StoragePaths::migrateMetadata(uploadPath);
         std::filesystem::create_directories(metaDir);
         std::string hashDbPath =
             (metaDir / lmt::StoragePaths::HashDatabaseName).u8string();
@@ -663,7 +629,7 @@ int main(int argc, char* argv[]) {
                     return {false, "invalid session token"};
                 }
                 httpServer.setToken(data);
-                spdlog::info("Token set via pipe: {}****", data.substr(0, std::min(size_t(3), data.size())));
+                spdlog::info("Session token rotated via pipe");
                 pipeServer->sendTransferHistory(historyStore->recentSessionsJson());
             } else if (type == "request_transfer_history") {
                 pipeServer->sendTransferHistory(historyStore->recentSessionsJson());
@@ -680,15 +646,13 @@ int main(int argc, char* argv[]) {
                     return {false, "pairing request is no longer pending"};
                 }
             } else if (type == "revoke_device") {
-                if (!pairingStore->revoke(data)) {
+                if (!httpServer.revokeNativeDevice(data)) {
                     return {false, "trusted device was not found"};
                 }
-                httpServer.revokeNativeDevice(data);
                 pipeServer->sendTrustedDevices(pairingStore->devicesJson());
             } else if (type == "request_trusted_devices") {
                 pipeServer->sendTrustedDevices(pairingStore->devicesJson());
             } else if (type == "revoke_all_devices") {
-                pairingStore->revokeAll();
                 httpServer.revokeAllNativeSessions();
                 pipeServer->sendTrustedDevices(pairingStore->devicesJson());
             } else if (type == "begin_native_pairing") {

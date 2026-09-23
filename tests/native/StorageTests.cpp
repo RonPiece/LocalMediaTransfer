@@ -1,5 +1,6 @@
 #include "io/FileWriter.hpp"
 #include "io/HashEngine.hpp"
+#include "config/MetadataMigration.hpp"
 #include <openssl/rand.h>
 #include <filesystem>
 #include <fstream>
@@ -120,12 +121,15 @@ static void storageFailures(const fs::path& path) {
     limits.maxActiveFiles = limits.maxOwnerFiles = 1;
     FileWriter writer(path.u8string(), std::make_shared<HashEngine>(),
         lmt::FilenameConflictPolicy::KeepBoth, limits);
-    for (const char* operation : {"copy", "view-flush", "file-flush", "publish"}) {
+    for (const char* operation : {"copy", "view-flush", "view-unmap", "file-flush", "publish"}) {
         writer.failStorageOperation = [=](const char* stage) { return std::strcmp(stage, operation) == 0; };
         const std::string id = std::string("a-") + operation;
         require(writer.initFile(id, id + ".bin", 3), "Previous failure leaked admission");
         const auto written = writer.writeChunk(id, 0, "abc", 3);
-        if (std::strcmp(operation, "file-flush") == 0 || std::strcmp(operation, "publish") == 0) {
+        if (std::strcmp(operation, "view-flush") == 0 ||
+            std::strcmp(operation, "view-unmap") == 0 ||
+            std::strcmp(operation, "file-flush") == 0 ||
+            std::strcmp(operation, "publish") == 0) {
             require(written == ChunkWriteStatus::Success, "Unexpected chunk failure");
             require(writer.finalizeFileResult(id).disposition == FileFinalizeDisposition::Error,
                 "Finalization storage failure published success");
@@ -156,6 +160,89 @@ static void storageFailures(const fs::path& path) {
         "Incomplete file finalized");
     require(writer.initFile("a-after-short", "next.bin", 3), "Incomplete finalization leaked reservation");
     writer.abortFile("a-after-short");
+}
+
+static void mappingWindowReuse(const fs::path& path) {
+    UploadLimits limits;
+    limits.minFreeBytes = 0;
+    FileWriter writer(path.u8string(), std::make_shared<HashEngine>(),
+        lmt::FilenameConflictPolicy::KeepBoth, limits);
+    int viewFlushes = 0;
+    writer.failStorageOperation = [&](const char* stage) {
+        if (std::strcmp(stage, "view-flush") == 0) ++viewFlushes;
+        return false;
+    };
+    constexpr size_t ChunkBytes = 1024 * 1024;
+    std::string chunk(ChunkBytes, 'm');
+    require(writer.initFile("a-window", "window.bin", 4 * ChunkBytes, 4),
+        "Mapping reuse setup failed");
+    for (uint64_t index = 0; index < 4; ++index) {
+        require(writer.writeChunk(
+            "a-window", index, chunk.data(), chunk.size()) ==
+            ChunkWriteStatus::Success,
+            "Mapping reuse write failed");
+    }
+    require(viewFlushes == 0, "A mapping window was flushed per chunk");
+    require(writer.finalizeFileResult("a-window").disposition ==
+        FileFinalizeDisposition::Saved,
+        "Mapping reuse finalization failed");
+    require(viewFlushes == 1, "Finalization did not flush one shared mapping window");
+
+    // An unaligned chunk crosses the 64 MiB boundary, then finalization moves
+    // the owning handle. Verify disk contents as well as the flush count.
+    constexpr size_t BoundaryChunk = 33 * ChunkBytes;
+    std::string large(BoundaryChunk, 'b');
+    require(writer.initFile("a-boundary", "boundary.bin", 2 * BoundaryChunk, 2), "Boundary setup failed");
+    require(writer.writeChunk("a-boundary", 1, large.data(), large.size()) == ChunkWriteStatus::OutOfOrder,
+        "Out-of-order write accepted");
+    require(writer.writeChunk("a-boundary", 0, large.data(), large.size()) == ChunkWriteStatus::Success,
+        "Boundary first write failed");
+    require(writer.writeChunk("a-boundary", 0, large.data(), large.size()) == ChunkWriteStatus::AlreadyAccepted,
+        "Duplicate write was not idempotent");
+    require(writer.writeChunk("a-boundary", 1, large.data(), large.size()) == ChunkWriteStatus::Success,
+        "Boundary crossing write failed");
+    require(viewFlushes == 2, "Window switch did not flush exactly once");
+    auto saved = writer.finalizeFileResult("a-boundary");
+    require(saved.disposition == FileFinalizeDisposition::Saved && viewFlushes == 3,
+        "Boundary finalization failed");
+    require(saved.sha256 == HashEngine::computeFileHash((path / "boundary.bin").u8string()),
+        "Boundary data does not match the streaming hash");
+
+    writer.failStorageOperation = [](const char* stage) { return std::strcmp(stage, "view-flush") == 0; };
+    require(writer.initFile("a-boundary-fault", "fault.bin", 2 * BoundaryChunk, 2), "Boundary fault setup failed");
+    require(writer.writeChunk("a-boundary-fault", 0, large.data(), large.size()) == ChunkWriteStatus::Success,
+        "First window write failed");
+    require(writer.writeChunk("a-boundary-fault", 1, large.data(), large.size()) == ChunkWriteStatus::StorageError,
+        "Boundary flush failure was ignored");
+    require(!fs::exists(path / "fault.bin") && temporaryFiles(path) == 0,
+        "Boundary failure published or leaked data");
+}
+
+static void metadataMigration(const fs::path& path) {
+    const auto legacy = path / lmt::StoragePaths::LegacyMetadataDirectoryName;
+    const auto current = path / lmt::StoragePaths::MetadataDirectoryName;
+    fs::create_directories(legacy);
+    std::ofstream(legacy / "hashes.db") << "legacy database";
+    std::ofstream(legacy / "hashes.db-wal") << "legacy journal";
+    fs::create_directories(current);
+    std::ofstream(current / "hashes.db") << "current database";
+    std::ofstream(legacy / "collision.txt") << "legacy";
+    std::ofstream(current / "collision.txt") << "current";
+    std::ofstream(legacy / "unique.txt") << "unique";
+    lmt::StoragePaths::migrateMetadata(path);
+    lmt::StoragePaths::migrateMetadata(path);
+    require(fs::exists(legacy / "hashes.db-wal") && !fs::exists(current / "hashes.db-wal"),
+        "Migration mixed SQLite database families");
+    require(fs::exists(legacy / "hashes.db") && fs::exists(legacy / "collision.txt"),
+        "Migration removed colliding legacy data");
+    require(fs::exists(current / "unique.txt") && !fs::exists(legacy / "unique.txt"),
+        "Migration did not move independent data");
+    const auto fresh = path / "rename";
+    fs::create_directories(fresh / lmt::StoragePaths::LegacyMetadataDirectoryName);
+    std::ofstream(fresh / lmt::StoragePaths::LegacyMetadataDirectoryName / "hashes.db-wal") << "journal";
+    lmt::StoragePaths::migrateMetadata(fresh);
+    require(fs::exists(fresh / lmt::StoragePaths::MetadataDirectoryName / "hashes.db-wal"),
+        "Directory rename lost recovery state");
 }
 
 static void inventoryPaging(const fs::path& root) {
@@ -214,6 +301,8 @@ int main() {
         sessionExhaustion(directory.path / "sessions");
         limitsAndCleanup(directory.path / "limits");
         storageFailures(directory.path / "faults");
+        mappingWindowReuse(directory.path / "mapping-window");
+        metadataMigration(directory.path / "metadata-migration");
         const auto cleanup = directory.path / "cleanup";
         fs::create_directories(cleanup);
         const auto orphan = cleanup / (".lmt-upload-" + std::string(64, 'a') + ".tmp");

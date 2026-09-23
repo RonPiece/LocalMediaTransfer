@@ -47,6 +47,30 @@
 using json = nlohmann::json;
 namespace fs = std::filesystem;
 
+static double elapsedMilliseconds(
+    const std::chrono::steady_clock::time_point& started) {
+    return std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - started).count();
+}
+
+static void addServerTiming(
+    crow::response& response,
+    const std::chrono::steady_clock::time_point& requestStarted,
+    const std::vector<std::pair<const char*, double>>& phases) {
+    std::ostringstream value;
+    value << std::fixed << std::setprecision(2);
+    bool first = true;
+    for (const auto& [name, duration] : phases) {
+        if (!first) value << ", ";
+        first = false;
+        value << name << ";dur=" << std::max(0.0, duration);
+    }
+    if (!first) value << ", ";
+    value << "app;dur=" << std::max(0.0, elapsedMilliseconds(requestStarted));
+    response.add_header("Server-Timing", value.str());
+    response.add_header("Access-Control-Expose-Headers", "Server-Timing");
+}
+
 static std::vector<unsigned char> decodeBase64(const std::string& encoded) {
     if (encoded.empty()) return {};
     // Keep input immutable; EVP_DecodeUpdate ignores wrapped whitespace.
@@ -428,6 +452,19 @@ void HttpServer::setupRoutes(CrowApp& app) {
                 {"retryable", false}}});
     });
 
+    CROW_ROUTE(app, "/native/v1/devices/current").methods("DELETE"_method)
+    ([this, nativeResponse](const crow::request& req) {
+        if (!m_nativeSessionStore) {
+            return nativeResponse(NativeSessionStore::Result{404,
+                json{{"error", "native_transfer_unavailable"},
+                     {"message", "Native Windows transfer is unavailable."},
+                     {"retryable", false}}});
+        }
+        return nativeResponse(m_nativeSessionStore->revokeCurrentDevice(
+            req.get_header_value("X-Device-Credential"),
+            req.remote_ip_address));
+    });
+
     CROW_ROUTE(app, "/native/v1/transfers/requests").methods("POST"_method)
     ([this, nativeResponse](const crow::request& req) {
         if (!m_nativeSessionStore || req.body.size() > 512 * 1024) {
@@ -726,6 +763,18 @@ void HttpServer::setupRoutes(CrowApp& app) {
                 {"chunkSizeBytes", lmt::TransferLimits::NativeChunkBytes},
                 {"parallelFiles", 6},
                 {"sequentialChunksPerFile", true},
+            }},
+            {"browser", {
+                {"mobile", {
+                    {"chunkSizeBytes", lmt::TransferLimits::NativeChunkBytes},
+                    {"parallelFiles", 2},
+                    {"sequentialChunksPerFile", true},
+                }},
+                {"desktop", {
+                    {"chunkSizeBytes", 16ULL * 1024ULL * 1024ULL},
+                    {"parallelFiles", 3},
+                    {"sequentialChunksPerFile", true},
+                }}
             }},
             {"shared", {
                 {"singleFileMaxBytes", lmt::TransferLimits::WholeFileBytes},
@@ -1172,6 +1221,7 @@ void HttpServer::setupRoutes(CrowApp& app) {
     CROW_ROUTE(app, "/upload_single")
     .methods("POST"_method)
     ([this](const crow::request& req) {
+        const auto requestStarted = std::chrono::steady_clock::now();
         const std::string encodedHeaderFilename = req.get_header_value("X-Filename");
         const std::string headerFilename = urlDecode(encodedHeaderFilename);
 
@@ -1201,7 +1251,9 @@ void HttpServer::setupRoutes(CrowApp& app) {
             }
             const bool skipExactDuplicates =
                 skipExactDuplicatesForRequest(req);
+            const auto parseStarted = std::chrono::steady_clock::now();
             crow::multipart::message msg(req);
+            const double parseDurationMs = elapsedMilliseconds(parseStarted);
 
             spdlog::info("Multipart message parsed, {} parts found", msg.parts.size());
 
@@ -1266,13 +1318,20 @@ void HttpServer::setupRoutes(CrowApp& app) {
                     spdlog::info("Initializing file '{}' with id '{}', size {} bytes", 
                                 filename, fileId, part.body.size());
 
-                    if (m_fileWriter->initFile(
+                    const auto initStarted = std::chrono::steady_clock::now();
+                    const bool initialized = m_fileWriter->initFile(
                             fileId,
                             filename,
                             part.body.size(),
                             1,
-                            skipExactDuplicates)) {
-                        if (m_fileWriter->writeChunk(fileId, 0, part.body.data(), part.body.size()) !=
+                            skipExactDuplicates);
+                    const double initDurationMs = elapsedMilliseconds(initStarted);
+                    if (initialized) {
+                        const auto writeStarted = std::chrono::steady_clock::now();
+                        const auto writeStatus = m_fileWriter->writeChunk(
+                            fileId, 0, part.body.data(), part.body.size());
+                        const double writeDurationMs = elapsedMilliseconds(writeStarted);
+                        if (writeStatus !=
                             ChunkWriteStatus::Success) {
                             spdlog::error("writeChunk failed for '{}'", filename);
                             json err = {{"error", "Failed to write file data"}, {"code", 500}};
@@ -1281,8 +1340,11 @@ void HttpServer::setupRoutes(CrowApp& app) {
                             return res;
                         }
 
+                        const auto finalizeStarted = std::chrono::steady_clock::now();
                         FileFinalizeResult finalizeResult =
                             m_fileWriter->finalizeFileResult(fileId);
+                        const double finalizeDurationMs =
+                            elapsedMilliseconds(finalizeStarted);
                         if (finalizeResult.disposition ==
                             FileFinalizeDisposition::NameConflict) {
                             json err = {
@@ -1360,6 +1422,12 @@ void HttpServer::setupRoutes(CrowApp& app) {
                         };
                         res.code = 200;
                         res.body = success.dump();
+                        addServerTiming(res, requestStarted, {
+                            {"parse", parseDurationMs},
+                            {"init", initDurationMs},
+                            {"write", writeDurationMs},
+                            {"finalize", finalizeDurationMs}
+                        });
                         return res;
                     } else {
                         spdlog::error("initFile failed for '{}' (id: {})", filename, fileId);
@@ -1475,6 +1543,7 @@ void HttpServer::setupRoutes(CrowApp& app) {
     CROW_ROUTE(app, "/upload_chunk")
     .methods("POST"_method)
     ([this](const crow::request& req) {
+        const auto requestStarted = std::chrono::steady_clock::now();
         crow::response res;
         res.add_header("Access-Control-Allow-Origin", "*");
         res.add_header("Content-Type", "application/json; charset=utf-8");
@@ -1526,6 +1595,7 @@ void HttpServer::setupRoutes(CrowApp& app) {
             }
 
             // Decode and validate the first body before reserving disk space.
+            const auto decodeStarted = std::chrono::steady_clock::now();
             std::vector<unsigned char> decodedChunk;
             const bool base64Encoded =
                 req.get_header_value("X-Content-Transfer-Encoding") == "base64";
@@ -1536,21 +1606,27 @@ void HttpServer::setupRoutes(CrowApp& app) {
                 chunkData = reinterpret_cast<const char*>(decodedChunk.data());
                 chunkSize = decodedChunk.size();
             }
+            const double decodeDurationMs = elapsedMilliseconds(decodeStarted);
             if (chunkSize == 0 || chunkSize > fileSize || chunkSize > lmt::TransferLimits::MaxChunkBytes) {
                 res.code = 400;
                 res.body = json{{"error", "Invalid chunk size"}}.dump();
                 return res;
             }
             const auto storageId = authorization->ownerPrefix + fileId;
+            double initDurationMs = 0.0;
             if (chunkIndex == 0) {
-                if (!m_fileWriter->initFile(
+                const auto initStarted = std::chrono::steady_clock::now();
+                const bool initialized = m_fileWriter->initFile(
                         storageId,
                         filename,
                         fileSize,
                         totalChunks,
-                        skipExactDuplicates)) {
+                        skipExactDuplicates);
+                initDurationMs = elapsedMilliseconds(initStarted);
+                if (!initialized) {
                     res.code = 409;
                     res.body = json{{"error", "Receiver could not start this file. Restart its upload; if it still fails, check file-size limits, free space and folder access, and wait for other uploads to finish."}}.dump();
+                    addServerTiming(res, requestStarted, {{"decode", decodeDurationMs}, {"init", initDurationMs}});
                     return res;
                 }
             }
@@ -1582,6 +1658,8 @@ void HttpServer::setupRoutes(CrowApp& app) {
                     res.code = 500;
                     res.body = json{{"error", "Receiver could not write this file. Check free space and folder access, then restart its upload."}}.dump();
                 }
+                addServerTiming(res, requestStarted, {{"decode", decodeDurationMs},
+                    {"init", initDurationMs}, {"write", writeDurationMs}});
                 return res;
             }
 
@@ -1608,6 +1686,8 @@ void HttpServer::setupRoutes(CrowApp& app) {
                         res.code = 503;
                         res.add_header("Retry-After", "1");
                         res.body = json{{"error", "Upload is still finalizing"}}.dump();
+                        addServerTiming(res, requestStarted, {{"write", writeDurationMs},
+                            {"finalize", finalizeDurationMs}});
                         return res;
                 }
                 if (finalizeResult.disposition ==
@@ -1626,6 +1706,8 @@ void HttpServer::setupRoutes(CrowApp& app) {
                         FileFinalizeDisposition::Duplicate) {
                     res.code = 400;
                     res.body = json{{"error", "Receiver could not finish saving this file. Check free space and folder access, then restart its upload."}}.dump();
+                    addServerTiming(res, requestStarted, {{"write", writeDurationMs},
+                        {"finalize", finalizeDurationMs}});
                     return res;
                 }
 
@@ -1700,6 +1782,12 @@ void HttpServer::setupRoutes(CrowApp& app) {
 
             res.code = 200;
             res.body = response.dump();
+            addServerTiming(res, requestStarted, {
+                {"decode", decodeDurationMs},
+                {"init", initDurationMs},
+                {"write", writeDurationMs},
+                {"finalize", finalizeDurationMs}
+            });
             return res;
 
         } catch (const std::exception& e) {
@@ -1953,12 +2041,14 @@ bool HttpServer::denyNativeTransfer(const std::string& requestId) {
     return m_nativeSessionStore && m_nativeSessionStore->denyTransfer(requestId);
 }
 
-void HttpServer::revokeNativeDevice(const std::string& deviceId) {
-    if (m_nativeSessionStore) m_nativeSessionStore->revokeDevice(deviceId);
+bool HttpServer::revokeNativeDevice(const std::string& deviceId) {
+    return m_nativeSessionStore ? m_nativeSessionStore->revokeDevice(deviceId)
+        : m_pairingStore && m_pairingStore->revoke(deviceId);
 }
 
 void HttpServer::revokeAllNativeSessions() {
     if (m_nativeSessionStore) m_nativeSessionStore->revokeAll();
+    else if (m_pairingStore) m_pairingStore->revokeAll();
 }
 
 bool HttpServer::validateSessionToken(const std::string& token) const {

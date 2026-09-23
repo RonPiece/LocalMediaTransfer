@@ -38,6 +38,7 @@ credential, and a new 256-bit nonce. Pairing uses:
 - `POST /native/v1/pairing/requests/{requestId}/confirm`
 - `POST /native/v1/pairing/requests/{requestId}/status`
 - `DELETE /native/v1/pairing/requests/{requestId}`
+- `DELETE /native/v1/devices/current`
 
 The pairing-only HTTPS client accepts the currently valid self-signed leaf only
 long enough to capture it. It is isolated from normal HTTP clients. Both sides
@@ -69,7 +70,19 @@ has no bypass; the user must forget and pair again.
 
 Limits are five pairing attempts per source per ten minutes, five pending
 globally, and one pending per client ID. Pairing is rejected outside local
-receiver subnets or when the window is closed/expired.
+receiver subnets or when the window is closed/expired. Only Pending,
+SenderConfirmed, and ReceiverConfirmed requests consume those active slots.
+Denied and Approved are terminal results: they remain briefly available for
+status polling but do not block a new user-initiated pairing attempt.
+
+The sender's Forget action first calls `DELETE /native/v1/devices/current` over
+certificate-pinned HTTPS with its long-term device credential. The receiver
+revokes the matching credential, cancels its active transfer grants, removes
+retained pairing state for that device, and refreshes the trusted-device UI.
+The sender removes its local DPAPI-protected credential after confirmed remote
+revocation. If the receiver cannot be contacted securely, the user must
+explicitly choose whether to forget only the local copy; the UI warns that the
+receiver may still retain the trust record.
 
 ## Transfer authorization
 

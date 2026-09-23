@@ -120,6 +120,46 @@ public sealed class PairingClient
             using (await ReadJsonAsync(response, cancellationToken)) { }
     }
 
+    public async Task<bool> UnpairAsync(TrustedReceiver receiver,
+        CancellationToken cancellationToken)
+    {
+        using HttpClient client = NativeSecurity.CreatePinnedClient(
+            receiver.HttpsBaseUri, receiver.CertificateFingerprint);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(12));
+        try
+        {
+            return await UnpairWithClientAsync(client, receiver, timeout.Token);
+        }
+        catch (OperationCanceledException exception) when (
+            !cancellationToken.IsCancellationRequested)
+        {
+            throw new NativeClientException("unpair_timeout",
+                "The receiver did not answer the unpair request.", true, exception);
+        }
+    }
+
+    internal static async Task<bool> UnpairWithClientAsync(HttpClient client,
+        TrustedReceiver receiver, CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Delete,
+            "/native/v1/devices/current");
+        request.Headers.Add("X-Device-Credential", receiver.Credential);
+        using HttpResponseMessage response = await client.SendAsync(request,
+            cancellationToken);
+        if (response.StatusCode == HttpStatusCode.Unauthorized)
+            return false;
+        using JsonDocument result = await ReadJsonAsync(response, cancellationToken);
+        if (result.RootElement.ValueKind != JsonValueKind.Object ||
+            !result.RootElement.TryGetProperty("ok", out var ok) ||
+            ok.ValueKind != JsonValueKind.True ||
+            RequiredString(result.RootElement, "status") != "unpaired")
+            throw new NativeClientException("invalid_server_response",
+                "The receiver did not confirm unpairing.");
+        return true;
+    }
+
     internal static async Task<JsonDocument> ReadJsonAsync(HttpResponseMessage response,
         CancellationToken cancellationToken, bool allowForbidden = false)
     {

@@ -80,7 +80,7 @@ public:
     bool denyNativePairing(const std::string& requestId);
     bool approveNativeTransfer(const std::string& requestId);
     bool denyNativeTransfer(const std::string& requestId);
-    void revokeNativeDevice(const std::string& deviceId);
+    bool revokeNativeDevice(const std::string& deviceId);
     void revokeAllNativeSessions();
     
     /**

@@ -91,6 +91,14 @@ credential. The credential may request transfer approval but cannot upload;
 every Windows transfer receives a separate exact-manifest grant. See
 [Native Windows Transfer Protocol v1](NATIVE_WINDOWS_PROTOCOL.md).
 
+Rejected and completed pairing requests are terminal and never block an
+immediate retry; only a genuinely active comparison can report that pairing is
+already pending. Forgetting a Windows receiver performs an authenticated,
+certificate-pinned receiver revocation before deleting the sender's saved
+credential. When the receiver is offline or cannot be authenticated, the sender
+offers a clearly labeled local-only removal instead of silently claiming that
+both sides were unpaired.
+
 The GUI session token and an approved-device credential are separate
 authentication methods. Regenerating the QR/session token invalidates QR and
 manual clients using that token, but intentionally does not revoke approved

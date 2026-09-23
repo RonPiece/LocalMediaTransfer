@@ -242,6 +242,7 @@ internal sealed class BenchmarkClient : IDisposable
         multipart.Add(fileContent, "file", file.Name);
         using var request = CreateRequest(HttpMethod.Post, "upload_single");
         request.Headers.Add("X-Filename", Uri.EscapeDataString(file.Name));
+        request.Headers.Add("X-Skip-Duplicates", "false");
         request.Content = multipart;
 
         using HttpResponseMessage response = await _http.SendAsync(
@@ -303,6 +304,7 @@ internal sealed class BenchmarkClient : IDisposable
                 request.Headers.Add("X-Chunk-Index", chunkIndex.ToString());
                 request.Headers.Add("X-Total-Chunks", totalChunks.ToString());
                 request.Headers.Add("X-File-Size", file.SizeBytes.ToString());
+                request.Headers.Add("X-Skip-Duplicates", "false");
                 request.Content = new ByteArrayContent(buffer, 0, read);
                 request.Content.Headers.ContentType =
                     new MediaTypeHeaderValue("application/octet-stream");

@@ -652,9 +652,15 @@ internal static class TestHarness
         AssertEqual(HttpStatusCode.Forbidden, replaced.StatusCode,
             "Replacing a browser bootstrap left the previous link usable.");
 
-        using HttpResponseMessage first = await http.PostAsJsonAsync(
-            "/exchange_bootstrap",
-            new { bootstrap });
+        HttpResponseMessage[] exchanges = await Task.WhenAll(
+            http.PostAsJsonAsync("/exchange_bootstrap", new { bootstrap }),
+            http.PostAsJsonAsync("/exchange_bootstrap", new { bootstrap }));
+        AssertEqual(1, exchanges.Count(value => value.IsSuccessStatusCode),
+            "Concurrent bootstrap exchange did not have exactly one winner.");
+        using HttpResponseMessage first = exchanges.Single(value => value.IsSuccessStatusCode);
+        using HttpResponseMessage loser = exchanges.Single(value => !value.IsSuccessStatusCode);
+        AssertEqual(HttpStatusCode.Forbidden, loser.StatusCode,
+            "Concurrent bootstrap replay was not rejected.");
         first.EnsureSuccessStatusCode();
         await pipe.WaitForBrowserLinkConsumedAsync(TimeSpan.FromSeconds(5));
         using JsonDocument firstBody = JsonDocument.Parse(
@@ -694,6 +700,16 @@ internal static class TestHarness
             new { bootstrap });
         AssertEqual(HttpStatusCode.Forbidden, replay.StatusCode,
             "One-time browser bootstrap was accepted twice.");
+
+        string anotherBootstrap = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
+        await pipe.SendAcknowledgedCommandAsync("set_browser_bootstrap", anotherBootstrap);
+        using HttpResponseMessage another = await http.PostAsJsonAsync(
+            "/exchange_bootstrap", new { bootstrap = anotherBootstrap });
+        another.EnsureSuccessStatusCode();
+        using JsonDocument anotherBody = JsonDocument.Parse(await another.Content.ReadAsStringAsync());
+        Assert(anotherBody.RootElement.GetProperty("token").GetString() != browserToken,
+            "Independent browser links shared a session credential.");
+        await pipe.WaitForBrowserLinkConsumedAsync(TimeSpan.FromSeconds(5));
 
         await pipe.SendAcknowledgedCommandAsync("set_token", context.Token);
         using (var replayedPolicyRequest = new HttpRequestMessage(
@@ -1853,6 +1869,37 @@ internal static class TestHarness
             credential
         };
 
+        async Task<(string RequestId, string Credential, string Nonce)>
+            StartRetryPairingAsync()
+        {
+            string retryCredential = Convert.ToHexString(
+                RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
+            string retryNonce = Convert.ToHexString(
+                RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
+            using HttpResponseMessage response = await http.PostAsJsonAsync(
+                "/native/v1/pairing/requests", new
+                {
+                    protocolVersion = 1,
+                    environment = "test",
+                    serverId,
+                    clientId,
+                    clientName = "Harness Windows sender",
+                    clientNonce = retryNonce,
+                    credential = retryCredential
+                }, JsonOptions);
+            response.EnsureSuccessStatusCode();
+            using JsonDocument body = JsonDocument.Parse(
+                await response.Content.ReadAsStringAsync());
+            string retryRequestId = body.RootElement.GetProperty(
+                "requestId").GetString()!;
+            JsonElement prompt = await pipe.WaitForNativePairingRequestAsync(
+                TimeSpan.FromSeconds(5));
+            AssertEqual(retryRequestId,
+                prompt.GetProperty("requestId").GetString(),
+                "Receiver prompt did not match the immediate retry request.");
+            return (retryRequestId, retryCredential, retryNonce);
+        }
+
         using HttpResponseMessage closed = await http.PostAsJsonAsync(
             "/native/v1/pairing/requests", pairingBody, JsonOptions);
         AssertEqual(HttpStatusCode.Forbidden, closed.StatusCode,
@@ -2050,7 +2097,20 @@ internal static class TestHarness
             exception.StatusCode == HttpStatusCode.Forbidden) { }
 
         await VerifyThousandFileTransferAsync(http, pipe, context, credential);
-        await pipe.SendAcknowledgedCommandAsync("revoke_device", clientId);
+        using (var unauthorizedUnpair = new HttpRequestMessage(HttpMethod.Delete,
+            "/native/v1/devices/current"))
+        {
+            using var unauthorized = await http.SendAsync(unauthorizedUnpair);
+            AssertEqual(HttpStatusCode.Unauthorized, unauthorized.StatusCode,
+                "Unpair accepted a request without the device credential.");
+        }
+        using (var unpair = new HttpRequestMessage(HttpMethod.Delete,
+            "/native/v1/devices/current"))
+        {
+            unpair.Headers.Add("X-Device-Credential", credential);
+            using HttpResponseMessage unpaired = await http.SendAsync(unpair);
+            unpaired.EnsureSuccessStatusCode();
+        }
         using (var revokedDevice = CreatePinnedHttpsClient(context)) {
             revokedDevice.DefaultRequestHeaders.Add("X-Upload-Token", credential);
             await VerifyPairingCannotTransferAsync(revokedDevice);
@@ -2072,6 +2132,20 @@ internal static class TestHarness
         AssertEqual(HttpStatusCode.Unauthorized, revoked.StatusCode,
             "Revoked Windows credential still requested a transfer.");
 
+        var senderRejectedPairing = await StartRetryPairingAsync();
+        using (var reject = new HttpRequestMessage(HttpMethod.Delete,
+            $"/native/v1/pairing/requests/{senderRejectedPairing.RequestId}"))
+        {
+            using HttpResponseMessage rejected = await http.SendAsync(reject);
+            rejected.EnsureSuccessStatusCode();
+        }
+        var receiverRejectedPairing = await StartRetryPairingAsync();
+        await pipe.SendAcknowledgedCommandAsync("deny_native_pairing",
+            receiverRejectedPairing.RequestId);
+        var afterReceiverRejection = await StartRetryPairingAsync();
+        await pipe.SendAcknowledgedCommandAsync("deny_native_pairing",
+            afterReceiverRejection.RequestId);
+
         // The sender computes the display code independently; the receiver never
         // returns it through HTTP. Keep the fingerprint in this computation so a
         // certificate change necessarily changes the code.
@@ -2081,7 +2155,12 @@ internal static class TestHarness
         await pipe.SendAcknowledgedCommandAsync("end_native_pairing", "");
         VerifyNativeDiagnosticPrivacy(context,
             [credential, nonce, clientId, requestId, transferRequestId, transferId,
-                fileId, fingerprint, "Harness Windows sender", "native-harness.bin"]);
+                fileId, fingerprint, senderRejectedPairing.Credential,
+                senderRejectedPairing.Nonce, senderRejectedPairing.RequestId,
+                receiverRejectedPairing.Credential, receiverRejectedPairing.Nonce,
+                receiverRejectedPairing.RequestId, afterReceiverRejection.Credential,
+                afterReceiverRejection.Nonce, afterReceiverRejection.RequestId,
+                "Harness Windows sender", "native-harness.bin"]);
     }
 
     private static async Task VerifyThousandFileTransferAsync(HttpClient http,
@@ -2519,6 +2598,7 @@ internal static class TestHarness
             "stress" => 11L * 4 * 101 * 1024 * 1024,
             "soak" => 15L * 1024 * 1024 * 1024,
             "standard" => 4L * (200 + 1024) * 1024 * 1024,
+            "comparison" => 9L * 4 * 256 * 1024 * 1024,
             _ => 305L * 1024 * 1024 + 4097
         };
         // Sources and receiver files coexist on the temporary drive until cleanup.
@@ -2600,8 +2680,20 @@ internal static class TestHarness
 
         string[] jsonFiles = Directory.GetFiles(exportDirectory, "*.json");
         string[] csvFiles = Directory.GetFiles(exportDirectory, "*.csv");
-        int expectedRuns = profile switch { "standard" => 4, "stress" => 11, "soak" => 3, _ => 1 };
-        int expectedFilesPerRun = profile switch { "standard" => 22, "stress" => 4, "soak" => 1, _ => 6 };
+        int expectedRuns = profile switch {
+            "standard" => 4,
+            "stress" => 11,
+            "soak" => 3,
+            "comparison" => 9,
+            _ => 1
+        };
+        int expectedFilesPerRun = profile switch {
+            "standard" => 22,
+            "stress" => 4,
+            "soak" => 1,
+            "comparison" => 4,
+            _ => 6
+        };
         if (jsonFiles.Length != expectedRuns || csvFiles.Length != expectedRuns)
         {
             throw new InvalidOperationException(
@@ -2961,10 +3053,10 @@ internal sealed record HarnessOptions(
                     break;
                 case "--benchmark-only":
                     benchmarkProfile = Next().ToLowerInvariant();
-                    if (benchmarkProfile is not ("smoke" or "standard" or "stress" or "soak"))
+                    if (benchmarkProfile is not ("smoke" or "standard" or "stress" or "soak" or "comparison"))
                     {
                         throw new ArgumentException(
-                            "--benchmark-only supports smoke, standard, stress or soak.");
+                            "--benchmark-only supports smoke, standard, stress, soak or comparison.");
                     }
                     break;
                 case "--help":
@@ -3003,7 +3095,7 @@ internal sealed record HarnessOptions(
               --keep-artifacts                Preserve the isolated temporary directory.
               --skip-large-boundary-tests     Skip 99/100/101 MiB boundary uploads.
               --ownership-only               Run only authenticated process-control checks.
-              --benchmark-only <profile>      Run smoke, standard, stress or soak in isolation.
+              --benchmark-only <profile>      Run smoke, standard, stress, soak or comparison in isolation.
               --benchmark-smoke-only          Alias for --benchmark-only smoke.
               --help                          Show this help.
             """);

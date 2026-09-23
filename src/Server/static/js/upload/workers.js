@@ -7,11 +7,9 @@ window.UploadWorkers = {
     WHOLE_FILE_TIMEOUT_MS: 180000,
     CHUNK_TIMEOUT_MS: 180000,
     MAX_CHUNK_RETRIES: 2,
-    IOS_WHOLE_FILE_FALLBACK_BYTES: 1024 * 1024 * 1024,
     IOS_MAX_CHUNK_BYTES: window.TransferLimits.NativeChunkBytes,
     WHOLE_FILE_TIMEOUT_GRACE_MS: 120000,
     MIN_WHOLE_FILE_BPS: 1.5 * 1024 * 1024,
-    _iosLargeTransferTail: Promise.resolve(),
 
     isIOSLike() {
         return window.Utils?.isIOSLike?.() ??
@@ -19,33 +17,7 @@ window.UploadWorkers = {
     },
 
     shouldUseChunkedUpload(meta, manager) {
-        const overSharedThreshold = meta.file.size > manager.SINGLE_FILE_MAX_BYTES;
-        if (!overSharedThreshold) {
-            return false;
-        }
-
-        if (!this.isIOSLike()) {
-            return true;
-        }
-
-        // Legacy compatibility on iOS: avoid chunk mode for medium-large files,
-        // because whole-file XHR has proven more stable on Safari in this range.
-        return meta.file.size > this.IOS_WHOLE_FILE_FALLBACK_BYTES;
-    },
-
-    async withIOSLargeTransfer(task) {
-        const previous = this._iosLargeTransferTail;
-        let release;
-        this._iosLargeTransferTail = new Promise(resolve => {
-            release = resolve;
-        });
-
-        await previous.catch(() => {});
-        try {
-            return await task();
-        } finally {
-            release();
-        }
+        return meta.file.size > manager.SINGLE_FILE_MAX_BYTES;
     },
 
     computeWholeFileTimeoutMs(sizeBytes) {
@@ -104,13 +76,7 @@ window.UploadWorkers = {
                     ? this.uploadChunked(meta, manager)
                     : this.uploadWholeFile(meta, manager);
 
-                if (this.isIOSLike() && meta.size > manager.SINGLE_FILE_MAX_BYTES) {
-                    meta.serverResult = await this.withIOSLargeTransfer(async () => {
-                        return performUpload();
-                    });
-                } else {
-                    meta.serverResult = await performUpload();
-                }
+                meta.serverResult = await performUpload();
 
                 this.clearFileSpeed(manager, meta);
                 if (wasFailedBefore && manager.errorCount > 0) {
@@ -173,6 +139,7 @@ window.UploadWorkers = {
     uploadWholeFile(meta, manager) {
         return new Promise((resolve, reject) => {
             const xhr = new XMLHttpRequest();
+            const requestStartedAt = Date.now();
             xhr.open('POST', manager.UPLOAD_URL, true);
             xhr.timeout = this.computeWholeFileTimeoutMs(meta.size);
 
@@ -212,6 +179,7 @@ window.UploadWorkers = {
             };
 
             xhr.onload = () => {
+                this.recordRequestTiming(meta, requestStartedAt, xhr);
                 if (xhr.status >= 200 && xhr.status < 300) {
                     manager.lastProgressTs = Date.now();
                     this.recordTransferProgress(manager, meta, meta.size);
@@ -225,15 +193,18 @@ window.UploadWorkers = {
                 }
             };
 
-            xhr.onerror = function () {
+            xhr.onerror = () => {
+                this.recordRequestTiming(meta, requestStartedAt, xhr);
                 reject(new Error('Network error'));
             };
 
-            xhr.ontimeout = function () {
+            xhr.ontimeout = () => {
+                this.recordRequestTiming(meta, requestStartedAt, xhr);
                 reject(new Error('Upload timeout'));
             };
 
-            xhr.onabort = function () {
+            xhr.onabort = () => {
+                this.recordRequestTiming(meta, requestStartedAt, xhr);
                 reject(new Error('Upload aborted'));
             };
 
@@ -242,12 +213,13 @@ window.UploadWorkers = {
     },
 
     // NEW HELPER: Replaces fetch with XHR to unlock mid-chunk progress events
-    async uploadChunkXHR(url, headers, chunk, timeoutMs, retries, onRetry, onProgress) {
+    async uploadChunkXHR(url, headers, chunk, timeoutMs, retries, onRetry, onProgress, onTiming) {
         let attempt = 0;
         while (true) {
             try {
                 const responseText = await new Promise((resolve, reject) => {
                     const xhr = new XMLHttpRequest();
+                    const requestStartedAt = Date.now();
                     xhr.open('POST', url, true);
                     xhr.timeout = timeoutMs;
 
@@ -262,6 +234,9 @@ window.UploadWorkers = {
                     };
 
                     xhr.onload = () => {
+                        if (typeof onTiming === 'function') {
+                            onTiming(requestStartedAt, xhr);
+                        }
                         if (xhr.status >= 200 && xhr.status < 300) {
                             if (typeof onProgress === 'function') {
                                 const finalSize = chunk && typeof chunk.size === 'number' ? chunk.size : 0;
@@ -275,15 +250,19 @@ window.UploadWorkers = {
                         }
                     };
 
-                    xhr.onerror = () => reject(new Error('Network error'));
-                    xhr.ontimeout = () => reject(new Error('Timeout'));
-                    xhr.onabort = () => reject(new Error('Abort'));
+                    const fail = message => {
+                        if (typeof onTiming === 'function') onTiming(requestStartedAt, xhr);
+                        reject(new Error(message));
+                    };
+                    xhr.onerror = () => fail('Network error');
+                    xhr.ontimeout = () => fail('Timeout');
+                    xhr.onabort = () => fail('Abort');
 
                     xhr.send(chunk);
                 });
                 return responseText;
             } catch (err) {
-                if (attempt >= retries) throw err;
+                if (attempt >= retries || !this.isRetryableUploadError(err)) throw err;
                 attempt++;
                 if (onRetry) onRetry(attempt, err);
                 await new Promise(r => setTimeout(r, 300 * attempt));
@@ -376,12 +355,19 @@ window.UploadWorkers = {
                         );
                         meta._lastUIUpdate = now;
                     }
-                }
+                },
+                (requestStartedAt, xhr) => this.recordRequestTiming(
+                    meta,
+                    requestStartedAt,
+                    xhr)
             );
 
-            if (i === totalChunks - 1 && responseText) {
+            if (i === totalChunks - 1) {
                 try {
                     finalResult = JSON.parse(responseText);
+                    if (!finalResult || finalResult.complete !== true) {
+                        throw new Error('Missing finalization confirmation');
+                    }
                 } catch {
                     throw new Error('Server returned an invalid response');
                 }
@@ -401,6 +387,54 @@ window.UploadWorkers = {
         const randomPart = globalThis.crypto?.randomUUID?.() ||
             `${Date.now()}-${Math.random().toString(36).slice(2)}`;
         return `${randomPart}-${safeName}`;
+    },
+
+    isRetryableUploadError(error) {
+        const status = Number(error?.status) || 0;
+        return status === 0 || status === 408 || status === 425 ||
+            status === 429 || status >= 500;
+    },
+
+    parseServerTiming(value) {
+        const result = {};
+        if (typeof value !== 'string' || !value || value.length > 4096) return result;
+        for (const entry of value.split(',')) {
+            const [rawName, ...parameters] = entry.trim().split(';');
+            const name = rawName?.trim();
+            if (!['parse', 'decode', 'init', 'write', 'finalize', 'app'].includes(name)) continue;
+            const durationParameter = parameters.find(parameter =>
+                parameter.trim().toLowerCase().startsWith('dur='));
+            const duration = Number(durationParameter?.split('=')[1]);
+            if (Number.isFinite(duration) && duration >= 0 && duration <= 86400000) {
+                result[name] = duration;
+            }
+        }
+        return result;
+    },
+
+    recordRequestTiming(meta, requestStartedAt, xhr) {
+        const duration = Date.now() - requestStartedAt;
+        const requestDurationMs = Number.isFinite(duration)
+            ? Math.min(86400000, Math.max(0, duration)) : 0;
+        const server = this.parseServerTiming(
+            xhr?.getResponseHeader?.('Server-Timing') || '');
+        const timing = meta.transferTiming || {
+            requestCount: 0,
+            requestDurationMs: 0,
+            serverDurationMs: 0,
+            serverWriteDurationMs: 0,
+            serverFinalizeDurationMs: 0,
+            maxRequestDurationMs: 0
+        };
+        timing.requestCount += 1;
+        timing.requestDurationMs += requestDurationMs;
+        timing.serverDurationMs += server.app || 0;
+        timing.serverWriteDurationMs += server.write || 0;
+        timing.serverFinalizeDurationMs += server.finalize || 0;
+        timing.maxRequestDurationMs = Math.max(
+            timing.maxRequestDurationMs,
+            requestDurationMs);
+        meta.transferTiming = timing;
     },
 
     createUploadError(xhr) {

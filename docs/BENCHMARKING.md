@@ -90,10 +90,32 @@ Available profiles:
 | `stress` | Four concurrent 101 MiB files; one warm-up and ten measured runs | Bounded concurrency acceptance |
 | `soak` | Repeated 5 GiB transfers | Stalls, memory growth, thermals |
 | `tune` | 4/8/16/32/64 MiB chunks x 1/2/4 concurrent files | Chunk and concurrency sweep |
+| `comparison` | The same 4 x 256 MiB files with browser-balanced (16 MiB x 3), browser-throughput (32 MiB x 4), and native-iOS (8 MiB x 2) protocol shapes; one warm-up per shape and two measured passes in forward/reverse order | Controlled receiver-path comparison |
 | `manual` | Records while you transfer from iPhone/Safari | Real-device observation |
 
 The `tune` profile can write tens of gigabytes. Run it only against a dedicated
 upload directory with enough free space.
+
+The `comparison` profile holds file contents and total bytes constant while
+changing only chunk size and file concurrency. It drives the HTTP protocol from
+the .NET runner, so it isolates receiver-path effects; it does not reproduce a
+browser engine, WebKit lifecycle, Photos preparation, or JavaScript overhead.
+Benchmark uploads explicitly disable production duplicate skipping so a later
+matched run cannot inherit extra duplicate-verification work from an earlier
+protocol shape.
+Forward/reverse order is only a partial control: the middle profile retains its
+position, and filesystem/cache state carries between runs. Use repeated isolated
+rotations and real browser/device profiling before drawing performance conclusions.
+
+Browser upload responses include a `Server-Timing` header with numeric
+`parse`, `decode`, `init`, `write`, `finalize`, and total `app` durations when
+the phases apply. These values contain no filenames, paths, tokens, or device
+identifiers. They begin after Crow has received the HTTP request body, so the
+browser's total XHR duration minus `app` is useful for locating browser/network
+time but is not a precise decomposition of every network phase. The frontend
+retains only aggregate request counts and durations for the current in-memory
+queue and exposes them through `window.__fileTransfer.getTimingSummary()` for a
+local profiling session.
 
 For isolated, checked Release workloads, use `scripts/verify.ps1 -Target
 stress-tests` or `-Target soak-tests`. See [release acceptance](RELEASE_ACCEPTANCE.md)

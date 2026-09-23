@@ -261,7 +261,7 @@ json NativeSessionStore::identity() const {
 void NativeSessionStore::pruneLocked() {
     const auto now = m_now();
     for (auto it = m_pairings.begin(); it != m_pairings.end();) {
-        if (now > it->second.expiresAt) {
+        if (now >= it->second.expiresAt) {
             if (it->second.state == PairState::Pending ||
                 it->second.state == PairState::SenderConfirmed ||
                 it->second.state == PairState::ReceiverConfirmed) {
@@ -324,16 +324,42 @@ NativeSessionStore::Result NativeSessionStore::requestPairing(
         return error(403, "pairing_window_closed",
             "Windows pairing is not currently enabled.");
     }
+    if (std::count_if(m_pairings.begin(), m_pairings.end(), [](const auto& item) {
+            return isActivePairingState(item.second.state);
+        }) >= MaxPairingRequests ||
+        std::any_of(m_pairings.begin(), m_pairings.end(), [&](const auto& item) {
+            return item.second.deviceId == deviceId &&
+                isActivePairingState(item.second.state);
+        })) {
+        return error(409, "pairing_already_pending",
+            "A pairing request for this computer is already pending.");
+    }
     if (pairingRateLimitedLocked(ip)) {
         return error(429, "pairing_rate_limited",
             "Too many pairing requests. Try again later.", true);
     }
-    if (m_pairings.size() >= MaxPairingRequests ||
-        std::any_of(m_pairings.begin(), m_pairings.end(), [&](const auto& item) {
-            return item.second.deviceId == deviceId;
-        })) {
-        return error(409, "pairing_already_pending",
-            "A pairing request for this computer is already pending.");
+
+    // Terminal results remain observable to the original request, but they do
+    // not own an active slot. Starting a fresh attempt from the same installed
+    // client retires its previous terminal result immediately.
+    for (auto item = m_pairings.begin(); item != m_pairings.end();) {
+        if (item->second.deviceId == deviceId &&
+            !isActivePairingState(item->second.state)) {
+            item = m_pairings.erase(item);
+        } else {
+            ++item;
+        }
+    }
+    if (m_pairings.size() >= MaxPairingRequests * 4) {
+        auto oldestTerminal = m_pairings.end();
+        for (auto item = m_pairings.begin(); item != m_pairings.end(); ++item) {
+            if (!isActivePairingState(item->second.state) &&
+                (oldestTerminal == m_pairings.end() ||
+                 item->second.expiresAt < oldestTerminal->second.expiresAt)) {
+                oldestTerminal = item;
+            }
+        }
+        if (oldestTerminal != m_pairings.end()) m_pairings.erase(oldestTerminal);
     }
 
     PairingRequest request;
@@ -368,7 +394,7 @@ NativeSessionStore::Result NativeSessionStore::requestPairing(
 NativeSessionStore::Result NativeSessionStore::confirmPairing(
     const std::string& requestId, const json& body) {
     const std::string proof = body.value("proof", "");
-    std::lock_guard lock(m_mutex);
+    std::unique_lock lock(m_mutex);
     pruneLocked();
     auto item = m_pairings.find(requestId);
     if (item == m_pairings.end()) {
@@ -379,7 +405,8 @@ NativeSessionStore::Result NativeSessionStore::confirmPairing(
             "The receiver declined the pairing request.");
     }
     if (!constantTimeEqual(proof, item->second.expectedProof)) {
-        item->second.state = PairState::Denied;
+        if (isActivePairingState(item->second.state))
+            item->second.state = PairState::Denied;
         return error(403, "pairing_confirmation_rejected",
             "The pairing confirmation was rejected.");
     }
@@ -396,8 +423,12 @@ NativeSessionStore::Result NativeSessionStore::confirmPairing(
         item->second.state = PairState::SenderConfirmed;
     }
     logNativeDiagnostic(json{{"event", "pairing_confirmed"}});
+    const bool approved = item->second.state == PairState::Approved;
+    lock.unlock();
+    if (approved && m_pipeServer)
+        m_pipeServer->sendTrustedDevices(m_pairingStore->devicesJson());
     return {200, json{
-        {"status", item->second.state == PairState::Approved
+        {"status", approved
             ? "approved" : "confirmed"},
         {"environment", m_environment}}};
 }
@@ -439,13 +470,49 @@ bool NativeSessionStore::approvePairing(const std::string& requestId) {
     return true;
 }
 
+bool NativeSessionStore::isActivePairingState(PairState state) {
+    return state == PairState::Pending ||
+        state == PairState::SenderConfirmed ||
+        state == PairState::ReceiverConfirmed;
+}
+
 bool NativeSessionStore::denyPairing(const std::string& requestId) {
     std::lock_guard lock(m_mutex);
+    pruneLocked();
     auto item = m_pairings.find(requestId);
     if (item == m_pairings.end()) return false;
+    if (item->second.state == PairState::Approved) return false;
+    if (item->second.state == PairState::Denied) return true;
     item->second.state = PairState::Denied;
     logNativeDiagnostic(json{{"event", "pairing_denied"}});
     return true;
+}
+
+NativeSessionStore::Result NativeSessionStore::revokeCurrentDevice(
+    const std::string& credential, const std::string& ip) {
+    if (!isLocalSubnetAddress(ip)) {
+        return error(403, "source_not_local",
+            "Windows unpairing is limited to this computer's local subnets.");
+    }
+    // Serialize credential lookup, persistent revocation and session cleanup
+    // with confirmation/re-pairing. Never revoke a replacement credential.
+    std::unique_lock lock(m_mutex);
+    const auto device = m_pairingStore->findDeviceByCredential(credential);
+    if (!device || device->clientType != "windows" ||
+        device->authorizationMode != "approval_required") {
+        return error(401, "credential_rejected",
+            "The trusted-device credential was rejected.");
+    }
+    if (!m_pairingStore->revoke(device->id)) {
+        return error(401, "credential_rejected",
+            "The trusted-device credential was rejected.");
+    }
+    revokeDeviceLocked(device->id);
+    lock.unlock();
+    if (m_pipeServer) {
+        m_pipeServer->sendTrustedDevices(m_pairingStore->devicesJson());
+    }
+    return {200, json{{"ok", true}, {"status", "unpaired"}}};
 }
 
 NativeSessionStore::Result NativeSessionStore::requestTransfer(
@@ -454,6 +521,7 @@ NativeSessionStore::Result NativeSessionStore::requestTransfer(
         return error(403, "source_not_local",
             "Native Windows transfer is limited to local subnets.");
     }
+    std::lock_guard lock(m_mutex);
     auto device = m_pairingStore->findDeviceByCredential(credential);
     if (!device || device->clientType != "windows" ||
         device->authorizationMode != "approval_required") {
@@ -492,7 +560,6 @@ NativeSessionStore::Result NativeSessionStore::requestTransfer(
         request.files.push_back(std::move(file));
     }
 
-    std::lock_guard lock(m_mutex);
     pruneLocked();
     // Terminal denial stays observable until expiry but does not consume an
     // active slot. Bound retained history separately below.
@@ -562,9 +629,9 @@ std::optional<std::string> NativeSessionStore::transferTokenLocked(
 
 NativeSessionStore::Result NativeSessionStore::transferStatus(
     const std::string& requestId, const std::string& credential) {
+    std::lock_guard lock(m_mutex);
     auto device = m_pairingStore->findDeviceByCredential(credential);
     if (!device) return error(401, "credential_rejected", "The trusted-device credential was rejected.");
-    std::lock_guard lock(m_mutex);
     pruneLocked();
     auto item = m_transfers.find(requestId);
     if (item == m_transfers.end() || item->second.deviceId != device->id) {
@@ -670,8 +737,18 @@ NativeSessionStore::Result NativeSessionStore::cancelTransfer(
     return {200, json{{"ok", true}}};
 }
 
-void NativeSessionStore::revokeDevice(const std::string& deviceId) {
+bool NativeSessionStore::revokeDevice(const std::string& deviceId) {
     std::lock_guard lock(m_mutex);
+    if (!m_pairingStore->revoke(deviceId)) return false;
+    revokeDeviceLocked(deviceId);
+    return true;
+}
+
+void NativeSessionStore::revokeDeviceLocked(const std::string& deviceId) {
+    for (auto item = m_pairings.begin(); item != m_pairings.end();) {
+        if (item->second.deviceId == deviceId) item = m_pairings.erase(item);
+        else ++item;
+    }
     for (auto& item : m_transfers) {
         if (item.second.deviceId == deviceId) item.second.state = TransferState::Cancelled;
     }
@@ -680,6 +757,7 @@ void NativeSessionStore::revokeDevice(const std::string& deviceId) {
 
 void NativeSessionStore::revokeAll() {
     std::lock_guard lock(m_mutex);
+    m_pairingStore->revokeAll();
     m_pairings.clear();
     m_transfers.clear();
     m_pairingWindowExpiresAt = {};

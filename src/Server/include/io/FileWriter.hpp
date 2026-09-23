@@ -193,8 +193,17 @@ private:
         std::chrono::steady_clock::time_point lastActivity{};
     };
 
+    struct MappingWindow {
+        void* view = nullptr;
+        uint64_t offset = 0;
+        uint64_t length = 0;
+        bool dirty = false;
+    };
+
     struct FileHandle {
         FileHandle() = default;
+        ~FileHandle();
+        void closeResources() noexcept;
         FileHandle(const FileHandle&) = delete;
         FileHandle& operator=(const FileHandle&) = delete;
         FileHandle(FileHandle&& other) noexcept;
@@ -213,6 +222,8 @@ private:
         std::shared_ptr<std::mutex> writeMutex = std::make_shared<std::mutex>();
         std::shared_ptr<FinalizationState> finalization =
             std::make_shared<FinalizationState>();
+        std::shared_ptr<MappingWindow> mappingWindow =
+            std::make_shared<MappingWindow>();
         
 #ifdef _WIN32
         HANDLE hFile = INVALID_HANDLE_VALUE;
@@ -224,6 +235,7 @@ private:
 
     struct WriteTarget {
         uint64_t totalSize = 0;
+        std::shared_ptr<MappingWindow> mappingWindow;
 #ifdef _WIN32
         HANDLE hMapping = nullptr;
 #else
@@ -237,6 +249,7 @@ private:
         uint64_t offset,
         const char* data,
         uint64_t size);
+    bool releaseMappedView(const WriteTarget& target, bool flush);
     void closeHandle(FileHandle& handle);
     bool flushFile(FileHandle& handle);
     bool storageFault(const char* operation) const;

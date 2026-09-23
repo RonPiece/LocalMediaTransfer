@@ -37,6 +37,7 @@ internal static class BenchmarkProfiles
                 defaultIterations: 3,
                 includeWarmup: false),
             "tune" => CreateTune(options),
+            "comparison" => CreateComparison(options),
             "manual" => [new("manual", "manual", options.ChunkSizeBytes, options.FileConcurrency, [])],
             _ => throw new ArgumentOutOfRangeException(nameof(options.Profile))
         };
@@ -96,6 +97,39 @@ internal static class BenchmarkProfiles
                 chunk,
                 files,
                 workload));
+        }
+        return runs;
+    }
+
+    private static IReadOnlyList<BenchmarkRunSpec> CreateComparison(BenchmarkOptions options)
+    {
+        BenchmarkFileSpec[] workload = Enumerable.Range(1, 4)
+            .Select(index => new BenchmarkFileSpec($"matched-{index}.bin", 256 * MB))
+            .ToArray();
+        var shapes = new[]
+        {
+            (Label: "browser-balanced", Chunk: 16 * MB, Concurrency: 3),
+            (Label: "browser-throughput", Chunk: 32 * MB, Concurrency: 4),
+            (Label: "native-ios", Chunk: 8 * MB, Concurrency: 2)
+        };
+        int repeats = options.Iterations ?? 2;
+        var runs = shapes.Select(shape => new BenchmarkRunSpec(
+            "comparison",
+            $"{shape.Label}-warmup",
+            shape.Chunk,
+            shape.Concurrency,
+            workload,
+            IsWarmup: true)).ToList();
+        for (int iteration = 1; iteration <= repeats; iteration++)
+        {
+            IEnumerable<(string Label, long Chunk, int Concurrency)> order =
+                iteration % 2 == 1 ? shapes : shapes.Reverse();
+            runs.AddRange(order.Select(shape => new BenchmarkRunSpec(
+                "comparison",
+                $"{shape.Label}-run-{iteration}",
+                shape.Chunk,
+                shape.Concurrency,
+                workload)));
         }
         return runs;
     }
