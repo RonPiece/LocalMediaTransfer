@@ -1,4 +1,5 @@
 #include "io/HashEngine.hpp"
+#include "common/SqliteChecked.hpp"
 
 #include <openssl/evp.h>
 #include <spdlog/spdlog.h>
@@ -46,19 +47,47 @@ bool isManagedFile(const fs::directory_entry& entry) {
              name.compare(name.size() - 4, 4, ".tmp") == 0);
 }
 
-bool execSql(sqlite3* db, const char* sql) {
-    char* message = nullptr;
-    const int rc = sqlite3_exec(db, sql, nullptr, nullptr, &message);
-    if (rc != SQLITE_OK) {
-        spdlog::error("SQLite error: {}", message ? message : "unknown");
-        sqlite3_free(message);
-        return false;
-    }
-    return true;
+FileInventoryRecord readInventoryRecord(sqlite3_stmt* statement) {
+    FileInventoryRecord record;
+    const char* name = reinterpret_cast<const char*>(sqlite3_column_text(statement, 0));
+    const char* hash = reinterpret_cast<const char*>(sqlite3_column_text(statement, 1));
+    record.filename = name ? name : "";
+    record.sha256 = hash ? hash : "";
+    record.sizeBytes = static_cast<uint64_t>(sqlite3_column_int64(statement, 2));
+    record.modifiedTime = sqlite3_column_int64(statement, 3);
+    record.verifiedAt = sqlite3_column_int64(statement, 4);
+    return record;
 }
 }
 
 HashEngine::HashEngine() = default;
+
+#ifdef LMT_STORAGE_TESTING
+std::atomic<bool> HashEngine::s_failHashFinalization{false};
+std::atomic<int> HashEngine::s_freedHashContexts{0};
+void HashEngine::failHashFinalizationForTesting(bool fail) noexcept {
+    s_failHashFinalization.store(fail);
+}
+int HashEngine::freedHashContextsForTesting() noexcept {
+    return s_freedHashContexts.load();
+}
+#endif
+
+void HashEngine::MdCtxDeleter::operator()(EVP_MD_CTX* context) const noexcept {
+    EVP_MD_CTX_free(context);
+#ifdef LMT_STORAGE_TESTING
+    if (context) s_freedHashContexts.fetch_add(1);
+#endif
+}
+
+void HashEngine::requireHealthy() const {
+    if (!m_healthy.load()) throw InventoryStorageError("file inventory unavailable");
+}
+
+void HashEngine::markUnhealthy() const noexcept {
+    m_healthy.store(false);
+    spdlog::error("File inventory is unhealthy; restart after correcting storage");
+}
 
 HashEngine::~HashEngine() {
     m_stopBackground.store(true);
@@ -66,13 +95,6 @@ HashEngine::~HashEngine() {
         m_backgroundThread.join();
     }
     std::lock_guard<std::mutex> lock(m_mutex);
-    for (auto& [id, context] : m_contexts) {
-        std::lock_guard<std::mutex> contextLock(context->mutex);
-        if (context->ctx) {
-            EVP_MD_CTX_free(context->ctx);
-            context->ctx = nullptr;
-        }
-    }
     m_contexts.clear();
     if (m_db) {
         sqlite3_close(m_db);
@@ -83,65 +105,47 @@ HashEngine::~HashEngine() {
 void HashEngine::openDatabase(const std::string& dbPath) {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (sqlite3_open(dbPath.c_str(), &m_db) != SQLITE_OK) {
-        spdlog::error("Failed to open hash database: {}", sqlite3_errmsg(m_db));
         sqlite3_close(m_db);
         m_db = nullptr;
-        return;
+        throw InventoryStorageError("unable to open file inventory");
     }
-
-    sqlite3_busy_timeout(m_db, 5000);
-    execSql(m_db, "PRAGMA journal_mode=WAL;");
-    execSql(m_db, "PRAGMA synchronous=NORMAL;");
-    execSql(m_db, "PRAGMA foreign_keys=ON;");
-
-    if (!executeSchemaMigrationUnsafe()) {
-        spdlog::error("Failed to initialize file inventory schema");
-        return;
+    try {
+        lmt::sqlite::check(sqlite3_busy_timeout(m_db, 5000), "set inventory busy timeout");
+        lmt::sqlite::execute(m_db, "PRAGMA journal_mode=WAL;", "configure inventory journal");
+        lmt::sqlite::execute(m_db, "PRAGMA synchronous=NORMAL;", "configure inventory sync");
+        lmt::sqlite::execute(m_db, "PRAGMA foreign_keys=ON;", "configure inventory foreign keys");
+        executeSchemaMigrationUnsafe();
+        m_healthy.store(true);
+        spdlog::info("File inventory opened ({} indexed files)", getHashCountUnsafe());
+    } catch (const std::exception& e) {
+        spdlog::error("File inventory initialization failed: {}", e.what());
+        m_healthy.store(false);
+        sqlite3_close(m_db);
+        m_db = nullptr;
+        throw InventoryStorageError("unable to initialize file inventory");
     }
-
-    spdlog::info(
-        "File inventory opened: {} ({} indexed files)",
-        dbPath,
-        getHashCountUnsafe());
 }
 
-bool HashEngine::executeSchemaMigrationUnsafe() {
-    if (!m_db || !execSql(m_db, "BEGIN IMMEDIATE;")) {
-        return false;
-    }
-
-    sqlite3_stmt* versionStatement = nullptr;
+void HashEngine::executeSchemaMigrationUnsafe() {
+    lmt::sqlite::Transaction migration(m_db);
+    lmt::sqlite::Statement versionStatement(m_db, "PRAGMA user_version;");
     int version = 0;
-    if (sqlite3_prepare_v2(
-            m_db,
-            "PRAGMA user_version;",
-            -1,
-            &versionStatement,
-            nullptr) == SQLITE_OK &&
-        sqlite3_step(versionStatement) == SQLITE_ROW) {
-        version = sqlite3_column_int(versionStatement, 0);
-    }
-    sqlite3_finalize(versionStatement);
+    if (versionStatement.step() != SQLITE_ROW)
+        throw InventoryStorageError("unable to read inventory schema version");
+    version = sqlite3_column_int(versionStatement.get(), 0);
+    versionStatement.done();
 
-    bool ok = true;
     if (version < InventorySchemaVersion) {
-        sqlite3_stmt* tableStatement = nullptr;
-        bool hasFilesTable = false;
-        if (sqlite3_prepare_v2(
-                m_db,
-                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='files';",
-                -1,
-                &tableStatement,
-                nullptr) == SQLITE_OK) {
-            hasFilesTable = sqlite3_step(tableStatement) == SQLITE_ROW;
-        }
-        sqlite3_finalize(tableStatement);
+        lmt::sqlite::Statement tableStatement(
+            m_db, "SELECT 1 FROM sqlite_master WHERE type='table' AND name='files';");
+        const bool hasFilesTable = tableStatement.step() == SQLITE_ROW;
+        if (hasFilesTable) tableStatement.done();
 
         if (hasFilesTable) {
-            ok = execSql(m_db, "ALTER TABLE files RENAME TO files_legacy;");
+            lmt::sqlite::execute(m_db, "ALTER TABLE files RENAME TO files_legacy;", "rename inventory");
         }
 
-        ok = ok && execSql(
+        lmt::sqlite::execute(
             m_db,
             "CREATE TABLE files ("
             " filename TEXT PRIMARY KEY NOT NULL,"
@@ -151,22 +155,19 @@ bool HashEngine::executeSchemaMigrationUnsafe() {
             " verified_at INTEGER NOT NULL"
             ");"
             "CREATE INDEX idx_files_sha256 ON files(sha256);"
-            "CREATE INDEX idx_files_size ON files(size_bytes);");
+            "CREATE INDEX idx_files_size ON files(size_bytes);", "create inventory schema");
 
-        if (ok && hasFilesTable) {
-            ok = execSql(
+        if (hasFilesTable) {
+            lmt::sqlite::execute(
                 m_db,
                 "INSERT OR IGNORE INTO files "
                 "(filename, sha256, size_bytes, modified_time, verified_at) "
                 "SELECT filename, hash, 0, 0, created_at FROM files_legacy;"
-                "DROP TABLE files_legacy;");
+                "DROP TABLE files_legacy;", "migrate inventory rows");
         }
-
-        if (ok) {
-            ok = execSql(m_db, "PRAGMA user_version=2;");
-        }
+        lmt::sqlite::execute(m_db, "PRAGMA user_version=2;", "set inventory version");
     } else {
-        ok = execSql(
+        lmt::sqlite::execute(
             m_db,
             "CREATE TABLE IF NOT EXISTS files ("
             " filename TEXT PRIMARY KEY NOT NULL,"
@@ -176,246 +177,155 @@ bool HashEngine::executeSchemaMigrationUnsafe() {
             " verified_at INTEGER NOT NULL"
             ");"
             "CREATE INDEX IF NOT EXISTS idx_files_sha256 ON files(sha256);"
-            "CREATE INDEX IF NOT EXISTS idx_files_size ON files(size_bytes);");
+            "CREATE INDEX IF NOT EXISTS idx_files_size ON files(size_bytes);", "verify inventory schema");
     }
-
-    execSql(m_db, ok ? "COMMIT;" : "ROLLBACK;");
-    return ok;
+    migration.commit();
 }
 
 void HashEngine::reconcileDirectory(const std::string& uploadDir) {
     const fs::path root = fs::u8path(uploadDir);
-    std::error_code ec;
-
     std::lock_guard<std::mutex> lock(m_mutex);
-    if (!m_db) {
-        return;
-    }
+    requireHealthy();
+    try {
+        lmt::sqlite::Transaction transaction(m_db);
+        lmt::sqlite::Statement lookup(m_db,
+            "SELECT size_bytes, modified_time, sha256, verified_at "
+            "FROM files WHERE filename=?;");
+        lmt::sqlite::Statement upsert(m_db,
+            "INSERT INTO files(filename,sha256,size_bytes,modified_time,verified_at) "
+            "VALUES(?,?,?,?,?) ON CONFLICT(filename) DO UPDATE SET "
+            "sha256=excluded.sha256,size_bytes=excluded.size_bytes,"
+            "modified_time=excluded.modified_time,verified_at=excluded.verified_at;");
 
-    execSql(m_db, "BEGIN IMMEDIATE;");
-    sqlite3_stmt* lookup = nullptr;
-    sqlite3_stmt* upsert = nullptr;
-    sqlite3_prepare_v2(
-        m_db,
-        "SELECT size_bytes, modified_time, sha256, verified_at "
-        "FROM files WHERE filename=?;",
-        -1,
-        &lookup,
-        nullptr);
-    sqlite3_prepare_v2(
-        m_db,
-        "INSERT INTO files(filename,sha256,size_bytes,modified_time,verified_at) "
-        "VALUES(?,?,?,?,?) ON CONFLICT(filename) DO UPDATE SET "
-        "sha256=excluded.sha256,size_bytes=excluded.size_bytes,"
-        "modified_time=excluded.modified_time,verified_at=excluded.verified_at;",
-        -1,
-        &upsert,
-        nullptr);
+        std::error_code ec;
+        for (fs::directory_iterator it(root, ec), end; !ec && it != end; it.increment(ec)) {
+            const auto& entry = *it;
+            if (!isManagedFile(entry)) continue;
+            FileInventoryRecord disk;
+            disk.filename = entry.path().filename().u8string();
+            std::error_code statError;
+            disk.sizeBytes = entry.file_size(statError);
+            if (statError) continue;
+            disk.modifiedTime = fileModifiedTime(entry.path());
+            std::string retainedHash;
+            int64_t retainedVerifiedAt = 0;
 
-    // Stream the directory instead of retaining a second full inventory in RAM.
-    // Keep the existing serialization contract while reconciling SQLite.
-    for (fs::directory_iterator it(root, ec), end; !ec && it != end; it.increment(ec)) {
-        const auto& entry = *it;
-        if (!isManagedFile(entry)) continue;
-        FileInventoryRecord disk;
-        disk.filename = entry.path().filename().u8string();
-        std::error_code statError;
-        disk.sizeBytes = entry.file_size(statError);
-        if (statError) continue;
-        disk.modifiedTime = fileModifiedTime(entry.path());
-        std::string retainedHash;
-        int64_t retainedVerifiedAt = 0;
+            lookup.text(1, disk.filename);
+            if (lookup.step() == SQLITE_ROW) {
+                const uint64_t knownSize =
+                    static_cast<uint64_t>(sqlite3_column_int64(lookup.get(), 0));
+                const int64_t knownModified = sqlite3_column_int64(lookup.get(), 1);
+                if (knownSize == disk.sizeBytes && knownModified == disk.modifiedTime) {
+                    const char* hash = reinterpret_cast<const char*>(
+                        sqlite3_column_text(lookup.get(), 2));
+                    retainedHash = hash ? hash : "";
+                    retainedVerifiedAt = sqlite3_column_int64(lookup.get(), 3);
+                }
+                lookup.done();
+            }
+            lookup.reset();
 
-        sqlite3_bind_text(
-            lookup,
-            1,
-            disk.filename.c_str(),
-            -1,
-            SQLITE_TRANSIENT);
-        if (sqlite3_step(lookup) == SQLITE_ROW) {
-            const uint64_t knownSize =
-                static_cast<uint64_t>(sqlite3_column_int64(lookup, 0));
-            const int64_t knownModified = sqlite3_column_int64(lookup, 1);
-            if (knownSize == disk.sizeBytes &&
-                knownModified == disk.modifiedTime) {
-                const char* hash = reinterpret_cast<const char*>(
-                    sqlite3_column_text(lookup, 2));
-                retainedHash = hash ? hash : "";
-                retainedVerifiedAt = sqlite3_column_int64(lookup, 3);
+            upsert.text(1, disk.filename);
+            if (retainedHash.empty()) upsert.null(2);
+            else upsert.text(2, retainedHash);
+            upsert.integer64(3, static_cast<sqlite3_int64>(disk.sizeBytes));
+            upsert.integer64(4, disk.modifiedTime);
+            upsert.integer64(5, retainedVerifiedAt);
+            upsert.done();
+            upsert.reset();
+        }
+        if (ec) throw std::runtime_error("unable to enumerate upload directory");
+
+        lmt::sqlite::Statement all(m_db, "SELECT filename FROM files;");
+        lmt::sqlite::Statement remove(m_db, "DELETE FROM files WHERE filename=?;");
+        while (all.step() == SQLITE_ROW) {
+            const char* value = reinterpret_cast<const char*>(
+                sqlite3_column_text(all.get(), 0));
+            const std::string filename = value ? value : "";
+            std::error_code statError;
+            const bool exists = fs::is_regular_file(
+                root / fs::u8path(filename).filename(), statError);
+            if (!exists && (!statError || statError == std::errc::no_such_file_or_directory)) {
+                remove.text(1, filename);
+                remove.done();
+                remove.reset();
             }
         }
-        sqlite3_reset(lookup);
-        sqlite3_clear_bindings(lookup);
-
-        sqlite3_bind_text(upsert, 1, disk.filename.c_str(), -1, SQLITE_TRANSIENT);
-        if (retainedHash.empty()) {
-            sqlite3_bind_null(upsert, 2);
-        } else {
-            sqlite3_bind_text(
-                upsert,
-                2,
-                retainedHash.c_str(),
-                -1,
-                SQLITE_TRANSIENT);
-        }
-        sqlite3_bind_int64(upsert, 3, static_cast<sqlite3_int64>(disk.sizeBytes));
-        sqlite3_bind_int64(upsert, 4, disk.modifiedTime);
-        sqlite3_bind_int64(upsert, 5, retainedVerifiedAt);
-        sqlite3_step(upsert);
-        sqlite3_reset(upsert);
-        sqlite3_clear_bindings(upsert);
+        transaction.commit();
+    } catch (const std::exception& e) {
+        spdlog::error("File inventory reconciliation failed: {}", e.what());
+        markUnhealthy();
+        throw InventoryStorageError("file inventory reconciliation failed");
     }
-    sqlite3_finalize(lookup);
-    sqlite3_finalize(upsert);
-
-    sqlite3_stmt* all = nullptr;
-    sqlite3_stmt* remove = nullptr;
-    sqlite3_prepare_v2(m_db, "SELECT filename FROM files;", -1, &all, nullptr);
-    sqlite3_prepare_v2(
-        m_db,
-        "DELETE FROM files WHERE filename=?;",
-        -1,
-        &remove,
-        nullptr);
-    while (sqlite3_step(all) == SQLITE_ROW) {
-        const char* value = reinterpret_cast<const char*>(
-            sqlite3_column_text(all, 0));
-        const std::string filename = value ? value : "";
-        std::error_code statError;
-        const bool exists = fs::is_regular_file(root / fs::u8path(filename).filename(), statError);
-        if (!exists && (!statError || statError == std::errc::no_such_file_or_directory)) {
-            sqlite3_bind_text(
-                remove,
-                1,
-                filename.c_str(),
-                -1,
-                SQLITE_TRANSIENT);
-            sqlite3_step(remove);
-            sqlite3_reset(remove);
-            sqlite3_clear_bindings(remove);
-        }
-    }
-    sqlite3_finalize(all);
-    sqlite3_finalize(remove);
-    execSql(m_db, "COMMIT;");
 }
 
 std::optional<FileInventoryRecord> HashEngine::findFirstCandidate(
-    const std::string& filename,
-    uint64_t sizeBytes) const {
+    const std::string& filename, uint64_t sizeBytes) const {
     std::lock_guard<std::mutex> lock(m_mutex);
-    if (!m_db) {
-        return std::nullopt;
-    }
-
-    sqlite3_stmt* statement = nullptr;
-    if (sqlite3_prepare_v2(
-            m_db,
+    requireHealthy();
+    try {
+        lmt::sqlite::Statement statement(m_db,
             "SELECT filename,COALESCE(sha256,''),size_bytes,modified_time,"
             "verified_at FROM files WHERE filename=?1 OR size_bytes=?2 "
-            "ORDER BY CASE WHEN filename=?1 THEN 0 ELSE 1 END LIMIT 1;",
-            -1,
-            &statement,
-            nullptr) != SQLITE_OK) {
-        return std::nullopt;
+            "ORDER BY CASE WHEN filename=?1 THEN 0 ELSE 1 END LIMIT 1;");
+        statement.text(1, filename);
+        statement.integer64(2, static_cast<sqlite3_int64>(sizeBytes));
+        if (statement.step() == SQLITE_DONE) return std::nullopt;
+        auto record = readInventoryRecord(statement.get());
+        statement.done();
+        return record;
+    } catch (...) {
+        markUnhealthy();
+        throw;
     }
-    sqlite3_bind_text(statement, 1, filename.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_int64(statement, 2, static_cast<sqlite3_int64>(sizeBytes));
-    std::optional<FileInventoryRecord> result;
-    if (sqlite3_step(statement) == SQLITE_ROW) {
-        FileInventoryRecord record;
-        const char* name = reinterpret_cast<const char*>(
-            sqlite3_column_text(statement, 0));
-        const char* hash = reinterpret_cast<const char*>(
-            sqlite3_column_text(statement, 1));
-        record.filename = name ? name : "";
-        record.sha256 = hash ? hash : "";
-        record.sizeBytes =
-            static_cast<uint64_t>(sqlite3_column_int64(statement, 2));
-        record.modifiedTime = sqlite3_column_int64(statement, 3);
-        record.verifiedAt = sqlite3_column_int64(statement, 4);
-        result = std::move(record);
-    }
-    sqlite3_finalize(statement);
-    return result;
 }
 
 std::vector<FileInventoryRecord> HashEngine::findVerificationCandidates(
-    const std::string& filename,
-    uint64_t sizeBytes,
-    const std::string& expectedHash,
-    const std::string& afterFilename) const {
-    std::vector<FileInventoryRecord> records;
+    const std::string& filename, uint64_t sizeBytes,
+    const std::string& expectedHash, const std::string& afterFilename) const {
     std::lock_guard<std::mutex> lock(m_mutex);
-    if (!m_db || filename.empty() || expectedHash.empty()) {
-        return records;
-    }
-
-    sqlite3_stmt* statement = nullptr;
-    if (sqlite3_prepare_v2(
-            m_db,
+    requireHealthy();
+    std::vector<FileInventoryRecord> records;
+    if (filename.empty() || expectedHash.empty()) return records;
+    try {
+        lmt::sqlite::Statement statement(m_db,
             "SELECT filename,COALESCE(sha256,''),size_bytes,modified_time,"
             "verified_at FROM files "
             "WHERE (filename=?1 OR sha256=?2 OR size_bytes=?3) AND filename>?4 "
-            "ORDER BY filename LIMIT 256;",
-            -1,
-            &statement,
-            nullptr) != SQLITE_OK) {
+            "ORDER BY filename LIMIT 256;");
+        statement.text(1, filename);
+        statement.text(2, expectedHash);
+        statement.integer64(3, static_cast<sqlite3_int64>(sizeBytes));
+        statement.text(4, afterFilename);
+        while (statement.step() == SQLITE_ROW) {
+            records.push_back(readInventoryRecord(statement.get()));
+        }
         return records;
+    } catch (...) {
+        markUnhealthy();
+        throw;
     }
-    sqlite3_bind_text(statement, 1, filename.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(statement, 2, expectedHash.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_int64(statement, 3, static_cast<sqlite3_int64>(sizeBytes));
-    sqlite3_bind_text(statement, 4, afterFilename.c_str(), -1, SQLITE_TRANSIENT);
-    while (sqlite3_step(statement) == SQLITE_ROW) {
-        FileInventoryRecord record;
-        const char* name = reinterpret_cast<const char*>(
-            sqlite3_column_text(statement, 0));
-        const char* hash = reinterpret_cast<const char*>(
-            sqlite3_column_text(statement, 1));
-        record.filename = name ? name : "";
-        record.sha256 = hash ? hash : "";
-        record.sizeBytes =
-            static_cast<uint64_t>(sqlite3_column_int64(statement, 2));
-        record.modifiedTime = sqlite3_column_int64(statement, 3);
-        record.verifiedAt = sqlite3_column_int64(statement, 4);
-        records.push_back(std::move(record));
-    }
-    sqlite3_finalize(statement);
-    return records;
 }
 
-std::vector<FileInventoryRecord> HashEngine::findUnhashedFiles(const std::string& afterFilename) const {
-    std::vector<FileInventoryRecord> records;
+std::vector<FileInventoryRecord> HashEngine::findUnhashedFiles(
+    const std::string& afterFilename) const {
     std::lock_guard<std::mutex> lock(m_mutex);
-    if (!m_db) {
-        return records;
-    }
-    sqlite3_stmt* statement = nullptr;
-    if (sqlite3_prepare_v2(
-            m_db,
+    requireHealthy();
+    std::vector<FileInventoryRecord> records;
+    try {
+        lmt::sqlite::Statement statement(m_db,
             "SELECT filename,COALESCE(sha256,''),size_bytes,modified_time,"
             "verified_at FROM files WHERE COALESCE(sha256,'')='' AND filename>?1 "
-            "ORDER BY filename LIMIT 256;",
-            -1,
-            &statement,
-            nullptr) != SQLITE_OK) {
+            "ORDER BY filename LIMIT 256;");
+        statement.text(1, afterFilename);
+        while (statement.step() == SQLITE_ROW) {
+            records.push_back(readInventoryRecord(statement.get()));
+        }
         return records;
+    } catch (...) {
+        markUnhealthy();
+        throw;
     }
-    sqlite3_bind_text(statement, 1, afterFilename.c_str(), -1, SQLITE_TRANSIENT);
-    while (sqlite3_step(statement) == SQLITE_ROW) {
-        FileInventoryRecord record;
-        const char* name = reinterpret_cast<const char*>(
-            sqlite3_column_text(statement, 0));
-        record.filename = name ? name : "";
-        record.sizeBytes =
-            static_cast<uint64_t>(sqlite3_column_int64(statement, 2));
-        record.modifiedTime = sqlite3_column_int64(statement, 3);
-        record.verifiedAt = sqlite3_column_int64(statement, 4);
-        records.push_back(std::move(record));
-    }
-    sqlite3_finalize(statement);
-    return records;
 }
 
 void HashEngine::startBackgroundIndexing(const std::string& uploadDir) {
@@ -433,6 +343,7 @@ void HashEngine::runBackgroundIndexing(std::string uploadDir) {
 #endif
     constexpr auto ReconcileInterval = std::chrono::seconds(5);
     while (!m_stopBackground.load()) {
+        try {
         reconcileDirectory(uploadDir);
         std::string afterFilename;
         while (!m_stopBackground.load()) {
@@ -473,6 +384,11 @@ void HashEngine::runBackgroundIndexing(std::string uploadDir) {
                     unixNow());
             }
         }
+        } catch (const std::exception& e) {
+            spdlog::error("Background inventory indexing stopped: {}", e.what());
+            markUnhealthy();
+            return;
+        }
         for (auto waited = std::chrono::milliseconds(0);
              waited < ReconcileInterval && !m_stopBackground.load();
              waited += std::chrono::milliseconds(100)) {
@@ -483,91 +399,63 @@ void HashEngine::runBackgroundIndexing(std::string uploadDir) {
 
 std::vector<FileInventoryRecord> HashEngine::findByHash(
     const std::string& hash, const std::string& afterFilename) const {
-    std::vector<FileInventoryRecord> records;
     std::lock_guard<std::mutex> lock(m_mutex);
-    if (!m_db || hash.empty()) {
-        return records;
-    }
-    sqlite3_stmt* statement = nullptr;
-    if (sqlite3_prepare_v2(
-            m_db,
+    requireHealthy();
+    std::vector<FileInventoryRecord> records;
+    if (hash.empty()) return records;
+    try {
+        lmt::sqlite::Statement statement(m_db,
             "SELECT filename,sha256,size_bytes,modified_time,verified_at "
-            "FROM files WHERE sha256=?1 AND filename>?2 ORDER BY filename LIMIT 256;",
-            -1,
-            &statement,
-            nullptr) != SQLITE_OK) {
+            "FROM files WHERE sha256=?1 AND filename>?2 ORDER BY filename LIMIT 256;");
+        statement.text(1, hash);
+        statement.text(2, afterFilename);
+        while (statement.step() == SQLITE_ROW) {
+            records.push_back(readInventoryRecord(statement.get()));
+        }
         return records;
+    } catch (...) {
+        markUnhealthy();
+        throw;
     }
-    sqlite3_bind_text(statement, 1, hash.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(statement, 2, afterFilename.c_str(), -1, SQLITE_TRANSIENT);
-    while (sqlite3_step(statement) == SQLITE_ROW) {
-        FileInventoryRecord record;
-        const char* name = reinterpret_cast<const char*>(
-            sqlite3_column_text(statement, 0));
-        record.filename = name ? name : "";
-        record.sha256 = hash;
-        record.sizeBytes =
-            static_cast<uint64_t>(sqlite3_column_int64(statement, 2));
-        record.modifiedTime = sqlite3_column_int64(statement, 3);
-        record.verifiedAt = sqlite3_column_int64(statement, 4);
-        records.push_back(std::move(record));
-    }
-    sqlite3_finalize(statement);
-    return records;
 }
 
 void HashEngine::upsertFile(
-    const std::string& filename,
-    const std::string& hash,
-    uint64_t sizeBytes,
-    int64_t modifiedTime,
-    int64_t verifiedAt) {
+    const std::string& filename, const std::string& hash,
+    uint64_t sizeBytes, int64_t modifiedTime, int64_t verifiedAt) {
     std::lock_guard<std::mutex> lock(m_mutex);
-    if (!m_db || filename.empty()) {
-        return;
-    }
-    sqlite3_stmt* statement = nullptr;
-    if (sqlite3_prepare_v2(
-            m_db,
+    requireHealthy();
+    if (filename.empty()) return;
+    try {
+        lmt::sqlite::Statement statement(m_db,
             "INSERT INTO files(filename,sha256,size_bytes,modified_time,verified_at) "
             "VALUES(?,?,?,?,?) ON CONFLICT(filename) DO UPDATE SET "
             "sha256=excluded.sha256,size_bytes=excluded.size_bytes,"
-            "modified_time=excluded.modified_time,verified_at=excluded.verified_at;",
-            -1,
-            &statement,
-            nullptr) != SQLITE_OK) {
-        return;
+            "modified_time=excluded.modified_time,verified_at=excluded.verified_at;");
+        statement.text(1, filename);
+        if (hash.empty()) statement.null(2);
+        else statement.text(2, hash);
+        statement.integer64(3, static_cast<sqlite3_int64>(sizeBytes));
+        statement.integer64(4, modifiedTime);
+        statement.integer64(5, verifiedAt);
+        statement.done();
+    } catch (...) {
+        markUnhealthy();
+        throw;
     }
-    sqlite3_bind_text(statement, 1, filename.c_str(), -1, SQLITE_TRANSIENT);
-    if (hash.empty()) {
-        sqlite3_bind_null(statement, 2);
-    } else {
-        sqlite3_bind_text(statement, 2, hash.c_str(), -1, SQLITE_TRANSIENT);
-    }
-    sqlite3_bind_int64(statement, 3, static_cast<sqlite3_int64>(sizeBytes));
-    sqlite3_bind_int64(statement, 4, modifiedTime);
-    sqlite3_bind_int64(statement, 5, verifiedAt);
-    if (sqlite3_step(statement) != SQLITE_DONE) {
-        spdlog::warn("Failed to update file inventory: {}", sqlite3_errmsg(m_db));
-    }
-    sqlite3_finalize(statement);
 }
 
 void HashEngine::removeFile(const std::string& filename) {
     std::lock_guard<std::mutex> lock(m_mutex);
-    if (!m_db || filename.empty()) {
-        return;
+    requireHealthy();
+    if (filename.empty()) return;
+    try {
+        lmt::sqlite::Statement statement(m_db, "DELETE FROM files WHERE filename=?;");
+        statement.text(1, filename);
+        statement.done();
+    } catch (...) {
+        markUnhealthy();
+        throw;
     }
-    sqlite3_stmt* statement = nullptr;
-    sqlite3_prepare_v2(
-        m_db,
-        "DELETE FROM files WHERE filename=?;",
-        -1,
-        &statement,
-        nullptr);
-    sqlite3_bind_text(statement, 1, filename.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_step(statement);
-    sqlite3_finalize(statement);
 }
 
 int HashEngine::getHashCount() const {
@@ -576,32 +464,25 @@ int HashEngine::getHashCount() const {
 }
 
 int HashEngine::getHashCountUnsafe() const {
-    if (!m_db) {
-        return 0;
+    if (!m_db) throw InventoryStorageError("file inventory unavailable");
+    try {
+        lmt::sqlite::Statement statement(m_db, "SELECT COUNT(*) FROM files;");
+        if (statement.step() != SQLITE_ROW)
+            throw InventoryStorageError("unable to count inventory entries");
+        const int count = sqlite3_column_int(statement.get(), 0);
+        statement.done();
+        return count;
+    } catch (...) {
+        markUnhealthy();
+        throw;
     }
-    sqlite3_stmt* statement = nullptr;
-    int count = 0;
-    if (sqlite3_prepare_v2(
-            m_db,
-            "SELECT COUNT(*) FROM files;",
-            -1,
-            &statement,
-            nullptr) == SQLITE_OK &&
-        sqlite3_step(statement) == SQLITE_ROW) {
-        count = sqlite3_column_int(statement, 0);
-    }
-    sqlite3_finalize(statement);
-    return count;
 }
 
 bool HashEngine::beginHash(const std::string& fileId) {
     auto context = std::make_shared<HashContext>();
-    context->ctx = EVP_MD_CTX_new();
+    context->ctx.reset(EVP_MD_CTX_new());
     if (!context->ctx ||
-        EVP_DigestInit_ex(context->ctx, EVP_sha256(), nullptr) != 1) {
-        if (context->ctx) {
-            EVP_MD_CTX_free(context->ctx);
-        }
+        EVP_DigestInit_ex(context->ctx.get(), EVP_sha256(), nullptr) != 1) {
         return false;
     }
 
@@ -616,10 +497,7 @@ bool HashEngine::beginHash(const std::string& fileId) {
     }
     if (previous) {
         std::lock_guard<std::mutex> lock(previous->mutex);
-        if (previous->ctx) {
-            EVP_MD_CTX_free(previous->ctx);
-            previous->ctx = nullptr;
-        }
+        previous->ctx.reset();
     }
     return true;
 }
@@ -639,7 +517,7 @@ bool HashEngine::updateHash(
     }
     std::lock_guard<std::mutex> lock(context->mutex);
     return context->ctx &&
-           EVP_DigestUpdate(context->ctx, data, size) == 1;
+           EVP_DigestUpdate(context->ctx.get(), data, size) == 1;
 }
 
 std::string HashEngine::finalizeHash(const std::string& fileId) {
@@ -659,11 +537,13 @@ std::string HashEngine::finalizeHash(const std::string& fileId) {
     {
         std::lock_guard<std::mutex> lock(context->mutex);
         if (!context->ctx ||
-            EVP_DigestFinal_ex(context->ctx, digest, &length) != 1) {
+#ifdef LMT_STORAGE_TESTING
+            s_failHashFinalization.load() ||
+#endif
+            EVP_DigestFinal_ex(context->ctx.get(), digest, &length) != 1) {
             return "";
         }
-        EVP_MD_CTX_free(context->ctx);
-        context->ctx = nullptr;
+        context->ctx.reset();
     }
 
     std::ostringstream output;
@@ -686,24 +566,20 @@ void HashEngine::abortHash(const std::string& fileId) {
         m_contexts.erase(it);
     }
     std::lock_guard<std::mutex> lock(context->mutex);
-    if (context->ctx) {
-        EVP_MD_CTX_free(context->ctx);
-        context->ctx = nullptr;
-    }
+    context->ctx.reset();
 }
 
 std::string HashEngine::computeHash(const char* data, uint64_t size) {
-    EVP_MD_CTX* context = EVP_MD_CTX_new();
+    std::unique_ptr<EVP_MD_CTX, MdCtxDeleter> context(EVP_MD_CTX_new());
     if (!context) {
         return "";
     }
     unsigned char digest[EVP_MAX_MD_SIZE];
     unsigned int length = 0;
     const bool ok =
-        EVP_DigestInit_ex(context, EVP_sha256(), nullptr) == 1 &&
-        EVP_DigestUpdate(context, data, size) == 1 &&
-        EVP_DigestFinal_ex(context, digest, &length) == 1;
-    EVP_MD_CTX_free(context);
+        EVP_DigestInit_ex(context.get(), EVP_sha256(), nullptr) == 1 &&
+        EVP_DigestUpdate(context.get(), data, size) == 1 &&
+        EVP_DigestFinal_ex(context.get(), digest, &length) == 1;
     if (!ok) {
         return "";
     }

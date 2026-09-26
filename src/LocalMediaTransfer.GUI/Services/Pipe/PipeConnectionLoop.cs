@@ -13,6 +13,7 @@ namespace LocalMediaTransfer.GUI.Services
         private readonly int _reconnectDelayMs;
         private readonly object _pipeLock = new();
         private readonly object _connectionStateLock = new();
+        private readonly object _sendStateLock = new();
         private readonly SemaphoreSlim _writeLock = new(1, 1);
         private readonly PipeSessionAuthenticator? _authenticator;
         private NamedPipeClientStream? _pipe;
@@ -22,7 +23,9 @@ namespace LocalMediaTransfer.GUI.Services
         private DateTime _lastConnectTimeoutLogUtc = DateTime.MinValue;
         private DateTime _lastSendFailureLogUtc = DateTime.MinValue;
         private bool _isConnected;
-        private bool _disposed;
+        private volatile bool _disposed;
+        private int _activeSends;
+        private bool _writeLockDisposed;
 
         public PipeConnectionLoop(
             string pipeName,
@@ -102,33 +105,55 @@ namespace LocalMediaTransfer.GUI.Services
             string data,
             string? requestId = null)
         {
-            if (_disposed)
+            lock (_sendStateLock)
+            {
+                if (_disposed)
+                {
+                    return PipeSendResult.Failed("pipe disposed");
+                }
+                _activeSends++;
+            }
+            try
+            {
+                NamedPipeClientStream? pipe;
+                lock (_pipeLock)
+                {
+                    pipe = _pipe;
+                }
+
+                if (pipe == null || !pipe.IsConnected)
+                {
+                    return PipeSendResult.Failed("pipe disconnected");
+                }
+
+                var result = await PipeCommandSender.SendAsync(
+                    pipe,
+                    _writeLock,
+                    type,
+                    data,
+                    requestId);
+                if (!result.Success && !_disposed)
+                {
+                    HandleSendFailure(type, result.FailureReason ?? "unknown send failure");
+                }
+                return result;
+            }
+            catch (ObjectDisposedException)
             {
                 return PipeSendResult.Failed("pipe disposed");
             }
-
-            NamedPipeClientStream? pipe;
-            lock (_pipeLock)
+            finally
             {
-                pipe = _pipe;
+                lock (_sendStateLock)
+                {
+                    _activeSends--;
+                    if (_disposed && _activeSends == 0 && !_writeLockDisposed)
+                    {
+                        _writeLockDisposed = true;
+                        _writeLock.Dispose();
+                    }
+                }
             }
-
-            if (pipe == null || !pipe.IsConnected)
-            {
-                return PipeSendResult.Failed("pipe disconnected");
-            }
-
-            var result = await PipeCommandSender.SendAsync(
-                pipe,
-                _writeLock,
-                type,
-                data,
-                requestId);
-            if (!result.Success && !_disposed)
-            {
-                HandleSendFailure(type, result.FailureReason ?? "unknown send failure");
-            }
-            return result;
         }
 
         private async Task ReadLoopAsync(long generation, CancellationToken ct)
@@ -301,15 +326,21 @@ namespace LocalMediaTransfer.GUI.Services
 
         public void Dispose()
         {
-            if (_disposed)
+            lock (_sendStateLock)
             {
-                return;
+                if (_disposed) return;
+                _disposed = true;
             }
-
-            _disposed = true;
             Stop();
             _cts?.Dispose();
-            _writeLock.Dispose();
+            lock (_sendStateLock)
+            {
+                if (_activeSends == 0 && !_writeLockDisposed)
+                {
+                    _writeLockDisposed = true;
+                    _writeLock.Dispose();
+                }
+            }
         }
     }
 }

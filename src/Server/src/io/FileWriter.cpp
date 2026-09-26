@@ -1271,7 +1271,14 @@ FileFinalizeResult FileWriter::finalizeFileResult(
 
         if (disposition == FileFinalizeDisposition::Saved ||
             disposition == FileFinalizeDisposition::Duplicate) {
-            storeHash(fullHash, finalName);
+            try {
+                storeHash(fullHash, finalName);
+            } catch (const std::exception& e) {
+                // The file has already been published (or the duplicate was
+                // confirmed). Report that completed outcome; restart will
+                // reconcile the inventory after the storage fault is fixed.
+                spdlog::error("Committed file could not be indexed: {}", e.what());
+            }
         }
     } catch (...) {
         if (m_hashEngine) {
@@ -1425,6 +1432,10 @@ std::pair<bool, std::string> FileWriter::isDuplicate(const std::string& hash) {
     if (!m_hashEngine || hash.empty()) return {false, ""};
     std::lock_guard<std::mutex> finalizeLock(m_finalizeMutex);
     return findVerifiedDuplicate(hash);
+}
+
+bool FileWriter::inventoryHealthy() const noexcept {
+    return m_hashEngine && m_hashEngine->isHealthy();
 }
 
 bool FileWriter::hasPreflightCandidate(

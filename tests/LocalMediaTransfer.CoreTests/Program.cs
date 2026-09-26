@@ -33,6 +33,7 @@ internal static class Program
         ("incomplete ownership launch metadata fails closed", IncompleteOwnershipLaunchFailsClosed),
         ("server output redacts session credentials", ServerOutputRedactsSessionCredentials),
         ("cancelled monitor leaves replacement process alone", CancelledMonitorLeavesReplacementAlone),
+        ("inventory startup failure does not restart", InventoryStartupFailureDoesNotRestart),
         ("closing owned lifetime job terminates child process", ClosingLifetimeJobTerminatesChild),
         ("system process wrapper owns child lifetime", SystemProcessWrapperOwnsChildLifetime),
         ("pipe reads messages larger than 4 KB", PipeReadsLargeMessage),
@@ -52,6 +53,7 @@ internal static class Program
         ("secret redactor covers diagnostic forms", SecretRedactorCoversDiagnosticForms),
         ("shell launcher rejects unsafe schemes", ShellLauncherRejectsUnsafeSchemes),
         ("pipe disposal during IO is safe", PipeDisposalDuringIoIsSafe),
+        ("approval queue rejects excess requests", ApprovalQueueRejectsExcess),
         ("network log service deduplicates repeated messages", NetworkLogServiceDeduplicates),
         ("dashboard presentation maps transfer history", DashboardPresentationMapsHistory),
         ("dashboard pairing payload includes trust fields", DashboardPairingPayloadIncludesTrustFields),
@@ -472,6 +474,28 @@ internal static class Program
         Assert(!replacement.Killed, "A cancelled monitor killed the replacement process.");
     }
 
+    private static async Task InventoryStartupFailureDoesNotRestart()
+    {
+        var process = new FakeServerProcess(hasExited: true, exitCode: 3);
+        var state = ServerManagerState.Starting;
+        int launches = 0;
+        var monitor = new ServerProcessMonitor(
+            monitorIntervalMs: 1,
+            maxAutoRestarts: 3,
+            serverAlreadyRunningExitCode: 2,
+            getOwnedProcess: _ => process,
+            isMonitorCurrent: _ => true,
+            launchOwnedServer: _ => { launches++; return true; },
+            disposeExitedOwnedProcess: (_, _) => Task.FromResult(true),
+            getState: () => state,
+            setState: (next, _) => { state = next; return true; },
+            log: _ => { },
+            error: _ => { });
+        await monitor.RunAsync(1, CancellationToken.None);
+        Assert(state == ServerManagerState.Faulted && launches == 0,
+            "Inventory startup failure was restarted or not reported as faulted.");
+    }
+
     private static async Task ClosingLifetimeJobTerminatesChild()
     {
         using var child = Process.Start(new ProcessStartInfo
@@ -732,8 +756,28 @@ internal static class Program
         client.Start();
         await connection.WaitAsync(TimeSpan.FromSeconds(5));
         await WaitUntil(() => client.IsConnected, TimeSpan.FromSeconds(5));
+        Task[] sends = Enumerable.Range(0, 40)
+            .Select(i => client.SendCommandAsync("test", new string('x', 8192) + i))
+            .ToArray();
         client.Dispose();
+        await Task.WhenAll(sends).WaitAsync(TimeSpan.FromSeconds(5));
         Assert(!client.IsConnected, "Disposed client still reports connected.");
+    }
+
+    private static Task ApprovalQueueRejectsExcess()
+    {
+        var queue = new BoundedRequestQueue<string>(2, item => item);
+        Assert(queue.TryAdd("a") == EnqueueResult.Added, "First approval was not queued.");
+        Assert(queue.TryAdd("a") == EnqueueResult.Duplicate, "Duplicate approval used capacity.");
+        Assert(queue.TryAdd("b") == EnqueueResult.Added, "Second approval was not queued.");
+        Assert(queue.TryAdd("c") == EnqueueResult.Full, "Approval capacity was bypassed.");
+        Assert(queue.TryTake(out string? first) && first == "a", "Approval ordering changed.");
+        Assert(queue.TryAdd("a") == EnqueueResult.Duplicate,
+            "Active approval key was admitted twice.");
+        queue.Complete(first!);
+        Assert(queue.TryAdd("c") == EnqueueResult.Added,
+            "Completed approval did not release capacity.");
+        return Task.CompletedTask;
     }
 
     private static Task NetworkLogServiceDeduplicates()

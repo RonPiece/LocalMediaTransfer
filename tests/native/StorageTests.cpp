@@ -1,5 +1,8 @@
 #include "io/FileWriter.hpp"
 #include "io/HashEngine.hpp"
+#include "history/TransferHistoryStore.hpp"
+#include "security/PairingStore.hpp"
+#include "common/SqliteChecked.hpp"
 #include "config/MetadataMigration.hpp"
 #include <openssl/rand.h>
 #include <filesystem>
@@ -8,6 +11,8 @@
 #include <sstream>
 #include <stdexcept>
 #include <cstring>
+#include <nlohmann/json.hpp>
+#include <sqlite3.h>
 #include <fmt/format.h>
 
 namespace fs = std::filesystem;
@@ -37,6 +42,13 @@ struct TestDirectory {
     }
 };
 
+static std::shared_ptr<HashEngine> openedEngine(const fs::path& root) {
+    fs::create_directories(root / ".lmt");
+    auto engine = std::make_shared<HashEngine>();
+    engine->openDatabase((root / ".lmt" / "inventory.db").u8string());
+    return engine;
+}
+
 // One successful block followed by a real stream failure, not a short EOF.
 struct FailingBuffer : std::streambuf {
     bool delivered = false;
@@ -59,6 +71,16 @@ static void hashing() {
     std::istream failed(&buffer);
     require(HashEngine::computeStreamHash(failed).empty(), "Read failure returned prefix digest");
     require(failed.bad(), "Fixture did not inject a read failure");
+    HashEngine engine;
+    const int freedBefore = HashEngine::freedHashContextsForTesting();
+    require(engine.beginHash("injected-finalize"), "Could not create hash context");
+    require(engine.updateHash("injected-finalize", "abc", 3), "Could not update hash context");
+    HashEngine::failHashFinalizationForTesting(true);
+    require(engine.finalizeHash("injected-finalize").empty(),
+        "Injected hash finalization failure was accepted");
+    HashEngine::failHashFinalizationForTesting(false);
+    require(HashEngine::freedHashContextsForTesting() == freedBefore + 1,
+        "Failed hash finalization leaked its OpenSSL context");
 }
 
 static size_t temporaryFiles(const fs::path& path) {
@@ -79,7 +101,7 @@ static void limitsAndCleanup(const fs::path& path) {
     limits.maxOwnerFiles = 1;
     limits.idleTimeout = std::chrono::seconds(10);
     limits.now = [&] { return clock; };
-    FileWriter writer(path.u8string(), std::make_shared<HashEngine>(),
+    FileWriter writer(path.u8string(), openedEngine(path),
         lmt::FilenameConflictPolicy::KeepBoth, limits);
     require(!writer.initFile("a-large", "large.bin", 9), "Per-file limit bypassed");
     require(writer.initFile("a-one", "one.bin", 8, 2), "First reservation failed");
@@ -109,7 +131,7 @@ static void limitsAndCleanup(const fs::path& path) {
     // Separate byte budget from the per-owner count gate.
     limits.maxOwnerFiles = 8;
     limits.maxActiveFiles = 8;
-    FileWriter bytes((path / "bytes").u8string(), std::make_shared<HashEngine>(),
+    FileWriter bytes((path / "bytes").u8string(), openedEngine(path / "bytes"),
         lmt::FilenameConflictPolicy::KeepBoth, limits);
     require(bytes.initFile("a-one", "one.bin", 5), "Byte-budget setup failed");
     require(!bytes.initFile("a-two", "two.bin", 4), "Per-owner byte budget bypassed");
@@ -119,7 +141,7 @@ static void storageFailures(const fs::path& path) {
     UploadLimits limits;
     limits.minFreeBytes = 0;
     limits.maxActiveFiles = limits.maxOwnerFiles = 1;
-    FileWriter writer(path.u8string(), std::make_shared<HashEngine>(),
+    FileWriter writer(path.u8string(), openedEngine(path),
         lmt::FilenameConflictPolicy::KeepBoth, limits);
     for (const char* operation : {"copy", "view-flush", "view-unmap", "file-flush", "publish"}) {
         writer.failStorageOperation = [=](const char* stage) { return std::strcmp(stage, operation) == 0; };
@@ -165,7 +187,7 @@ static void storageFailures(const fs::path& path) {
 static void mappingWindowReuse(const fs::path& path) {
     UploadLimits limits;
     limits.minFreeBytes = 0;
-    FileWriter writer(path.u8string(), std::make_shared<HashEngine>(),
+    FileWriter writer(path.u8string(), openedEngine(path),
         lmt::FilenameConflictPolicy::KeepBoth, limits);
     int viewFlushes = 0;
     writer.failStorageOperation = [&](const char* stage) {
@@ -286,6 +308,112 @@ static void inventoryPaging(const fs::path& root) {
     require(cache.size() <= 256, "Preflight cache exceeded its bound");
 }
 
+static void pairingCapacity(const fs::path& base) {
+    fs::create_directories(base);
+    PairingStore pairing((base / "devices.json").u8string());
+    const std::string credential(32, 'a');
+    for (size_t index = 0; index < PairingStore::MaxPendingRequests; ++index) {
+        require(pairing.request("device-" + std::to_string(index), "iPhone",
+            credential, "127.0.0.1", false) == PairingStore::Status::Pending,
+            "Pairing capacity rejected a valid request");
+    }
+    require(pairing.request("device-overflow", "iPhone", credential,
+        "127.0.0.1", false) == PairingStore::Status::AtCapacity,
+        "Pairing queue accepted an excess request");
+    require(pairing.request("device-0", "iPhone", credential,
+        "127.0.0.1", false) == PairingStore::Status::Pending,
+        "A duplicate pairing request consumed capacity");
+}
+
+static void sqliteFailureInvariants(const fs::path& base) {
+    fs::create_directories(base);
+    {
+        HashEngine engine;
+        bool failed = false;
+        try { engine.openDatabase(base.u8string()); }
+        catch (const InventoryStorageError&) { failed = true; }
+        require(failed && !engine.isHealthy(), "Inventory open failure was accepted");
+    }
+    {
+        HashEngine engine;
+        lmt::sqlite::faultOperation = [](const char* operation) {
+            return std::strcmp(operation, "create inventory schema") == 0;
+        };
+        bool failed = false;
+        try { engine.openDatabase((base / "migration.db").u8string()); }
+        catch (const InventoryStorageError&) { failed = true; }
+        lmt::sqlite::faultOperation = {};
+        require(failed && !engine.isHealthy(), "Inventory migration failure was accepted");
+        sqlite3* db = nullptr;
+        require(sqlite3_open((base / "migration.db").u8string().c_str(), &db) == SQLITE_OK,
+            "Could not inspect rolled-back migration");
+        sqlite3_stmt* statement = nullptr;
+        require(sqlite3_prepare_v2(db, "PRAGMA user_version;", -1, &statement, nullptr) == SQLITE_OK,
+            "Could not inspect schema version");
+        require(sqlite3_step(statement) == SQLITE_ROW &&
+            sqlite3_column_int(statement, 0) == 0, "Failed migration changed schema version");
+        sqlite3_finalize(statement);
+        sqlite3_close(db);
+    }
+
+    for (const char* operation : {"begin transaction", "prepare statement",
+                                  "step statement", "commit transaction"}) {
+        const fs::path root = base / operation;
+        fs::create_directories(root);
+        std::ofstream(root / "sample.bin") << "abc";
+        auto engine = openedEngine(root);
+        lmt::sqlite::faultOperation = [operation](const char* observed) {
+            return std::strcmp(operation, observed) == 0;
+        };
+        bool failed = false;
+        try { engine->reconcileDirectory(root.u8string()); }
+        catch (const InventoryStorageError&) { failed = true; }
+        lmt::sqlite::faultOperation = {};
+        require(failed && !engine->isHealthy(), "Reconciliation fault was accepted");
+        bool rejected = false;
+        try { (void)engine->findFirstCandidate("sample.bin", 3); }
+        catch (const InventoryStorageError&) { rejected = true; }
+        require(rejected, "Unhealthy lookup returned no duplicate");
+        sqlite3* db = nullptr;
+        require(sqlite3_open((root / ".lmt" / "inventory.db").u8string().c_str(), &db) == SQLITE_OK,
+            "Could not inspect inventory rollback");
+        sqlite3_stmt* statement = nullptr;
+        require(sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM files;", -1, &statement, nullptr) == SQLITE_OK,
+            "Could not inspect inventory count");
+        require(sqlite3_step(statement) == SQLITE_ROW &&
+            sqlite3_column_int(statement, 0) == 0,
+            "Failed reconciliation persisted a partial inventory");
+        sqlite3_finalize(statement);
+        sqlite3_close(db);
+    }
+
+    TransferHistoryStore history;
+    history.open((base / "history.db").u8string());
+    const auto payload = [](const char* filename) {
+        return nlohmann::json{{"sessionId", "session-1"}, {"completedAt", 1},
+            {"files", nlohmann::json::array({{{"id", "file-1"}, {"name", filename},
+                {"savedName", filename}, {"outcome", "uploaded"}, {"size", 3}}})}}.dump();
+    };
+    history.recordSession(payload("original.bin"), "127.0.0.1");
+    const std::string before = history.recentSessionsJson();
+    for (const char* operation : {"step statement", "commit transaction"}) {
+        int steps = 0;
+        lmt::sqlite::faultOperation = [&](const char* observed) {
+            if (std::strcmp(operation, "step statement") == 0) {
+                return std::strcmp(observed, "step statement") == 0 && ++steps == 2;
+            }
+            return std::strcmp(observed, "commit transaction") == 0;
+        };
+        bool failed = false;
+        try { history.recordSession(payload("replacement.bin"), "127.0.0.1"); }
+        catch (const std::exception&) { failed = true; }
+        lmt::sqlite::faultOperation = {};
+        require(failed, "History write failure was accepted");
+        require(history.recentSessionsJson() == before,
+            "History failure replaced a complete session with partial rows");
+    }
+}
+
 void sessionExhaustion(const fs::path& root);
 
 int main() {
@@ -297,6 +425,8 @@ int main() {
         try { (void)fmt::format(fmt::runtime("{:u}"), -1); }
         catch (const fmt::format_error&) { invalidFormatRejected = true; }
         require(invalidFormatRejected, "Invalid numeric format was not rejected");
+        sqliteFailureInvariants(directory.path / "sqlite-failures");
+        pairingCapacity(directory.path / "pairing-capacity");
         inventoryPaging(directory.path / "inventory");
         sessionExhaustion(directory.path / "sessions");
         limitsAndCleanup(directory.path / "limits");
@@ -308,7 +438,7 @@ int main() {
         const auto orphan = cleanup / (".lmt-upload-" + std::string(64, 'a') + ".tmp");
         std::ofstream(orphan) << "abandoned";
         std::ofstream(cleanup / ".user-notes.tmp") << "preserve";
-        { FileWriter writer(cleanup.u8string(), std::make_shared<HashEngine>());
+        { FileWriter writer(cleanup.u8string(), openedEngine(cleanup));
           require(!fs::exists(orphan), "Owned orphan was not removed");
           require(fs::exists(cleanup / ".user-notes.tmp"), "Unrelated temp file was removed"); }
         std::cout << "Native storage regression tests passed\n";

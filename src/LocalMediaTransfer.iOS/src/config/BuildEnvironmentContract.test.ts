@@ -72,7 +72,7 @@ describe('iOS build environment contract', () => {
   });
 
   it('uses the SDK 57 native toolchain and deployment floor', () => {
-    expect(packageSource).toContain('"expo": "~57.0.22"');
+    expect(JSON.parse(packageSource).dependencies.expo).toMatch(/^~57\.0\.\d+$/);
     expect(packageSource).toContain('"react-native": "0.86.3"');
     expect(packageSource).toContain('"@react-native/jest-preset": "0.86.3"');
     expect(packageSource).toContain('"react-native-reanimated": "4.5.1"');

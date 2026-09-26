@@ -11,6 +11,7 @@ var tests = new (string Name, Func<Task> Run)[]
     ("discovery uses packet source address", DiscoverySourceAddress),
     ("discovery skips virtual adapters and shares physical scan budget", DiscoveryAdapterSelection),
     ("transfer source limits and stable IDs", TransferSourceValidation),
+    ("maximum native selection uses bounded cancellable workers", BoundedNativeSelection),
     ("retry classification", RetryClassification),
     ("invalid certificate pins fail before transport", InvalidCertificatePin),
     ("pinned TLS stalled body cancels", () => PinnedNetworkCancellation.RunAsync(false)),
@@ -147,6 +148,57 @@ static Task TransferSourceValidation()
     }
     finally { SafeDelete(root); }
     return Task.CompletedTask;
+}
+
+static async Task BoundedNativeSelection()
+{
+    string root = CreateTestRoot();
+    try
+    {
+        string[] paths = Enumerable.Range(0, 1_000).Select(index =>
+            Path.Combine(root, $"file-{index:D4}.bin")).ToArray();
+        foreach (string path in paths) File.WriteAllBytes(path, [1]);
+        string session = "win-" + new string('d', 32);
+        Assert(NativeTransferClient.PrepareFiles(paths, session).Count == 1_000,
+            "Maximum supported selection was rejected.");
+        AssertThrows<NativeClientException>(() => NativeTransferClient.PrepareFiles(
+            paths.Concat([Path.Combine(root, "extra.bin")]), session));
+
+        int active = 0, peak = 0, completed = 0;
+        var selected = Enumerable.Range(0, 1_000).ToArray();
+        await BoundedWorkerPool.RunAsync(selected, 6, async (_, _, token) =>
+        {
+            int count = Interlocked.Increment(ref active);
+            lock (selected) peak = Math.Max(peak, count);
+            try
+            {
+                await Task.Delay(1, token);
+                Interlocked.Increment(ref completed);
+            }
+            finally { Interlocked.Decrement(ref active); }
+        }, _ => true, CancellationToken.None);
+        Assert(completed == 1_000 && peak <= 6,
+            "Maximum selection exceeded six active workers or lost work.");
+
+        using var cancel = new CancellationTokenSource();
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        int dispatched = 0;
+        Task run = BoundedWorkerPool.RunAsync(selected, 6, async (_, _, token) =>
+        {
+            if (Interlocked.Increment(ref dispatched) == 6) started.TrySetResult();
+            await Task.Delay(Timeout.Infinite, token);
+        }, _ => false, cancel.Token);
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        cancel.Cancel();
+        try
+        {
+            await run.WaitAsync(TimeSpan.FromSeconds(5));
+            throw new InvalidOperationException("Cancelled worker pool completed successfully.");
+        }
+        catch (OperationCanceledException) { }
+        Assert(dispatched <= 6, "Cancellation still dispatched unbounded work.");
+    }
+    finally { SafeDelete(root); }
 }
 
 static Task RetryClassification()

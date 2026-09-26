@@ -1,7 +1,8 @@
 #include "history/TransferHistoryStore.hpp"
+#include "common/SqliteChecked.hpp"
+#include "common/TransferLimits.hpp"
 
 #include <nlohmann/json.hpp>
-#include <spdlog/spdlog.h>
 #include <sqlite3.h>
 
 #include <filesystem>
@@ -10,39 +11,20 @@
 using json = nlohmann::json;
 
 namespace {
-bool execHistorySql(sqlite3* db, const char* sql) {
-    char* message = nullptr;
-    const int rc = sqlite3_exec(db, sql, nullptr, nullptr, &message);
-    if (rc != SQLITE_OK) {
-        spdlog::error(
-            "Transfer history SQLite error: {}",
-            message ? message : "unknown");
-        sqlite3_free(message);
-        return false;
-    }
-    return true;
-}
-
 bool historyColumnExists(
     sqlite3* db,
     const char* table,
     const char* column) {
-    sqlite3_stmt* statement = nullptr;
     const std::string query = std::string("PRAGMA table_info(") + table + ");";
-    if (sqlite3_prepare_v2(
-            db, query.c_str(), -1, &statement, nullptr) != SQLITE_OK) {
-        return false;
-    }
+    lmt::sqlite::Statement statement(db, query.c_str());
     bool found = false;
-    while (sqlite3_step(statement) == SQLITE_ROW) {
+    while (statement.step() == SQLITE_ROW) {
         const char* name = reinterpret_cast<const char*>(
-            sqlite3_column_text(statement, 1));
+            sqlite3_column_text(statement.get(), 1));
         if (name && std::string(name) == column) {
             found = true;
-            break;
         }
     }
-    sqlite3_finalize(statement);
     return found;
 }
 }
@@ -60,14 +42,18 @@ void TransferHistoryStore::open(const std::string& dbPath) {
     std::filesystem::create_directories(
         std::filesystem::u8path(dbPath).parent_path());
     if (sqlite3_open(dbPath.c_str(), &m_db) != SQLITE_OK) {
+        sqlite3_close(m_db);
+        m_db = nullptr;
         throw std::runtime_error("Unable to open transfer history database");
     }
-    sqlite3_busy_timeout(m_db, 5000);
-    execHistorySql(m_db, "PRAGMA journal_mode=WAL;");
-    execHistorySql(m_db, "PRAGMA synchronous=NORMAL;");
-    execHistorySql(m_db, "PRAGMA foreign_keys=ON;");
-    if (!execHistorySql(
-            m_db,
+    try {
+    lmt::sqlite::check(sqlite3_busy_timeout(m_db, 5000), "set history busy timeout");
+    lmt::sqlite::execute(m_db, "PRAGMA journal_mode=WAL;", "configure history journal");
+    lmt::sqlite::execute(m_db, "PRAGMA synchronous=NORMAL;", "configure history sync");
+    lmt::sqlite::execute(m_db, "PRAGMA foreign_keys=ON;", "configure history foreign keys");
+    lmt::sqlite::Transaction migration(m_db);
+    lmt::sqlite::execute(
+        m_db,
             "CREATE TABLE IF NOT EXISTS sessions("
             " session_id TEXT PRIMARY KEY,"
             " completed_at INTEGER NOT NULL,"
@@ -109,58 +95,62 @@ void TransferHistoryStore::open(const std::string& dbPath) {
             " FOREIGN KEY(session_id) REFERENCES sessions(session_id)"
             " ON DELETE CASCADE"
             ");"
-            "PRAGMA user_version=5;")) {
-        throw std::runtime_error("Unable to initialize transfer history schema");
-    }
+            "PRAGMA user_version=5;", "initialize transfer history schema");
     if (!historyColumnExists(m_db, "sessions", "selected_assets")) {
-        execHistorySql(m_db,
-            "ALTER TABLE sessions ADD COLUMN selected_assets INTEGER NOT NULL DEFAULT 0;");
+        lmt::sqlite::execute(m_db,
+            "ALTER TABLE sessions ADD COLUMN selected_assets INTEGER NOT NULL DEFAULT 0;", "migrate history");
     }
     if (!historyColumnExists(m_db, "sessions", "expanded_files")) {
-        execHistorySql(m_db,
-            "ALTER TABLE sessions ADD COLUMN expanded_files INTEGER NOT NULL DEFAULT 0;");
+        lmt::sqlite::execute(m_db,
+            "ALTER TABLE sessions ADD COLUMN expanded_files INTEGER NOT NULL DEFAULT 0;", "migrate history");
     }
     if (!historyColumnExists(m_db, "sessions", "avoided_bytes")) {
-        execHistorySql(m_db,
-            "ALTER TABLE sessions ADD COLUMN avoided_bytes INTEGER NOT NULL DEFAULT 0;");
+        lmt::sqlite::execute(m_db,
+            "ALTER TABLE sessions ADD COLUMN avoided_bytes INTEGER NOT NULL DEFAULT 0;", "migrate history");
     }
     if (!historyColumnExists(m_db, "sessions", "finalization_duplicate_bytes")) {
-        execHistorySql(m_db,
-            "ALTER TABLE sessions ADD COLUMN finalization_duplicate_bytes INTEGER NOT NULL DEFAULT 0;");
+        lmt::sqlite::execute(m_db,
+            "ALTER TABLE sessions ADD COLUMN finalization_duplicate_bytes INTEGER NOT NULL DEFAULT 0;", "migrate history");
     }
     if (!historyColumnExists(m_db, "sessions", "selected_media_bytes")) {
-        execHistorySql(m_db,
-            "ALTER TABLE sessions ADD COLUMN selected_media_bytes INTEGER NOT NULL DEFAULT 0;");
+        lmt::sqlite::execute(m_db,
+            "ALTER TABLE sessions ADD COLUMN selected_media_bytes INTEGER NOT NULL DEFAULT 0;", "migrate history");
     }
     if (!historyColumnExists(m_db, "sessions", "additional_components_bytes")) {
-        execHistorySql(m_db,
-            "ALTER TABLE sessions ADD COLUMN additional_components_bytes INTEGER NOT NULL DEFAULT 0;");
+        lmt::sqlite::execute(m_db,
+            "ALTER TABLE sessions ADD COLUMN additional_components_bytes INTEGER NOT NULL DEFAULT 0;", "migrate history");
     }
     if (!historyColumnExists(m_db, "sessions", "selected_media_files")) {
-        execHistorySql(m_db,
-            "ALTER TABLE sessions ADD COLUMN selected_media_files INTEGER NOT NULL DEFAULT 0;");
+        lmt::sqlite::execute(m_db,
+            "ALTER TABLE sessions ADD COLUMN selected_media_files INTEGER NOT NULL DEFAULT 0;", "migrate history");
     }
     if (!historyColumnExists(m_db, "sessions", "additional_components_files")) {
-        execHistorySql(m_db,
-            "ALTER TABLE sessions ADD COLUMN additional_components_files INTEGER NOT NULL DEFAULT 0;");
+        lmt::sqlite::execute(m_db,
+            "ALTER TABLE sessions ADD COLUMN additional_components_files INTEGER NOT NULL DEFAULT 0;", "migrate history");
     }
     if (!historyColumnExists(m_db, "sessions", "completion_status")) {
-        execHistorySql(m_db,
-            "ALTER TABLE sessions ADD COLUMN completion_status TEXT NOT NULL DEFAULT 'completed';");
+        lmt::sqlite::execute(m_db,
+            "ALTER TABLE sessions ADD COLUMN completion_status TEXT NOT NULL DEFAULT 'completed';", "migrate history");
     }
     if (!historyColumnExists(m_db, "session_files", "matched_name")) {
-        execHistorySql(m_db,
-            "ALTER TABLE session_files ADD COLUMN matched_name TEXT NOT NULL DEFAULT '';" );
+        lmt::sqlite::execute(m_db,
+            "ALTER TABLE session_files ADD COLUMN matched_name TEXT NOT NULL DEFAULT '';", "migrate history");
     }
     if (!historyColumnExists(m_db, "session_files", "duplicate_stage")) {
-        execHistorySql(m_db,
-            "ALTER TABLE session_files ADD COLUMN duplicate_stage TEXT NOT NULL DEFAULT '';" );
+        lmt::sqlite::execute(m_db,
+            "ALTER TABLE session_files ADD COLUMN duplicate_stage TEXT NOT NULL DEFAULT '';", "migrate history");
     }
     if (!historyColumnExists(m_db, "session_files", "avoided_bytes")) {
-        execHistorySql(m_db,
-            "ALTER TABLE session_files ADD COLUMN avoided_bytes INTEGER NOT NULL DEFAULT 0;" );
+        lmt::sqlite::execute(m_db,
+            "ALTER TABLE session_files ADD COLUMN avoided_bytes INTEGER NOT NULL DEFAULT 0;", "migrate history");
     }
-    execHistorySql(m_db, "PRAGMA user_version=5;");
+    lmt::sqlite::execute(m_db, "PRAGMA user_version=5;", "set history version");
+    migration.commit();
+    } catch (...) {
+        sqlite3_close(m_db);
+        m_db = nullptr;
+        throw;
+    }
 }
 
 void TransferHistoryStore::recordSession(
@@ -171,15 +161,17 @@ void TransferHistoryStore::recordSession(
     if (sessionId.empty()) {
         throw std::invalid_argument("sessionId is required");
     }
+    const json files = payload.value("files", json::array());
+    if (!files.is_array() || files.size() > lmt::TransferLimits::MaxQueuedFiles) {
+        throw std::invalid_argument("Invalid transfer history files");
+    }
 
     std::lock_guard<std::mutex> lock(m_mutex);
     if (!m_db) {
-        return;
+        throw std::runtime_error("Transfer history is unavailable");
     }
-    execHistorySql(m_db, "BEGIN IMMEDIATE;");
-    sqlite3_stmt* session = nullptr;
-    sqlite3_prepare_v2(
-        m_db,
+    lmt::sqlite::Transaction transaction(m_db);
+    lmt::sqlite::Statement sessionStatement(m_db,
         "INSERT OR REPLACE INTO sessions("
         "session_id,completed_at,client_ip,selected_files,uploaded_files,"
         "skipped_files,failed_files,selected_bytes,uploaded_bytes,skipped_bytes,"
@@ -189,106 +181,78 @@ void TransferHistoryStore::recordSession(
         "check_duration_ms,upload_duration_ms,total_duration_ms,"
         "average_speed_mbps,peak_speed_mbps,retries,selected_assets,expanded_files,"
         "completion_status)"
-        " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);",
-        -1,
-        &session,
-        nullptr);
+        " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);");
     int column = 1;
-    sqlite3_bind_text(session, column++, sessionId.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_int64(
-        session,
-        column++,
-        payload.value("completedAt", static_cast<int64_t>(0)));
-    sqlite3_bind_text(session, column++, clientIp.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_int(session, column++, payload.value("selectedFiles", 0));
-    sqlite3_bind_int(session, column++, payload.value("uploadedFiles", 0));
-    sqlite3_bind_int(session, column++, payload.value("skippedFiles", 0));
-    sqlite3_bind_int(session, column++, payload.value("failedFiles", 0));
+    sessionStatement.text(column++, sessionId);
+    sessionStatement.integer64(column++, payload.value("completedAt", static_cast<int64_t>(0)));
+    sessionStatement.text(column++, clientIp);
+    sessionStatement.integer(column++, payload.value("selectedFiles", 0));
+    sessionStatement.integer(column++, payload.value("uploadedFiles", 0));
+    sessionStatement.integer(column++, payload.value("skippedFiles", 0));
+    sessionStatement.integer(column++, payload.value("failedFiles", 0));
     const int64_t selectedBytes = payload.value("selectedBytes", 0LL);
-    sqlite3_bind_int64(session, column++, selectedBytes);
-    sqlite3_bind_int64(session, column++, payload.value("uploadedBytes", 0LL));
-    sqlite3_bind_int64(session, column++, payload.value("skippedBytes", 0LL));
-    sqlite3_bind_int64(
-        session, column++, payload.value("selectedMediaBytes", selectedBytes));
-    sqlite3_bind_int64(
-        session, column++, payload.value("additionalComponentsBytes", 0LL));
-    sqlite3_bind_int(
-        session, column++, payload.value("selectedMediaFiles", payload.value("selectedFiles", 0)));
-    sqlite3_bind_int(
-        session, column++, payload.value("additionalComponentsFiles", 0));
-    sqlite3_bind_int64(session, column++, payload.value("avoidedBytes", 0LL));
-    sqlite3_bind_int64(
-        session,
-        column++,
-        payload.value("finalizationDuplicateBytes", 0LL));
-    sqlite3_bind_int64(session, column++, payload.value("checkDurationMs", 0LL));
-    sqlite3_bind_int64(session, column++, payload.value("uploadDurationMs", 0LL));
-    sqlite3_bind_int64(session, column++, payload.value("totalDurationMs", 0LL));
-    sqlite3_bind_double(session, column++, payload.value("averageSpeedMBps", 0.0));
-    sqlite3_bind_double(session, column++, payload.value("peakSpeedMBps", 0.0));
-    sqlite3_bind_int(session, column++, payload.value("retries", 0));
-    sqlite3_bind_int(session, column++, payload.value("selectedAssets", 0));
-    sqlite3_bind_int(session, column++, payload.value(
+    sessionStatement.integer64(column++, selectedBytes);
+    sessionStatement.integer64(column++, payload.value("uploadedBytes", 0LL));
+    sessionStatement.integer64(column++, payload.value("skippedBytes", 0LL));
+    sessionStatement.integer64(column++, payload.value("selectedMediaBytes", selectedBytes));
+    sessionStatement.integer64(column++, payload.value("additionalComponentsBytes", 0LL));
+    sessionStatement.integer(column++, payload.value("selectedMediaFiles", payload.value("selectedFiles", 0)));
+    sessionStatement.integer(column++, payload.value("additionalComponentsFiles", 0));
+    sessionStatement.integer64(column++, payload.value("avoidedBytes", 0LL));
+    sessionStatement.integer64(column++, payload.value("finalizationDuplicateBytes", 0LL));
+    sessionStatement.integer64(column++, payload.value("checkDurationMs", 0LL));
+    sessionStatement.integer64(column++, payload.value("uploadDurationMs", 0LL));
+    sessionStatement.integer64(column++, payload.value("totalDurationMs", 0LL));
+    sessionStatement.real(column++, payload.value("averageSpeedMBps", 0.0));
+    sessionStatement.real(column++, payload.value("peakSpeedMBps", 0.0));
+    sessionStatement.integer(column++, payload.value("retries", 0));
+    sessionStatement.integer(column++, payload.value("selectedAssets", 0));
+    sessionStatement.integer(column++, payload.value(
         "expandedFiles", payload.value("selectedFiles", 0)));
     const std::string completionStatus = payload.value("completionStatus", "completed");
-    sqlite3_bind_text(
-        session, column++, completionStatus.c_str(), -1, SQLITE_TRANSIENT);
-    if (sqlite3_step(session) != SQLITE_DONE) {
-        sqlite3_finalize(session);
-        execHistorySql(m_db, "ROLLBACK;");
-        throw std::runtime_error("Unable to store transfer session");
-    }
-    sqlite3_finalize(session);
+    sessionStatement.text(column++, completionStatus);
+    sessionStatement.done();
 
-    sqlite3_stmt* file = nullptr;
-    sqlite3_prepare_v2(
-        m_db,
+    lmt::sqlite::Statement fileStatement(m_db,
         "INSERT OR REPLACE INTO session_files("
         "session_id,file_id,original_name,saved_name,size_bytes,outcome,"
-        "matched_name,duplicate_stage,avoided_bytes) VALUES(?,?,?,?,?,?,?,?,?);",
-        -1,
-        &file,
-        nullptr);
-    for (const auto& item : payload.value("files", json::array())) {
-        sqlite3_bind_text(file, 1, sessionId.c_str(), -1, SQLITE_TRANSIENT);
+        "matched_name,duplicate_stage,avoided_bytes) VALUES(?,?,?,?,?,?,?,?,?);");
+    for (const auto& item : files) {
+        fileStatement.text(1, sessionId);
         const std::string id = item.value("id", "");
         const std::string original = item.value("name", "");
         const std::string saved = item.value("savedName", original);
         const std::string outcome = item.value("outcome", "failed");
-        sqlite3_bind_text(file, 2, id.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(file, 3, original.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(file, 4, saved.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_int64(file, 5, item.value("size", 0LL));
-        sqlite3_bind_text(file, 6, outcome.c_str(), -1, SQLITE_TRANSIENT);
+        fileStatement.text(2, id);
+        fileStatement.text(3, original);
+        fileStatement.text(4, saved);
+        fileStatement.integer64(5, item.value("size", 0LL));
+        fileStatement.text(6, outcome);
         const std::string matched = item.value("matchedName", "");
         const std::string duplicateStage = item.value("duplicateStage", "");
-        sqlite3_bind_text(file, 7, matched.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(file, 8, duplicateStage.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_int64(file, 9, item.value("avoidedBytes", 0LL));
-        sqlite3_step(file);
-        sqlite3_reset(file);
-        sqlite3_clear_bindings(file);
+        fileStatement.text(7, matched);
+        fileStatement.text(8, duplicateStage);
+        fileStatement.integer64(9, item.value("avoidedBytes", 0LL));
+        fileStatement.done();
+        fileStatement.reset();
     }
-    sqlite3_finalize(file);
 
-    execHistorySql(
+    lmt::sqlite::execute(
         m_db,
         "DELETE FROM sessions WHERE session_id IN ("
         " SELECT session_id FROM sessions ORDER BY completed_at DESC"
         " LIMIT -1 OFFSET 200"
-        ");");
-    execHistorySql(m_db, "COMMIT;");
+        ");", "trim transfer history");
+    transaction.commit();
 }
 
 std::string TransferHistoryStore::recentSessionsJson(int limit) const {
     std::lock_guard<std::mutex> lock(m_mutex);
     json rows = json::array();
     if (!m_db) {
-        return rows.dump();
+        throw std::runtime_error("Transfer history is unavailable");
     }
-    sqlite3_stmt* statement = nullptr;
-    sqlite3_prepare_v2(
-        m_db,
+    lmt::sqlite::Statement sessions(m_db,
         "SELECT session_id,completed_at,client_ip,selected_files,"
         "uploaded_files,skipped_files,failed_files,selected_bytes,"
         "selected_media_bytes,additional_components_bytes,"
@@ -297,27 +261,20 @@ std::string TransferHistoryStore::recentSessionsJson(int limit) const {
         "check_duration_ms,upload_duration_ms,"
         "total_duration_ms,average_speed_mbps,peak_speed_mbps,retries,"
         "selected_assets,expanded_files,completion_status "
-        "FROM sessions ORDER BY completed_at DESC LIMIT ?;",
-        -1,
-        &statement,
-        nullptr);
-    sqlite3_bind_int(statement, 1, std::max(1, std::min(limit, 200)));
-    while (sqlite3_step(statement) == SQLITE_ROW) {
+        "FROM sessions ORDER BY completed_at DESC LIMIT ?;");
+    sqlite3_stmt* statement = sessions.get();
+    sessions.integer(1, std::max(1, std::min(limit, 200)));
+    while (sessions.step() == SQLITE_ROW) {
         const std::string sessionId = reinterpret_cast<const char*>(
             sqlite3_column_text(statement, 0));
         json files = json::array();
-        sqlite3_stmt* fileStatement = nullptr;
-        sqlite3_prepare_v2(
-            m_db,
+        lmt::sqlite::Statement filesStatement(m_db,
             "SELECT file_id,original_name,saved_name,size_bytes,outcome,"
             "matched_name,duplicate_stage,avoided_bytes FROM session_files "
-            "WHERE session_id=? ORDER BY rowid;",
-            -1,
-            &fileStatement,
-            nullptr);
-        sqlite3_bind_text(
-            fileStatement, 1, sessionId.c_str(), -1, SQLITE_TRANSIENT);
-        while (sqlite3_step(fileStatement) == SQLITE_ROW) {
+            "WHERE session_id=? ORDER BY rowid;");
+        sqlite3_stmt* fileStatement = filesStatement.get();
+        filesStatement.text(1, sessionId);
+        while (filesStatement.step() == SQLITE_ROW) {
             files.push_back({
                 {"id", reinterpret_cast<const char*>(sqlite3_column_text(fileStatement, 0))},
                 {"name", reinterpret_cast<const char*>(sqlite3_column_text(fileStatement, 1))},
@@ -329,7 +286,6 @@ std::string TransferHistoryStore::recentSessionsJson(int limit) const {
                 {"avoidedBytes", sqlite3_column_int64(fileStatement, 7)}
             });
         }
-        sqlite3_finalize(fileStatement);
         rows.push_back({
             {"sessionId", sessionId},
             {"completedAt", sqlite3_column_int64(statement, 1)},
@@ -359,13 +315,14 @@ std::string TransferHistoryStore::recentSessionsJson(int limit) const {
             {"files", files}
         });
     }
-    sqlite3_finalize(statement);
     return rows.dump();
 }
 
 void TransferHistoryStore::clear() {
     std::lock_guard<std::mutex> lock(m_mutex);
-    if (m_db) {
-        execHistorySql(m_db, "DELETE FROM session_files; DELETE FROM sessions;");
-    }
+    if (!m_db) throw std::runtime_error("Transfer history is unavailable");
+    lmt::sqlite::Transaction transaction(m_db);
+    lmt::sqlite::execute(m_db, "DELETE FROM session_files;", "clear transfer history files");
+    lmt::sqlite::execute(m_db, "DELETE FROM sessions;", "clear transfer history sessions");
+    transaction.commit();
 }

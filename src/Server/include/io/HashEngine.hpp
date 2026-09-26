@@ -12,6 +12,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -29,6 +30,11 @@ struct FileInventoryRecord {
     int64_t verifiedAt = 0;
 };
 
+class InventoryStorageError : public std::runtime_error {
+public:
+    explicit InventoryStorageError(const char* message) : std::runtime_error(message) {}
+};
+
 class HashEngine {
 public:
     HashEngine();
@@ -41,6 +47,10 @@ public:
     bool updateHash(const std::string& fileId, const char* data, uint64_t size);
     std::string finalizeHash(const std::string& fileId);
     void abortHash(const std::string& fileId);
+#ifdef LMT_STORAGE_TESTING
+    static void failHashFinalizationForTesting(bool fail) noexcept;
+    static int freedHashContextsForTesting() noexcept;
+#endif
 
     static std::string computeHash(const char* data, uint64_t size);
     static std::string computeFileHash(const std::string& path,
@@ -51,6 +61,7 @@ public:
     void openDatabase(const std::string& dbPath);
     void reconcileDirectory(const std::string& uploadDir);
     void startBackgroundIndexing(const std::string& uploadDir);
+    bool isHealthy() const noexcept { return m_healthy.load(); }
 
     std::optional<FileInventoryRecord> findFirstCandidate(
         const std::string& filename,
@@ -73,12 +84,17 @@ public:
     int getHashCount() const;
 
 private:
+    struct MdCtxDeleter {
+        void operator()(EVP_MD_CTX* context) const noexcept;
+    };
     struct HashContext {
-        EVP_MD_CTX* ctx = nullptr;
+        std::unique_ptr<EVP_MD_CTX, MdCtxDeleter> ctx;
         std::mutex mutex;
     };
 
-    bool executeSchemaMigrationUnsafe();
+    void executeSchemaMigrationUnsafe();
+    void requireHealthy() const;
+    void markUnhealthy() const noexcept;
     int getHashCountUnsafe() const;
     std::vector<FileInventoryRecord> findUnhashedFiles(const std::string& afterFilename) const;
     void runBackgroundIndexing(std::string uploadDir);
@@ -87,5 +103,10 @@ private:
     mutable std::mutex m_mutex;
     sqlite3* m_db = nullptr;
     std::atomic<bool> m_stopBackground{false};
+    mutable std::atomic<bool> m_healthy{false};
     std::thread m_backgroundThread;
+#ifdef LMT_STORAGE_TESTING
+    static std::atomic<bool> s_failHashFinalization;
+    static std::atomic<int> s_freedHashContexts;
+#endif
 };

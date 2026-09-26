@@ -91,50 +91,51 @@ public sealed class NativeTransferClient
                     () => { Interlocked.Increment(ref terminal); Report(); },
                     cancellationToken)
                 : [];
-            using var slots = new SemaphoreSlim(Math.Clamp(configuration.ParallelFiles,
-                1, DefaultParallelFiles));
-            var tasks = sources.Where(file => !skipped.Contains(file.FileId)).Select(async file =>
-            {
-                await slots.WaitAsync(cancellationToken);
-                try
+            TransferSource[] pending = sources
+                .Where(file => !skipped.Contains(file.FileId)).ToArray();
+            await BoundedWorkerPool.RunAsync(pending,
+                Math.Clamp(configuration.ParallelFiles, 1, DefaultParallelFiles),
+                async (_, file, workerToken) =>
                 {
-                    TransferFileResult result = await NativeUploadWorker.UploadFileAsync(
-                        client, approval,
-                        file, configuration.ChunkSizeBytes, skipExactDuplicates,
-                        bytes => { Interlocked.Add(ref acknowledged, bytes); Report(); },
-                        cancellationToken);
-                    results[file.FileId] = result;
-                    Interlocked.Increment(ref terminal);
-                    Report(result);
-                }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-                {
-                    results[file.FileId] = new(file.FileId, file.Name,
-                        TransferFileState.Cancelled);
-                    Interlocked.Increment(ref terminal);
-                    throw;
-                }
-                catch (NativeClientException exception)
-                {
-                    if (IsSessionFatal(exception)) throw;
-                    var failed = new TransferFileResult(file.FileId, file.Name,
-                        TransferFileState.Failed, ErrorCode: exception.Code);
-                    results[file.FileId] = failed;
-                    Interlocked.Increment(ref terminal);
-                    Report(failed);
-                }
-                catch (Exception exception) when (exception is IOException or
-                    UnauthorizedAccessException)
-                {
-                    var failed = new TransferFileResult(file.FileId, file.Name,
-                        TransferFileState.Failed, ErrorCode: "file_unavailable");
-                    results[file.FileId] = failed;
-                    Interlocked.Increment(ref terminal);
-                    Report(failed);
-                }
-                finally { slots.Release(); }
-            }).ToArray();
-            await Task.WhenAll(tasks);
+                    try
+                    {
+                        TransferFileResult result = await NativeUploadWorker.UploadFileAsync(
+                            client, approval,
+                            file, configuration.ChunkSizeBytes, skipExactDuplicates,
+                            bytes => { Interlocked.Add(ref acknowledged, bytes); Report(); },
+                            workerToken);
+                        results[file.FileId] = result;
+                        Interlocked.Increment(ref terminal);
+                        Report(result);
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                    {
+                        results[file.FileId] = new(file.FileId, file.Name,
+                            TransferFileState.Cancelled);
+                        Interlocked.Increment(ref terminal);
+                        throw;
+                    }
+                    catch (NativeClientException exception)
+                    {
+                        if (IsSessionFatal(exception)) throw;
+                        var failed = new TransferFileResult(file.FileId, file.Name,
+                            TransferFileState.Failed, ErrorCode: exception.Code);
+                        results[file.FileId] = failed;
+                        Interlocked.Increment(ref terminal);
+                        Report(failed);
+                    }
+                    catch (Exception exception) when (exception is IOException or
+                        UnauthorizedAccessException)
+                    {
+                        var failed = new TransferFileResult(file.FileId, file.Name,
+                            TransferFileState.Failed, ErrorCode: "file_unavailable");
+                        results[file.FileId] = failed;
+                        Interlocked.Increment(ref terminal);
+                        Report(failed);
+                    }
+                },
+                exception => exception is NativeClientException native && IsSessionFatal(native),
+                cancellationToken);
             double average = timer.Elapsed.TotalSeconds <= 0 ? 0 :
                 Interlocked.Read(ref acknowledged) / timer.Elapsed.TotalSeconds / 1_000_000d;
             return new NativeTransferSummary(sources.Select(file =>

@@ -55,6 +55,10 @@ namespace LocalMediaTransfer.GUI.Services
             {
                 return PipeSendResult.Failed("pipe disposed");
             }
+            catch (OperationCanceledException)
+            {
+                return PipeSendResult.Failed("pipe disconnected");
+            }
             finally
             {
                 if (lockTaken)
