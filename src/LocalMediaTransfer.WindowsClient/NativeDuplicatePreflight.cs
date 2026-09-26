@@ -24,26 +24,23 @@ internal static class NativeDuplicatePreflight
             .ToHashSet(StringComparer.Ordinal);
         if (candidates.Count == 0) return [];
 
-        using var hashSlots = new SemaphoreSlim(2);
-        var verified = new ConcurrentBag<object>();
-        await Task.WhenAll(sources.Where(file => candidates.Contains(file.FileId))
-            .Select(async file =>
+        TransferSource[] candidateSources = sources.Where(file =>
+            candidates.Contains(file.FileId)).ToArray();
+        object[] verified = new object[candidateSources.Length];
+        await BoundedWorkerPool.RunAsync(candidateSources, 2,
+            async (index, file, workerToken) =>
             {
-                await hashSlots.WaitAsync(cancellationToken);
-                try
-                {
-                    using FileStream stream = new(file.Path, FileMode.Open,
-                        FileAccess.Read, FileShare.Read, 1024 * 1024,
-                        FileOptions.Asynchronous | FileOptions.SequentialScan);
-                    string hash = Convert.ToHexString(await SHA256.HashDataAsync(stream,
-                        cancellationToken)).ToLowerInvariant();
-                    verified.Add(new { id = file.FileId, name = file.Name,
-                        size = file.SizeBytes, sha256 = hash });
-                }
-                finally { hashSlots.Release(); }
-            }));
+                using FileStream stream = new(file.Path, FileMode.Open,
+                    FileAccess.Read, FileShare.Read, 1024 * 1024,
+                    FileOptions.Asynchronous | FileOptions.SequentialScan);
+                string hash = Convert.ToHexString(await SHA256.HashDataAsync(stream,
+                    workerToken)).ToLowerInvariant();
+                verified[index] = new { id = file.FileId, name = file.Name,
+                    size = file.SizeBytes, sha256 = hash };
+            },
+            _ => true, cancellationToken);
         using JsonDocument response = await NativeTransferProtocol.PostJsonAsync(client,
-            "/upload/preflight/verify", new { files = verified.ToArray() }, approval,
+            "/upload/preflight/verify", new { files = verified }, approval,
             true, cancellationToken);
         var skipped = new HashSet<string>(StringComparer.Ordinal);
         foreach (JsonElement item in response.RootElement.GetProperty("files").EnumerateArray())

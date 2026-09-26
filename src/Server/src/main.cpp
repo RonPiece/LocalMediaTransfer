@@ -632,10 +632,24 @@ int main(int argc, char* argv[]) {
                 spdlog::info("Session token rotated via pipe");
                 pipeServer->sendTransferHistory(historyStore->recentSessionsJson());
             } else if (type == "request_transfer_history") {
-                pipeServer->sendTransferHistory(historyStore->recentSessionsJson());
+                try {
+                    pipeServer->sendTransferHistory(historyStore->recentSessionsJson());
+                } catch (const std::exception& e) {
+                    spdlog::error("Transfer history read failed: {}", e.what());
+                    return {false, "transfer history unavailable"};
+                }
             } else if (type == "clear_transfer_history") {
-                historyStore->clear();
-                pipeServer->sendTransferHistory(historyStore->recentSessionsJson());
+                try {
+                    historyStore->clear();
+                } catch (const std::exception& e) {
+                    spdlog::error("Transfer history clear failed: {}", e.what());
+                    return {false, "transfer history unavailable"};
+                }
+                try {
+                    pipeServer->sendTransferHistory(historyStore->recentSessionsJson());
+                } catch (const std::exception& e) {
+                    spdlog::warn("Transfer history notification failed: {}", e.what());
+                }
             } else if (type == "approve_device") {
                 if (!pairingStore->approve(data)) {
                     return {false, "pairing request is no longer pending"};
@@ -758,6 +772,12 @@ int main(int argc, char* argv[]) {
         spdlog::info("Server shutdown complete");
         return 0;
         
+    } catch (const InventoryStorageError& e) {
+        spdlog::error("File inventory startup failure: {}", e.what());
+#ifdef _WIN32
+        releaseSingleInstanceGuard();
+#endif
+        return 3;
     } catch (const std::exception& e) {
         spdlog::error("Fatal error in main: {}", e.what());
 

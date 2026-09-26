@@ -33,8 +33,8 @@ namespace LocalMediaTransfer.GUI.AppServices
         private readonly NetworkLogService _networkLogService = new();
         private DateTimeOffset _suppressDisconnectLogsUntilUtc = DateTimeOffset.MinValue;
         private bool _isConflictDialogOpen;
-        private readonly Queue<ApprovalPrompt> _approvalQueue = new();
-        private readonly HashSet<string> _queuedApprovalIds = new(StringComparer.Ordinal);
+        private readonly BoundedRequestQueue<ApprovalPrompt> _approvalQueue =
+            new(32, prompt => prompt.Key);
         private bool _approvalPumpActive;
         private bool _cleanupStarted;
         private bool _isSubscribed;
@@ -197,7 +197,7 @@ namespace LocalMediaTransfer.GUI.AppServices
                 AddNetworkLog(result.Success
                     ? $"iPhone {(approved ? "approved" : "denied")}: {request.DeviceName} ({request.IpAddress})"
                     : "Device decision was not applied: " + result.Error);
-            });
+            }, () => PipeClient.DenyDeviceAcknowledgedAsync(request.DeviceId));
         }
 
         private void OnNativePairingRequested(NativePairingRequestData request)
@@ -217,7 +217,7 @@ namespace LocalMediaTransfer.GUI.AppServices
                 AddNetworkLog(result.Success
                     ? $"Windows pairing {(approved ? "code confirmed" : "denied")}: {request.DeviceName} ({request.IpAddress})"
                     : "Windows pairing decision was not applied: " + result.Error);
-            });
+            }, () => PipeClient.DenyNativePairingAcknowledgedAsync(request.RequestId));
         }
 
         private void OnNativeTransferRequested(NativeTransferRequestData request)
@@ -258,16 +258,23 @@ namespace LocalMediaTransfer.GUI.AppServices
                 AddNetworkLog(result.Success
                     ? $"Incoming Windows transfer {(approved ? "approved" : "denied")}: {request.FileCount} files from {request.DeviceName}"
                     : "Transfer decision was not applied: " + result.Error);
-            });
+            }, () => PipeClient.DenyNativeTransferAcknowledgedAsync(request.RequestId));
         }
 
-        private void QueueApproval(string key, Func<XamlRoot, Task> handler)
+        private void QueueApproval(string key, Func<XamlRoot, Task> handler,
+            Func<Task<PipeCommandAcknowledgement>> reject)
         {
             if (IsClosing || string.IsNullOrWhiteSpace(key)) return;
             _dispatcherQueue.TryEnqueue(() =>
             {
-                if (IsClosing || !_queuedApprovalIds.Add(key)) return;
-                _approvalQueue.Enqueue(new ApprovalPrompt(key, handler));
+                if (IsClosing) return;
+                EnqueueResult result = _approvalQueue.TryAdd(new ApprovalPrompt(key, handler));
+                if (result == EnqueueResult.Duplicate) return;
+                if (result == EnqueueResult.Full)
+                {
+                    _ = RejectFullApprovalAsync(reject);
+                    return;
+                }
                 PendingApprovalCountChanged?.Invoke(_approvalQueue.Count +
                     (_approvalPumpActive ? 1 : 0));
                 _ = ProcessApprovalQueueAsync();
@@ -280,18 +287,19 @@ namespace LocalMediaTransfer.GUI.AppServices
             _approvalPumpActive = true;
             try
             {
-                while (_approvalQueue.TryDequeue(out ApprovalPrompt? prompt))
+                while (_approvalQueue.TryTake(out ApprovalPrompt? prompt))
                 {
+                    if (prompt is null) continue;
                     PendingApprovalCountChanged?.Invoke(_approvalQueue.Count + 1);
                     XamlRoot? root = _xamlRootProvider();
                     if (IsClosing)
                     {
-                        _queuedApprovalIds.Remove(prompt.Key);
+                        _approvalQueue.Complete(prompt);
                         break;
                     }
                     if (root == null)
                     {
-                        _approvalQueue.Enqueue(prompt);
+                        _approvalQueue.Requeue(prompt);
                         await Task.Delay(250);
                         continue;
                     }
@@ -300,13 +308,29 @@ namespace LocalMediaTransfer.GUI.AppServices
                     {
                         AddNetworkLog("Approval prompt failed: " + exception.Message);
                     }
-                    finally { _queuedApprovalIds.Remove(prompt.Key); }
+                    finally { _approvalQueue.Complete(prompt); }
                 }
             }
             finally
             {
                 _approvalPumpActive = false;
                 PendingApprovalCountChanged?.Invoke(_approvalQueue.Count);
+            }
+        }
+
+        private async Task RejectFullApprovalAsync(
+            Func<Task<PipeCommandAcknowledgement>> reject)
+        {
+            try
+            {
+                PipeCommandAcknowledgement result = await reject();
+                AddNetworkLog(result.Success
+                    ? "Incoming approval denied because the approval queue is full."
+                    : "Approval queue is full; rejection was not applied: " + result.Error);
+            }
+            catch (Exception exception)
+            {
+                AddNetworkLog("Approval queue is full; rejection failed: " + exception.Message);
             }
         }
 

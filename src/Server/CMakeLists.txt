@@ -124,7 +124,8 @@ message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 add_executable(LocalMediaTransfer.StorageTests
     ../../tests/native/StorageTests.cpp ../../tests/native/SessionTests.cpp
     src/io/FileWriter.cpp src/io/HashEngine.cpp
-    src/security/NativeSessionStore.cpp src/security/PairingStore.cpp src/ipc/PipeServer.cpp)
+    src/security/NativeSessionStore.cpp src/security/PairingStore.cpp src/ipc/PipeServer.cpp
+    src/history/TransferHistoryStore.cpp)
 target_include_directories(LocalMediaTransfer.StorageTests PRIVATE include)
 target_compile_definitions(LocalMediaTransfer.StorageTests PRIVATE LMT_STORAGE_TESTING NOMINMAX WIN32_LEAN_AND_MEAN)
 target_link_libraries(LocalMediaTransfer.StorageTests PRIVATE

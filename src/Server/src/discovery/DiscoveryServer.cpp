@@ -9,6 +9,19 @@
 
 using json = nlohmann::json;
 
+namespace {
+class OwnedSocket {
+public:
+    explicit OwnedSocket(SOCKET value) noexcept : m_value(value) {}
+    ~OwnedSocket() { if (m_value != INVALID_SOCKET) closesocket(m_value); }
+    OwnedSocket(const OwnedSocket&) = delete;
+    OwnedSocket& operator=(const OwnedSocket&) = delete;
+    SOCKET get() const noexcept { return m_value; }
+private:
+    SOCKET m_value;
+};
+}
+
 DiscoveryServer::DiscoveryServer(std::string serverId, std::string serverName, int httpsPort,
     std::string certificateFingerprint, int httpPort,
     unsigned short discoveryPort, bool discoveryAllowed,
@@ -27,21 +40,23 @@ void DiscoveryServer::run(std::atomic<bool>& running) {
             continue;
         }
 
-        SOCKET socketHandle = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-        if (socketHandle == INVALID_SOCKET) {
+        OwnedSocket socketHandle(socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP));
+        if (socketHandle.get() == INVALID_SOCKET) {
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
             continue;
         }
         DWORD timeout = 250;
-        setsockopt(socketHandle, SOL_SOCKET, SO_RCVTIMEO,
-            reinterpret_cast<const char*>(&timeout), sizeof(timeout));
+        if (setsockopt(socketHandle.get(), SOL_SOCKET, SO_RCVTIMEO,
+                reinterpret_cast<const char*>(&timeout), sizeof(timeout)) == SOCKET_ERROR) {
+            spdlog::warn("Unable to set discovery receive timeout");
+            continue;
+        }
         sockaddr_in address{};
         address.sin_family = AF_INET;
         address.sin_addr.s_addr = htonl(INADDR_ANY);
         address.sin_port = htons(m_discoveryPort);
-        if (bind(socketHandle, reinterpret_cast<sockaddr*>(&address), sizeof(address)) == SOCKET_ERROR) {
+        if (bind(socketHandle.get(), reinterpret_cast<sockaddr*>(&address), sizeof(address)) == SOCKET_ERROR) {
             spdlog::warn("UDP discovery port {} unavailable", m_discoveryPort);
-            closesocket(socketHandle);
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
             continue;
         }
@@ -51,7 +66,7 @@ void DiscoveryServer::run(std::atomic<bool>& running) {
             char buffer[512];
             sockaddr_in remote{};
             int remoteSize = sizeof(remote);
-            const int received = recvfrom(socketHandle, buffer, sizeof(buffer), 0,
+            const int received = recvfrom(socketHandle.get(), buffer, sizeof(buffer), 0,
                 reinterpret_cast<sockaddr*>(&remote), &remoteSize);
             if (received <= 0) continue;
             try {
@@ -73,11 +88,10 @@ void DiscoveryServer::run(std::atomic<bool>& running) {
                 };
                 if (m_httpPort > 0) responseObject["httpPort"] = m_httpPort;
                 const auto response = responseObject.dump();
-                sendto(socketHandle, response.data(), static_cast<int>(response.size()), 0,
+                sendto(socketHandle.get(), response.data(), static_cast<int>(response.size()), 0,
                     reinterpret_cast<sockaddr*>(&remote), remoteSize);
             } catch (...) {}
         }
-        closesocket(socketHandle);
         spdlog::info("Nearby desktop discovery disabled");
     }
 }

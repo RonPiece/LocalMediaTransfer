@@ -6,6 +6,7 @@ namespace LocalMediaTransfer.GUI.Services
 {
     internal sealed class ServerProcessMonitor
     {
+        private const int InventoryStartupFailureExitCode = 3;
         private readonly int _monitorIntervalMs;
         private readonly int _maxAutoRestarts;
         private readonly int _serverAlreadyRunningExitCode;
@@ -106,6 +107,15 @@ namespace LocalMediaTransfer.GUI.Services
                 {
                     _log("[GUI] Another server is already running. It was left untouched.");
                     _setState(ServerManagerState.Conflict, generation);
+                    break;
+                }
+
+                if (exitCode == InventoryStartupFailureExitCode)
+                {
+                    if (_setState(ServerManagerState.Faulted, generation))
+                    {
+                        _error("File inventory could not start. Check receiver storage and restart the server.");
+                    }
                     break;
                 }
 

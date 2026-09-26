@@ -522,6 +522,12 @@ void HttpServer::setupRoutes(CrowApp& app) {
                 {"environment", m_runtimeEnvironment}}.dump();
             return res;
         }
+        if (req.body.size() > 4096) {
+            res.code = 413;
+            res.body = json{{"status", "denied"}, {"error", "pairing request too large"},
+                {"environment", m_runtimeEnvironment}}.dump();
+            return res;
+        }
         try {
             const auto body = json::parse(req.body);
             const auto id = body.value("deviceId", "");
@@ -534,8 +540,14 @@ void HttpServer::setupRoutes(CrowApp& app) {
                 m_pipeServer->sendPairingRequest(json{{"deviceId", id}, {"deviceName", name},
                     {"ip", req.remote_ip_address}}.dump());
             }
-            res.code = status == PairingStore::Status::Denied ? 403 : 200;
-            res.body = pairingResponse(status).dump();
+            if (status == PairingStore::Status::AtCapacity) {
+                res.code = 429;
+                res.body = json{{"status", "denied"}, {"error", "pairing approval queue full"},
+                    {"environment", m_runtimeEnvironment}}.dump();
+            } else {
+                res.code = status == PairingStore::Status::Denied ? 403 : 200;
+                res.body = pairingResponse(status).dump();
+            }
         } catch (...) {
             res.code = 400;
             res.body = json{{"status", "denied"},
@@ -819,6 +831,11 @@ void HttpServer::setupRoutes(CrowApp& app) {
             res.body = json{{"error", "Invalid token"}}.dump();
             return res;
         }
+        if (!m_fileWriter->inventoryHealthy()) {
+            res.code = 503;
+            res.body = json{{"error", "File inventory unavailable; restart receiver after correcting storage"}}.dump();
+            return res;
+        }
 
         try {
             const auto body = json::parse(req.body);
@@ -855,8 +872,9 @@ void HttpServer::setupRoutes(CrowApp& app) {
             res.code = 200;
             res.body = json{{"files", results}}.dump();
         } catch (const std::exception& e) {
-            res.code = 400;
-            res.body = json{{"error", e.what()}}.dump();
+            const bool healthy = m_fileWriter->inventoryHealthy();
+            res.code = healthy ? 400 : 503;
+            res.body = json{{"error", healthy ? e.what() : "File inventory unavailable"}}.dump();
         }
         return res;
     });
@@ -871,6 +889,11 @@ void HttpServer::setupRoutes(CrowApp& app) {
         if (!authorization) {
             res.code = 403;
             res.body = json{{"error", "Invalid token"}}.dump();
+            return res;
+        }
+        if (!m_fileWriter->inventoryHealthy()) {
+            res.code = 503;
+            res.body = json{{"error", "File inventory unavailable; restart receiver after correcting storage"}}.dump();
             return res;
         }
 
@@ -944,8 +967,9 @@ void HttpServer::setupRoutes(CrowApp& app) {
             res.code = 200;
             res.body = json{{"files", results}}.dump();
         } catch (const std::exception& e) {
-            res.code = 400;
-            res.body = json{{"error", e.what()}}.dump();
+            const bool healthy = m_fileWriter->inventoryHealthy();
+            res.code = healthy ? 400 : 503;
+            res.body = json{{"error", healthy ? e.what() : "File inventory unavailable"}}.dump();
         }
         return res;
     });
@@ -967,13 +991,21 @@ void HttpServer::setupRoutes(CrowApp& app) {
             return res;
         }
         if (req.method == "DELETE"_method) {
-            m_historyStore->clear();
-            if (m_pipeServer) {
-                m_pipeServer->sendTransferHistory(
-                    m_historyStore->recentSessionsJson());
+            try {
+                m_historyStore->clear();
+                res.code = 200;
+                res.body = R"({"ok":true})";
+            } catch (const std::exception& e) {
+                spdlog::error("Transfer history clear failed: {}", e.what());
+                res.code = 500;
+                res.body = json{{"error", "Transfer history unavailable"}}.dump();
             }
-            res.code = 200;
-            res.body = R"({"ok":true})";
+            if (res.code == 200 && m_pipeServer) {
+                try { m_pipeServer->sendTransferHistory(m_historyStore->recentSessionsJson()); }
+                catch (const std::exception& e) {
+                    spdlog::warn("Transfer history notification failed: {}", e.what());
+                }
+            }
             return res;
         }
         if (req.body.size() > 2 * 1024 * 1024) {
@@ -985,15 +1017,24 @@ void HttpServer::setupRoutes(CrowApp& app) {
             m_historyStore->recordSession(
                 req.body,
                 req.remote_ip_address);
-            if (m_pipeServer) {
-                m_pipeServer->sendTransferHistory(
-                    m_historyStore->recentSessionsJson());
-            }
             res.code = 201;
             res.body = R"({"ok":true})";
-        } catch (const std::exception& e) {
+        } catch (const json::exception&) {
             res.code = 400;
-            res.body = json{{"error", e.what()}}.dump();
+            res.body = json{{"error", "Invalid transfer history payload"}}.dump();
+        } catch (const std::invalid_argument&) {
+            res.code = 400;
+            res.body = json{{"error", "Invalid transfer history payload"}}.dump();
+        } catch (const std::exception& e) {
+            spdlog::error("Transfer history write failed: {}", e.what());
+            res.code = 500;
+            res.body = json{{"error", "Transfer history unavailable"}}.dump();
+        }
+        if (res.code == 201 && m_pipeServer) {
+            try { m_pipeServer->sendTransferHistory(m_historyStore->recentSessionsJson()); }
+            catch (const std::exception& e) {
+                spdlog::warn("Transfer history notification failed: {}", e.what());
+            }
         }
         return res;
     });
@@ -1007,10 +1048,15 @@ void HttpServer::setupRoutes(CrowApp& app) {
             res.body = json{{"error", "Invalid token"}}.dump();
             return res;
         }
-        res.code = m_historyStore ? 200 : 503;
-        res.body = m_historyStore
-            ? m_historyStore->recentSessionsJson()
-            : json{{"error", "Transfer history unavailable"}}.dump();
+        try {
+            if (!m_historyStore) throw std::runtime_error("history unavailable");
+            res.code = 200;
+            res.body = m_historyStore->recentSessionsJson();
+        } catch (const std::exception& e) {
+            spdlog::error("Transfer history read failed: {}", e.what());
+            res.code = 503;
+            res.body = json{{"error", "Transfer history unavailable"}}.dump();
+        }
         return res;
     });
 
@@ -1238,6 +1284,11 @@ void HttpServer::setupRoutes(CrowApp& app) {
             res.add_header("Connection", "close");
             return res;
         }
+        if (!m_fileWriter->inventoryHealthy()) {
+            res.code = 503;
+            res.body = json{{"error", "File inventory unavailable; restart receiver after correcting storage"}}.dump();
+            return res;
+        }
 
         spdlog::info("Upload request from {} (body size: {} bytes)", 
                      req.remote_ip_address, req.body.size());
@@ -1438,8 +1489,11 @@ void HttpServer::setupRoutes(CrowApp& app) {
                     }
                 } catch (const std::exception& e) {
                     spdlog::error("Failed to save file {}: {}", filename, e.what());
-                    json err = {{"error", "Receiver could not save this file. Check free space and folder access, then restart its upload."}, {"code", 500}};
-                    res.code = 500;
+                    const bool healthy = m_fileWriter->inventoryHealthy();
+                    json err = {{"error", healthy
+                        ? "Receiver could not save this file. Check free space and folder access, then restart its upload."
+                        : "File inventory unavailable"}, {"code", healthy ? 500 : 503}};
+                    res.code = healthy ? 500 : 503;
                     res.body = err.dump();
                     return res;
                 }
@@ -1553,6 +1607,11 @@ void HttpServer::setupRoutes(CrowApp& app) {
             res.code = 401;
             res.body = json{{"error", "Unauthorized"}}.dump();
             res.add_header("Connection", "close");
+            return res;
+        }
+        if (!m_fileWriter->inventoryHealthy()) {
+            res.code = 503;
+            res.body = json{{"error", "File inventory unavailable; restart receiver after correcting storage"}}.dump();
             return res;
         }
 
@@ -1792,8 +1851,9 @@ void HttpServer::setupRoutes(CrowApp& app) {
 
         } catch (const std::exception& e) {
             spdlog::error("Chunk upload error: {}", e.what());
-            res.code = 400;
-            res.body = json{{"error", e.what()}}.dump();
+            const bool healthy = m_fileWriter->inventoryHealthy();
+            res.code = healthy ? 400 : 503;
+            res.body = json{{"error", healthy ? e.what() : "File inventory unavailable"}}.dump();
             return res;
         }
     });
@@ -1810,6 +1870,11 @@ void HttpServer::setupRoutes(CrowApp& app) {
         if (!validateRequestToken(req)) {
             res.code = 403;
             res.body = json{{"error", "Invalid token"}}.dump();
+            return res;
+        }
+        if (!m_fileWriter->inventoryHealthy()) {
+            res.code = 503;
+            res.body = json{{"error", "File inventory unavailable; restart receiver after correcting storage"}}.dump();
             return res;
         }
 
@@ -1841,8 +1906,10 @@ void HttpServer::setupRoutes(CrowApp& app) {
             res.body = response.dump();
 
         } catch (const std::exception& e) {
-            json err = {{"error", "Invalid request"}, {"code", 400}};
-            res.code = 400;
+            const bool healthy = m_fileWriter->inventoryHealthy();
+            json err = {{"error", healthy ? "Invalid request" : "File inventory unavailable"},
+                {"code", healthy ? 400 : 503}};
+            res.code = healthy ? 400 : 503;
             res.body = err.dump();
         }
 

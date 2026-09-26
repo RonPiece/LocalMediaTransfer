@@ -18,7 +18,8 @@ struct TrustedDevice {
 
 class PairingStore {
 public:
-    enum class Status { Pending, Approved, Denied };
+    enum class Status { Pending, Approved, Denied, AtCapacity };
+    static constexpr size_t MaxPendingRequests = 32;
 
     explicit PairingStore(std::string path);
     void load();

@@ -23,6 +23,7 @@ namespace {
 using BioPtr = std::unique_ptr<BIO, decltype(&BIO_free)>;
 using KeyPtr = std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)>;
 using X509Ptr = std::unique_ptr<X509, decltype(&X509_free)>;
+using ExtensionPtr = std::unique_ptr<X509_EXTENSION, decltype(&X509_EXTENSION_free)>;
 
 std::vector<unsigned char> readBinary(const std::filesystem::path& path) {
     std::ifstream input(path, std::ios::binary);
@@ -155,13 +156,18 @@ TlsIdentity generateIdentity() {
     X509_NAME_add_entry_by_txt(name, "O", MBSTRING_ASC,
         reinterpret_cast<const unsigned char*>("Local Media Transfer"), -1, -1, 0);
     X509_set_issuer_name(certificate.get(), name);
-    X509_EXTENSION* basic = X509V3_EXT_conf_nid(nullptr, nullptr, NID_basic_constraints, const_cast<char*>("critical,CA:FALSE"));
-    X509_EXTENSION* usage = X509V3_EXT_conf_nid(nullptr, nullptr, NID_key_usage, const_cast<char*>("critical,digitalSignature,keyAgreement"));
-    X509_EXTENSION* extended = X509V3_EXT_conf_nid(nullptr, nullptr, NID_ext_key_usage, const_cast<char*>("serverAuth"));
-    if (!basic || !usage || !extended) throw std::runtime_error("Unable to create certificate extensions");
-    X509_add_ext(certificate.get(), basic, -1); X509_EXTENSION_free(basic);
-    X509_add_ext(certificate.get(), usage, -1); X509_EXTENSION_free(usage);
-    X509_add_ext(certificate.get(), extended, -1); X509_EXTENSION_free(extended);
+    ExtensionPtr basic(X509V3_EXT_conf_nid(nullptr, nullptr, NID_basic_constraints,
+        const_cast<char*>("critical,CA:FALSE")), X509_EXTENSION_free);
+    ExtensionPtr usage(X509V3_EXT_conf_nid(nullptr, nullptr, NID_key_usage,
+        const_cast<char*>("critical,digitalSignature,keyAgreement")), X509_EXTENSION_free);
+    ExtensionPtr extended(X509V3_EXT_conf_nid(nullptr, nullptr, NID_ext_key_usage,
+        const_cast<char*>("serverAuth")), X509_EXTENSION_free);
+    if (!basic || !usage || !extended ||
+        X509_add_ext(certificate.get(), basic.get(), -1) != 1 ||
+        X509_add_ext(certificate.get(), usage.get(), -1) != 1 ||
+        X509_add_ext(certificate.get(), extended.get(), -1) != 1) {
+        throw std::runtime_error("Unable to create certificate extensions");
+    }
     if (X509_sign(certificate.get(), key.get(), EVP_sha256()) <= 0) {
         throw std::runtime_error("Unable to sign TLS certificate");
     }

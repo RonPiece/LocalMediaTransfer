@@ -9,6 +9,7 @@
 #include <spdlog/spdlog.h>
 #include <nlohmann/json.hpp>
 #include <algorithm>
+#include <memory>
 #include <vector>
 
 #ifdef _WIN32
@@ -23,25 +24,23 @@ namespace {
 bool createPipeSecurity(
     SECURITY_ATTRIBUTES& attributes,
     PSECURITY_DESCRIPTOR& descriptor) {
-    HANDLE token = nullptr;
-    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) {
+    HANDLE rawToken = nullptr;
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &rawToken)) {
         return false;
     }
+    std::unique_ptr<void, decltype(&CloseHandle)> token(rawToken, CloseHandle);
 
     DWORD required = 0;
-    GetTokenInformation(token, TokenGroups, nullptr, 0, &required);
+    GetTokenInformation(token.get(), TokenGroups, nullptr, 0, &required);
     if (GetLastError() != ERROR_INSUFFICIENT_BUFFER || required == 0) {
-        CloseHandle(token);
         return false;
     }
 
     std::vector<unsigned char> storage(required);
     auto* groups = reinterpret_cast<TOKEN_GROUPS*>(storage.data());
-    if (!GetTokenInformation(token, TokenGroups, groups, required, &required)) {
-        CloseHandle(token);
+    if (!GetTokenInformation(token.get(), TokenGroups, groups, required, &required)) {
         return false;
     }
-    CloseHandle(token);
 
     PSID logonSid = nullptr;
     for (DWORD index = 0; index < groups->GroupCount; ++index) {
@@ -55,13 +54,13 @@ bool createPipeSecurity(
         return false;
     }
 
-    LPSTR sidText = nullptr;
-    if (!ConvertSidToStringSidA(logonSid, &sidText)) {
+    LPSTR rawSidText = nullptr;
+    if (!ConvertSidToStringSidA(logonSid, &rawSidText)) {
         return false;
     }
+    std::unique_ptr<char, decltype(&LocalFree)> sidText(rawSidText, LocalFree);
     const std::string sddl =
-        "D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;" + std::string(sidText) + ")";
-    LocalFree(sidText);
+        "D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;" + std::string(sidText.get()) + ")";
 
     if (!ConvertStringSecurityDescriptorToSecurityDescriptorA(
             sddl.c_str(),
@@ -260,7 +259,12 @@ void PipeServer::processIncoming() {
             }
             
             if (m_commandCallback) {
-                CommandResult result = m_commandCallback(type, data);
+                CommandResult result{false, "command failed"};
+                try {
+                    result = m_commandCallback(type, data);
+                } catch (const std::exception& e) {
+                    spdlog::error("Pipe command '{}' failed: {}", type, e.what());
+                }
                 if (!requestId.empty() && requestId.size() <= 64) {
                     sendControlResponse("command_result", json{
                         {"requestId", requestId},

@@ -88,6 +88,7 @@ struct UploadLimits {
 
 class FileWriter {
 public:
+    bool inventoryHealthy() const noexcept;
     FileWriter(
         const std::string& uploadDir,
         std::shared_ptr<HashEngine> hashEngine,

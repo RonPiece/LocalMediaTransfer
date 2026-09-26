@@ -9,6 +9,7 @@
 #include <climits>
 #include <iomanip>
 #include <limits>
+#include <memory>
 #include <openssl/crypto.h>
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
@@ -150,14 +151,13 @@ std::string NativeSessionStore::randomHex(size_t bytes) {
 std::string NativeSessionStore::sha256Hex(const std::string& value) {
     unsigned char digest[EVP_MAX_MD_SIZE]{};
     unsigned int length = 0;
-    EVP_MD_CTX* context = EVP_MD_CTX_new();
-    if (!context || EVP_DigestInit_ex(context, EVP_sha256(), nullptr) != 1 ||
-        EVP_DigestUpdate(context, value.data(), value.size()) != 1 ||
-        EVP_DigestFinal_ex(context, digest, &length) != 1) {
-        if (context) EVP_MD_CTX_free(context);
+    std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)> context(
+        EVP_MD_CTX_new(), EVP_MD_CTX_free);
+    if (!context || EVP_DigestInit_ex(context.get(), EVP_sha256(), nullptr) != 1 ||
+        EVP_DigestUpdate(context.get(), value.data(), value.size()) != 1 ||
+        EVP_DigestFinal_ex(context.get(), digest, &length) != 1) {
         throw std::runtime_error("Unable to compute SHA-256");
     }
-    EVP_MD_CTX_free(context);
     std::ostringstream output;
     output << std::hex << std::setfill('0');
     for (unsigned int index = 0; index < length; ++index) {

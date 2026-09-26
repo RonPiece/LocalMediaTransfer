@@ -112,6 +112,7 @@ internal static class TestHarness
             await VerifyEnvironmentArgumentValidationAsync(context);
             await VerifyAuthenticatedOwnershipControlAsync(context);
             await VerifyListenerFailureShutdownAsync(context);
+            await VerifyInventoryStartupFailureAsync(context);
 
             string managedOrphan = Path.Combine(
                 uploadDirectory,
@@ -191,6 +192,7 @@ internal static class TestHarness
             await VerifyPersistenceAsync(context, persistenceHash);
             await VerifyHistoryPersistenceAsync(context);
             await VerifyHistoryDeletionAsync(context, pipe);
+            await VerifyStorageRuntimeFailuresAsync(context, pipe);
 
             Console.WriteLine("Verifying strict filename-conflict mode...");
             await pipe.DisposeAsync();
@@ -204,6 +206,7 @@ internal static class TestHarness
                 filenameConflictPolicy: "reject");
             pipe = await ConnectPipeAsync(context.TestPipeName, token);
             await VerifyRejectFilenameConflictAsync(context);
+            await VerifyPreflightFirstFaultAsync(context);
 
             Console.WriteLine("Verifying opt-in benchmark mode and persistence...");
             await pipe.DisposeAsync();
@@ -279,6 +282,44 @@ internal static class TestHarness
         }
 
         return exitCode;
+    }
+
+    private static async Task VerifyInventoryStartupFailureAsync(HarnessContext context)
+    {
+        string root = Path.Combine(context.RunDirectory, "inventory-startup-failure");
+        string uploads = Path.Combine(root, "uploads");
+        string metadata = Path.Combine(uploads, "Local Media Transfer Data");
+        Directory.CreateDirectory(Path.Combine(metadata, "hashes.db"));
+        int port = GetEphemeralPort();
+        int httpsPort;
+        do { httpsPort = GetEphemeralPort(); } while (httpsPort == port);
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = context.ServerExecutable,
+            WorkingDirectory = context.ServerDirectory,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true
+        };
+        string[] arguments = [
+            "--environment", "test", "--instance-id", "inventory-fault-" + Guid.NewGuid().ToString("N"),
+            "--data-root", Path.Combine(root, "runtime"),
+            "--https-port", httpsPort.ToString(), "--http-port", port.ToString(),
+            "--allow-insecure-http", "--tls-storage-dir", Path.Combine(root, "tls"),
+            "--upload-dir", uploads, "--history-db", Path.Combine(root, "history.db")
+        ];
+        foreach (string argument in arguments) startInfo.ArgumentList.Add(argument);
+        await using var server = OwnedProcess.Start(startInfo, "inventory-fault");
+        Assert(await server.WaitForExitAsync(TimeSpan.FromSeconds(10)) && server.ExitCode == 3,
+            "Inventory open failure did not stop startup with exit code 3.");
+        using var client = new TcpClient();
+        bool listenerAbsent = false;
+        try { await client.ConnectAsync(IPAddress.Loopback, port).WaitAsync(TimeSpan.FromSeconds(2)); }
+        catch (Exception error) when (error is SocketException or TimeoutException) {
+            listenerAbsent = true;
+        }
+        Assert(listenerAbsent, "Inventory-failed server left an HTTP listener running.");
     }
 
     private static async Task<OwnedProcess> StartServerAsync(
@@ -2464,6 +2505,124 @@ internal static class TestHarness
         }
     }
 
+    private static async Task VerifyPreflightFirstFaultAsync(HarnessContext context)
+    {
+        using var http = CreateHttpClient(context);
+        const string filename = "inventory-preflight-fault.bin";
+        string path = Path.Combine(context.UploadDirectory, filename);
+        string database = Path.Combine(context.UploadDirectory,
+            "Local Media Transfer Data", "hashes.db");
+        SqliteProbe.Execute(database,
+            "CREATE TRIGGER fail_preflight_inventory BEFORE INSERT ON files " +
+            "WHEN NEW.filename='inventory-preflight-fault.bin' " +
+            "BEGIN SELECT RAISE(FAIL, 'injected preflight insert'); END;");
+        try
+        {
+            await File.WriteAllBytesAsync(path, [1, 2, 3]);
+            await Task.Delay(1100);
+            using var first = await http.PostAsJsonAsync("/upload/preflight",
+                new { files = new[] { new { id = "preflight-fault",
+                    name = filename, size = 3 } } }, JsonOptions);
+            Assert(first.StatusCode == HttpStatusCode.ServiceUnavailable,
+                "First preflight inventory fault was reported as a client error.");
+            using var lookup = await http.PostAsJsonAsync("/check_file",
+                new { hash = new string('a', 64) }, JsonOptions);
+            Assert(lookup.StatusCode == HttpStatusCode.ServiceUnavailable,
+                "Unhealthy inventory returned a duplicate lookup result.");
+        }
+        finally {
+            SqliteProbe.Execute(database, "DROP TRIGGER fail_preflight_inventory;");
+            File.Delete(path);
+        }
+    }
+
+    private static async Task VerifyStorageRuntimeFailuresAsync(
+        HarnessContext context, PipeConnection pipe)
+    {
+        using var http = CreateHttpClient(context);
+        using (var malformed = await http.PostAsJsonAsync("/transfer_history",
+            new { sessionId = "invalid-history", files = "not-an-array" }, JsonOptions))
+            Assert(malformed.StatusCode == HttpStatusCode.BadRequest,
+                "Malformed history payload did not return HTTP 400.");
+        using (var seed = await http.PostAsJsonAsync("/transfer_history",
+            new { sessionId = "history-failure-seed", completedAt = 1,
+                files = new[] { new { id = "seed", name = "seed.bin",
+                    savedName = "seed.bin", size = 1, outcome = "uploaded" } } }, JsonOptions))
+            seed.EnsureSuccessStatusCode();
+
+        SqliteProbe.Execute(context.HistoryDatabase,
+            "CREATE TRIGGER fail_history_file BEFORE INSERT ON session_files " +
+            "BEGIN SELECT RAISE(FAIL, 'injected file insert'); END;");
+        try
+        {
+            using var failed = await http.PostAsJsonAsync("/transfer_history",
+                new { sessionId = "history-failure-partial", completedAt = 2,
+                    files = new[] { new { id = "partial", name = "partial.bin",
+                        savedName = "partial.bin", size = 1, outcome = "uploaded" } } }, JsonOptions);
+            Assert(failed.StatusCode == HttpStatusCode.InternalServerError,
+                "Failed history file insert did not return HTTP 500.");
+            using var recent = await http.GetAsync("/transfer_history/recent");
+            recent.EnsureSuccessStatusCode();
+            string body = await recent.Content.ReadAsStringAsync();
+            Assert(body.Contains("history-failure-seed", StringComparison.Ordinal) &&
+                !body.Contains("history-failure-partial", StringComparison.Ordinal),
+                "History file insert failure persisted a partial session.");
+        }
+        finally { SqliteProbe.Execute(context.HistoryDatabase, "DROP TRIGGER fail_history_file;"); }
+
+        SqliteProbe.Execute(context.HistoryDatabase,
+            "CREATE TRIGGER fail_history_clear BEFORE DELETE ON sessions " +
+            "BEGIN SELECT RAISE(FAIL, 'injected clear'); END;");
+        try
+        {
+            using var failed = await http.DeleteAsync("/transfer_history");
+            Assert(failed.StatusCode == HttpStatusCode.InternalServerError,
+                "Failed history clear did not return HTTP 500.");
+            bool acknowledgedFailure = false;
+            try { await pipe.SendAcknowledgedCommandAsync("clear_transfer_history", ""); }
+            catch (InvalidOperationException error) {
+                acknowledgedFailure = error.Message.Contains("failed", StringComparison.OrdinalIgnoreCase);
+            }
+            Assert(acknowledgedFailure, "Failed history clear did not send a failure acknowledgement.");
+        }
+        finally { SqliteProbe.Execute(context.HistoryDatabase, "DROP TRIGGER fail_history_clear;"); }
+
+        string filename = "inventory-committed-fault.bin";
+        string path = Path.Combine(context.UploadDirectory, filename);
+        SqliteProbe.Execute(Path.Combine(context.UploadDirectory,
+            "Local Media Transfer Data", "hashes.db"),
+            "CREATE TRIGGER fail_inventory_insert BEFORE INSERT ON files " +
+            "WHEN NEW.filename='inventory-committed-fault.bin' " +
+            "BEGIN SELECT RAISE(FAIL, 'injected inventory insert'); END;");
+        try
+        {
+            using var committedBody = new MultipartFormDataContent();
+            committedBody.Add(new ByteArrayContent([1, 2, 3]), "file", filename);
+            using var committed = await http.PostAsync("/upload_single", committedBody);
+            Assert(committed.StatusCode == HttpStatusCode.OK && File.Exists(path),
+                "Already published file was reported as failed after its inventory write failed.");
+            using var first = await http.PostAsJsonAsync("/upload/preflight",
+                new { files = new[] { new { id = "fault", name = filename, size = 3 } } }, JsonOptions);
+            Assert(first.StatusCode == HttpStatusCode.ServiceUnavailable,
+                "Runtime inventory failure did not pause preflight.");
+            using var second = await http.PostAsJsonAsync("/upload/preflight",
+                new { files = new[] { new { id = "fault", name = filename, size = 3 } } }, JsonOptions);
+            Assert(second.StatusCode == HttpStatusCode.ServiceUnavailable,
+                "Inventory became healthy without a restart.");
+            using var multipart = new MultipartFormDataContent();
+            multipart.Add(new ByteArrayContent([1, 2, 3]), "file", "later.bin");
+            using var upload = await http.PostAsync("/upload_single", multipart);
+            Assert(upload.StatusCode == HttpStatusCode.ServiceUnavailable,
+                "Unhealthy inventory admitted a new upload.");
+            Assert(File.Exists(path), "Inventory fault removed a committed file.");
+        }
+        finally {
+            SqliteProbe.Execute(Path.Combine(context.UploadDirectory,
+                "Local Media Transfer Data", "hashes.db"),
+                "DROP TRIGGER fail_inventory_insert;");
+        }
+    }
+
     private static async Task<string> VerifyBenchmarkModeAsync(HarnessContext context)
     {
         using var http = CreateHttpClient(context);
@@ -3361,6 +3520,38 @@ internal sealed class PipeConnection : IAsyncDisposable
             nint outBufferSize,
             nint inBufferSize,
             nint maxInstances);
+    }
+}
+
+internal static class SqliteProbe
+{
+    [DllImport("winsqlite3.dll", EntryPoint = "sqlite3_open16", CharSet = CharSet.Unicode)]
+    private static extern int Open(string path, out nint database);
+
+    [DllImport("winsqlite3.dll", EntryPoint = "sqlite3_exec", CharSet = CharSet.Ansi)]
+    private static extern int Exec(nint database, string sql, nint callback,
+        nint argument, out nint error);
+
+    [DllImport("winsqlite3.dll", EntryPoint = "sqlite3_free")]
+    private static extern void Free(nint value);
+
+    [DllImport("winsqlite3.dll", EntryPoint = "sqlite3_close")]
+    private static extern int Close(nint database);
+
+    public static void Execute(string path, string sql)
+    {
+        nint database = 0;
+        if (Open(path, out database) != 0) throw new InvalidOperationException(
+            "Could not open isolated SQLite test database.");
+        try
+        {
+            nint error;
+            int result = Exec(database, "PRAGMA busy_timeout=5000;" + sql, 0, 0, out error);
+            if (error != 0) Free(error);
+            if (result != 0) throw new InvalidOperationException(
+                "Could not install isolated SQLite fault trigger.");
+        }
+        finally { Close(database); }
     }
 }
 

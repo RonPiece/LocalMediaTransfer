@@ -77,6 +77,7 @@ PairingStore::Status PairingStore::request(
         if (autoApproveKnown) return Status::Approved;
         auto pending = std::find_if(m_pending.begin(), m_pending.end(), [&](const auto& item) { return item.id == id; });
         if (pending == m_pending.end()) {
+            if (m_pending.size() >= MaxPendingRequests) return Status::AtCapacity;
             m_pending.push_back({id, name, hash, ip,
                 std::chrono::steady_clock::now() + std::chrono::minutes(2), false,
                 trusted->clientType, trusted->authorizationMode});
@@ -87,6 +88,7 @@ PairingStore::Status PairingStore::request(
         return item.id == id;
     });
     if (pending == m_pending.end()) {
+        if (m_pending.size() >= MaxPendingRequests) return Status::AtCapacity;
         m_pending.push_back({id, name, hash, ip,
             std::chrono::steady_clock::now() + std::chrono::minutes(2), false,
             "ios", "direct_upload"});

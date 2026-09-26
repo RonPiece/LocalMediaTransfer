@@ -112,6 +112,23 @@ describe('ApiClient dashboard contracts', () => {
     expect(onUnauthorized).not.toHaveBeenCalled();
   });
 
+  it('treats a full receiver pairing queue as a denial without saving trust', async () => {
+    jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok: false,
+      status: 429,
+      json: jest.fn().mockResolvedValue({
+        status: 'denied', error: 'pairing approval queue full', environment: 'production',
+      }),
+    } as unknown as Response);
+    const client = new ApiClient('http://192.168.1.2:8080', 'qr-token', 'production');
+    const onUnauthorized = jest.fn();
+    client.setAuthenticationFailureHandler(onUnauthorized);
+
+    await expect(client.requestPairing('http://192.168.1.2:8080',
+      'device-id', 'iPhone', 'credential')).resolves.toBe('denied');
+    expect(onUnauthorized).not.toHaveBeenCalled();
+  });
+
   it('does not treat pairing status denial as a saved-credential auth failure', async () => {
     jest.spyOn(global, 'fetch').mockResolvedValue({
       ok: false,
