@@ -128,8 +128,23 @@ function Invoke-Target {
             $iosDirectory = Join-Path $repoRoot "src\LocalMediaTransfer.iOS"
             Push-Location $iosDirectory
             try {
-                Invoke-Checked "Expo SDK dependency compatibility" {
-                    npx expo install --check
+                # Use the version map shipped with the locked Expo package. The
+                # online map can change without a repository commit and make the
+                # same CI checkout pass one day and fail the next.
+                $previousExpoOffline = [Environment]::GetEnvironmentVariable("EXPO_OFFLINE", "Process")
+                try {
+                    $env:EXPO_OFFLINE = "1"
+                    Invoke-Checked "Expo SDK dependency compatibility" {
+                        npx expo install --check
+                    }
+                }
+                finally {
+                    if ($null -eq $previousExpoOffline) {
+                        Remove-Item Env:EXPO_OFFLINE -ErrorAction SilentlyContinue
+                    }
+                    else {
+                        $env:EXPO_OFFLINE = $previousExpoOffline
+                    }
                 }
                 Invoke-Checked "iOS Jest tests" {
                     npm test -- --runInBand

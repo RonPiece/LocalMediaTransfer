@@ -60,6 +60,11 @@ upload, and discovery logic should not be placed in generic UI components.
   `react-native-worklets` at `0.10.1`, the Expo SDK 57-resolved versions. The media picker
   uses UI-thread worklets for frame-rate-independent drag auto-scroll.
 - Use `npx expo install <package>` for Expo/native dependencies.
+- The `ios-tests` verification target checks installed dependencies against the
+  version map bundled with the locked Expo package. Expo's online recommendation
+  can change after a commit, so this CI check runs in offline mode. When updating
+  Expo dependencies, also run `npx expo install --check` online, update the
+  manifest and lockfile together, and rerun `ios-tests`.
 - Start Metro with `npx expo start --offline`.
 - Use `npx expo start -c --offline` when Babel/CSS cache is stale.
 - Expo Go cannot load `LocalMediaTransferNative`.
