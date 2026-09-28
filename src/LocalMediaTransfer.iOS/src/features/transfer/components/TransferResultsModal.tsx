@@ -13,8 +13,8 @@ const renderTransferFile = ({ item }: { item: FileState }) => <TransferFileItem 
 const renderFailureGroup = ({ item }: { item: TransferFailureGroup }) => (
   <View className="py-4 border-b border-border dark:border-border-dark">
     <View className="flex-row items-start">
-      <View className="px-2.5 py-1 rounded-full bg-error/10">
-        <Text className="text-error text-[12px] font-bold">{item.count.toLocaleString()}</Text>
+      <View className="px-2.5 py-1 rounded-full bg-error/10 dark:bg-error-dark/10">
+        <Text className="text-error dark:text-error-dark text-[12px] font-bold">{item.count.toLocaleString()}</Text>
       </View>
       <View className="flex-1 ml-3">
         <Text className="text-on-surface dark:text-on-surface-dark text-[14px] font-semibold">
@@ -88,7 +88,7 @@ export const TransferResultsModal = React.memo(function TransferResultsModal({
         <TouchableOpacity
           accessibilityRole="button"
           onPress={() => setShowIndividualErrors(true)}
-          className="h-11 mt-3 rounded-xl bg-primary/10 items-center justify-center"
+          className="h-11 mt-3 rounded-xl bg-primary/10 dark:bg-primary-dark/10 items-center justify-center"
         >
           <Text className="text-primary dark:text-primary-dark text-[13px] font-semibold">
             View all {errorResults.length.toLocaleString()} affected filenames

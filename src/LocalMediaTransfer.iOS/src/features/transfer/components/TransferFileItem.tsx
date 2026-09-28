@@ -15,7 +15,7 @@ export const TransferFileItem = React.memo(function TransferFileItem({
   showFullFilename?: boolean;
 }) {
   const palette = useThemePalette();
-  const presentation = fileStatusPresentation(item.status);
+  const presentation = fileStatusPresentation(item.status, palette);
   const active = item.status === 'uploading' || item.status === 'pending';
 
   return (

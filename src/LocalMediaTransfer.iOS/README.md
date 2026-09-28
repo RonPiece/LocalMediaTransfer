@@ -126,6 +126,9 @@ The free Windows-first install path is:
 4. Use Sideloadly on Windows to sign and install it.
 
 See [Unsigned IPA + Sideloadly](../../docs/IOS_SIDELOADLY.md).
+See [Environments, build profiles, and Metro](../../docs/IOS_BUILD_CONFIGURATION.md)
+for the current workflow override, the separate JavaScript runtime selection,
+and the implementation plan for independent choices and mismatch detection.
 For Fast Refresh with the native module, run the `ios-unsigned-ipa.yml` workflow
 with the `development` build profile, sideload its TEST IPA, and start Metro with
 `npm run start:dev-client`. That command explicitly selects the TEST environment
@@ -138,6 +141,12 @@ Podfile.lock alongside the IPA; a local Jest pass does not replace that build.
 ## Commands
 
 Run these from `src/LocalMediaTransfer.iOS`.
+
+Before using the iOS project on a fresh checkout, or after changing its
+`package.json` or `package-lock.json`, restore its locked JavaScript and
+TypeScript tools with `npm ci`. This includes the `cross-env` command used by
+the Metro start scripts. You do not need to repeat this before every Metro
+start.
 
 ```powershell
 npm ci
@@ -153,6 +162,25 @@ Use this if dependencies drift after changing Expo packages:
 ```powershell
 npx expo install --fix
 ```
+
+## System appearance
+
+Both TEST and production, and both Development and Release, follow the iPhone's
+system Light/Dark appearance. Keep NativeWind 2's native dark variant enabled
+by leaving Tailwind's `darkMode` setting unset; setting it to `media` emits
+browser-only conditions that do not match native appearance. Use paired light
+and `dark:` color classes, or `useThemePalette()` for inline styles and icons.
+Status-bar content follows the same normalized system theme.
+
+After changing theme configuration, restart Metro with its cache cleared:
+
+```powershell
+npm run start:dev-client -- -c
+```
+
+An installed Release IPA uses its embedded JavaScript and must be rebuilt and
+reinstalled to receive theme fixes. JavaScript tests exercise compiled native
+styles, but appearance still needs a physical-iPhone check in both modes.
 
 ## Do not break
 

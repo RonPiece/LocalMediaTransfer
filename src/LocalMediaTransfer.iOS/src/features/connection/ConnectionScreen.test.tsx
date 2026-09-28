@@ -1,11 +1,16 @@
 import React from 'react';
 import { Alert } from 'react-native';
+import * as ReactNative from 'react-native';
+import { NativeWindStyleSheet } from 'nativewind';
+import { StatusBar } from 'expo-status-bar';
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
 import ConnectionScreen from './ConnectionScreen';
 import { useCameraPermissions } from 'expo-camera';
 import { qrScannerControlsTop } from './components/QrScannerOverlay';
 import { nearbyHeaderUsesIconOnlyActions } from './components/NearbyDesktopSection';
 import * as Haptics from 'expo-haptics';
+
+jest.mock('expo-status-bar', () => ({ StatusBar: jest.fn(() => null) }));
 
 jest.mock('@expo/vector-icons', () => {
   const React = require('react');
@@ -148,6 +153,21 @@ describe('ConnectionScreen QR Logic', () => {
 
     expect(controls).toHaveStyle({ top: qrScannerControlsTop() });
     expect(qrScannerControlsTop(59, 'ios')).toBe(71);
+    expect(jest.mocked(StatusBar).mock.calls.at(-1)?.[0]).toMatchObject({ style: 'light' });
+  });
+
+  it('keeps the disabled QR action readable in dark appearance', () => {
+    const colorScheme = jest.spyOn(ReactNative, 'useColorScheme').mockReturnValue('dark');
+    NativeWindStyleSheet.setColorScheme('dark');
+    const screen = render(<ConnectionScreen onConnect={jest.fn()} isConnected nativeHttpsAvailable />);
+    try {
+      expect(screen.getByLabelText('Scan Receiver QR')).toHaveStyle({ backgroundColor: '#1C1C1E' });
+      expect(screen.getByText('Scan Receiver QR')).toHaveStyle({ color: '#FFFFFF' });
+    } finally {
+      screen.unmount();
+      NativeWindStyleSheet.setColorScheme('system');
+      colorScheme.mockRestore();
+    }
   });
 
   it('uses a readable grouped-surface style for the disabled QR action', () => {

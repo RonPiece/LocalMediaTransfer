@@ -1,7 +1,7 @@
 import React from 'react';
 import { Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { theme } from '@/theme';
+import { useThemePalette } from '@/theme';
 import { IconName } from './types';
 
 export function Card({
@@ -31,9 +31,10 @@ export function InlineBanner({
   tone?: 'info' | 'warning' | 'error';
   className?: string;
 }) {
-  const color = tone === 'error' ? theme.colors.error : tone === 'warning' ? theme.colors.warning : theme.colors.primary;
-  const backgroundColor = tone === 'error' ? theme.colors.errorSoft : tone === 'warning' ? theme.colors.warningSoft : theme.colors.primarySoft;
-  const borderColor = tone === 'error' ? theme.colors.error : tone === 'warning' ? theme.colors.warning : theme.colors.primary;
+  const palette = useThemePalette();
+  const color = tone === 'error' ? palette.error : tone === 'warning' ? palette.warning : palette.primary;
+  const backgroundColor = tone === 'error' ? palette.errorSoft : tone === 'warning' ? palette.warningSoft : palette.primarySoft;
+  const borderColor = color;
   return (
     <View
       className={`rounded-xl p-4 flex-row items-center border ${className}`}

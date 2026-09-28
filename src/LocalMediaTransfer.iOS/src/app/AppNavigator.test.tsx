@@ -1,7 +1,11 @@
 import React from 'react';
 import { fireEvent, render } from '@testing-library/react-native';
+import * as ReactNative from 'react-native';
+import { StatusBar } from 'expo-status-bar';
 
 import AppNavigator, { AppNavigatorProps, pageTransitionMotion } from './AppNavigator';
+
+jest.mock('expo-status-bar', () => ({ StatusBar: jest.fn(() => null) }));
 
 jest.mock('@expo/vector-icons', () => {
   const React = require('react');
@@ -90,6 +94,20 @@ function props(): AppNavigatorProps {
 }
 
 describe('AppNavigator transfer tab protection', () => {
+  it.each([
+    ['dark', 'light'],
+    ['light', 'dark'],
+    ['unspecified', 'dark'],
+  ] as const)('uses readable status bar content for %s appearance', (appearance, style) => {
+    const colorScheme = jest.spyOn(ReactNative, 'useColorScheme').mockReturnValue(appearance);
+    try {
+      render(<AppNavigator {...props()} />);
+      expect(jest.mocked(StatusBar).mock.calls.at(-1)?.[0]).toMatchObject({ style });
+    } finally {
+      colorScheme.mockRestore();
+    }
+  });
+
   it('uses a brief lift normally and fade-only motion when Reduce Motion is enabled', () => {
     expect(pageTransitionMotion(false)).toEqual({ duration: 180, translateY: 5 });
     expect(pageTransitionMotion(true)).toEqual({ duration: 120, translateY: 0 });

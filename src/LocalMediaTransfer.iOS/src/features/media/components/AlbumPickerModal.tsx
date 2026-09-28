@@ -39,7 +39,7 @@ const AlbumGridItem = React.memo(function AlbumGridItem({
 
   return (
     <TouchableOpacity
-      className={`w-[48%] bg-surface dark:bg-surface-dark rounded-[16px] overflow-hidden border mb-4 ${selected ? 'border-primary border-2' : 'border-border dark:border-border-dark'}`}
+      className={`w-[48%] bg-surface dark:bg-surface-dark rounded-[16px] overflow-hidden border mb-4 ${selected ? 'border-primary dark:border-primary-dark border-2' : 'border-border dark:border-border-dark'}`}
       onPress={selectAlbum}
     >
       <View className="h-32 bg-background dark:bg-background-dark relative">
@@ -62,7 +62,7 @@ const AlbumGridItem = React.memo(function AlbumGridItem({
           </View>
         )}
         {selected && (
-          <View className="absolute top-2 left-2 bg-primary rounded-full p-0.5">
+          <View className="absolute top-2 left-2 bg-primary dark:bg-primary-dark rounded-full p-0.5">
             <Ionicons name="checkmark" size={14} color={theme.colors.white} />
           </View>
         )}

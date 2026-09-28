@@ -173,7 +173,7 @@ export default function TransferProgressScreen({
         )}
 
         {skipCount > 0 && !isFinished && (
-          <View className="rounded-[16px] bg-warning/10 border border-warning/25 px-4 py-3 mb-4 flex-row items-center">
+          <View className="rounded-[16px] bg-warning/10 dark:bg-warning-dark/10 border border-warning/25 dark:border-warning-dark/25 px-4 py-3 mb-4 flex-row items-center">
             <Ionicons name="play-skip-forward-outline" size={20} color={palette.warning} />
             <Text className="text-warning dark:text-warning-dark text-[13px] font-semibold ml-2 flex-1">
               {skipCount.toLocaleString()} {skipCount === 1 ? 'duplicate' : 'duplicates'} skipped · SHA-256 verified
@@ -227,10 +227,10 @@ export default function TransferProgressScreen({
           <View className={compactHeight ? 'mt-2' : 'mt-4'}>
           <TouchableOpacity
             onPress={cancelTransfer}
-            className="w-full h-14 rounded-xl items-center justify-center flex-row bg-error/10 border border-error/20"
+            className="w-full h-14 rounded-xl items-center justify-center flex-row bg-error/10 dark:bg-error-dark/10 border border-error/20 dark:border-error-dark/20"
           >
             <Ionicons name="close-circle-outline" size={20} color={palette.error} />
-            <Text className="text-error text-lg font-semibold ml-2">{transferText.cancelTransfer}</Text>
+            <Text className="text-error dark:text-error-dark text-lg font-semibold ml-2">{transferText.cancelTransfer}</Text>
           </TouchableOpacity>
           </View>
         )}
@@ -242,7 +242,7 @@ export default function TransferProgressScreen({
             accessibilityRole="button"
             accessibilityLabel={transferText.done}
             onPress={onComplete}
-            className="w-full h-14 rounded-xl items-center justify-center flex-row bg-primary border border-primary/20"
+            className="w-full h-14 rounded-xl items-center justify-center flex-row bg-primary dark:bg-primary-dark border border-primary/20 dark:border-primary-dark/20"
           >
             <Ionicons name="checkmark-circle-outline" size={20} color={palette.white} />
             <Text className="text-on-primary text-lg font-semibold ml-2">{transferText.done}</Text>

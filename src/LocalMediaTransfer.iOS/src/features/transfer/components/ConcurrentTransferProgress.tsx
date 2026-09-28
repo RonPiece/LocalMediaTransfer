@@ -64,14 +64,14 @@ export function ConcurrentTransferProgress({
       className={`bg-surface dark:bg-surface-dark rounded-[18px] border border-border dark:border-border-dark px-4 ${compact ? 'py-3 mb-3' : 'py-4 mb-4'}`}
     >
       <View className="flex-row items-center">
-        <View className="w-10 h-10 rounded-full bg-success/10 items-center justify-center">
+        <View className="w-10 h-10 rounded-full bg-success/10 dark:bg-success-dark/10 items-center justify-center">
           <Ionicons name="images-outline" size={20} color={palette.success} />
         </View>
         <View className="flex-1 ml-3 min-w-0">
           <View className="flex-row items-center justify-between">
             <Text className="text-on-surface dark:text-on-surface-dark text-[15px] font-semibold">Preparing media</Text>
             <Text
-              className="text-success text-[14px] font-bold ml-3"
+              className="text-success dark:text-success-dark text-[14px] font-bold ml-3"
               style={{ fontVariant: ['tabular-nums'] }}
             >
             {preparationComplete ? <Ionicons name="checkmark-circle" size={20} color={palette.success} /> : `${preparationPercent}%`}
@@ -90,7 +90,7 @@ export function ConcurrentTransferProgress({
           >
             <View
               testID="concurrent-preparation-progress"
-              className="h-full rounded-full bg-success"
+              className="h-full rounded-full bg-success dark:bg-success-dark"
               style={{ width: `${preparationPercent}%` }}
             />
           </View>
@@ -100,13 +100,13 @@ export function ConcurrentTransferProgress({
       <View className={`${compact ? 'my-2.5' : 'my-3'} border-t border-border dark:border-border-dark`} />
 
       <View className="flex-row items-center">
-        <View className="w-10 h-10 rounded-full bg-primary/10 items-center justify-center">
+        <View className="w-10 h-10 rounded-full bg-primary/10 dark:bg-primary-dark/10 items-center justify-center">
           <Ionicons name="cloud-upload-outline" size={20} color={palette.primary} />
         </View>
         <View className="flex-1 ml-3 min-w-0">
           <Text className="text-on-surface dark:text-on-surface-dark text-[15px] font-semibold">Transferring files</Text>
           <Text
-            className="text-primary text-[12px] font-semibold mt-0.5"
+            className="text-primary dark:text-primary-dark text-[12px] font-semibold mt-0.5"
             style={{ fontVariant: ['tabular-nums'] }}
           >
             {completedTransferText}

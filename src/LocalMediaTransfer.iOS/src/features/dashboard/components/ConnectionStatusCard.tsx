@@ -48,7 +48,7 @@ export function ConnectionStatusCard({
       ? palette.error
       : palette.connected;
 
-  const dotClass = !isConnected ? 'bg-warning' : connectionSecurity.mode === 'http' ? 'bg-error' : 'bg-success';
+  const dotClass = !isConnected ? 'bg-warning dark:bg-warning-dark' : connectionSecurity.mode === 'http' ? 'bg-error dark:bg-error-dark' : 'bg-success dark:bg-success-dark';
   return (
     <View className="bg-surface dark:bg-surface-dark border border-border dark:border-border-dark rounded-2xl p-4 mb-5">
       <View className="mb-3">
@@ -59,7 +59,7 @@ export function ConnectionStatusCard({
           </Text>
         </View>
         {isConnected && connectionSecurity.mode === 'http' && (
-          <Text className="text-error text-[12px] mt-1.5 ml-4 leading-4 pr-2">
+          <Text className="text-error dark:text-error-dark text-[12px] mt-1.5 ml-4 leading-4 pr-2">
             {dashboardText.httpWarning}
           </Text>
         )}
@@ -70,10 +70,10 @@ export function ConnectionStatusCard({
           accessibilityRole="button"
           accessibilityLabel={dashboardText.retryConnection}
           onPress={onRetryConnection}
-          className="self-start mb-3 px-3 py-2 rounded-lg bg-primary/15 flex-row items-center"
+          className="self-start mb-3 px-3 py-2 rounded-lg bg-primary/15 dark:bg-primary-dark/15 flex-row items-center"
         >
           <Ionicons name="refresh-outline" size={15} color={palette.primary} />
-          <Text className="text-primary text-[13px] font-semibold ml-1.5">{dashboardText.retryConnection}</Text>
+          <Text className="text-primary dark:text-primary-dark text-[13px] font-semibold ml-1.5">{dashboardText.retryConnection}</Text>
         </TouchableOpacity>
       )}
 
@@ -87,7 +87,7 @@ export function ConnectionStatusCard({
           <Text className="text-on-surface dark:text-on-surface-dark text-[15px] font-semibold" numberOfLines={1}>{api.url || 'No receiver connected'}</Text>
           <Text className="text-on-surface-variant dark:text-on-surface-variant-dark text-[13px] mt-[3px]">{dashboardText.tapSecurityDetails}</Text>
         </View>
-        <View className="bg-surface w-7 h-7 rounded-full items-center justify-center shadow-sm shadow-black/5 elevation-1">
+        <View className="bg-surface dark:bg-surface-dark w-7 h-7 rounded-full items-center justify-center shadow-sm shadow-black/5 elevation-1">
           <Ionicons name="chevron-forward" size={16} color={palette.onSurfaceVariant} />
         </View>
       </TouchableOpacity>
@@ -105,10 +105,10 @@ export function ConnectionStatusCard({
           accessibilityLabel="Copy server address"
           onPress={copyAddress}
           disabled={!isConnected}
-          className={`px-3 py-1.5 rounded-lg bg-primary/15 flex-row items-center ${!isConnected ? 'opacity-35' : ''}`}
+          className={`px-3 py-1.5 rounded-lg bg-primary/15 dark:bg-primary-dark/15 flex-row items-center ${!isConnected ? 'opacity-35' : ''}`}
         >
           <Ionicons name="copy-outline" size={14} color={palette.primary} />
-          <Text className="text-primary text-[13px] font-semibold ml-1.5">{dashboardText.copyLink}</Text>
+          <Text className="text-primary dark:text-primary-dark text-[13px] font-semibold ml-1.5">{dashboardText.copyLink}</Text>
         </TouchableOpacity>
       </View>
     </View>

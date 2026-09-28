@@ -5,7 +5,7 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import AppHeader from '@/components/AppHeader';
 import { TransferHistoryFile } from '@/api/types';
-import { theme } from '@/theme';
+import { useThemePalette } from '@/theme';
 
 function formatBytes(value = 0): string {
   if (value < 1_000) return `${value} B`;
@@ -15,13 +15,14 @@ function formatBytes(value = 0): string {
 }
 
 function HistoryProblemFile({ file }: { file: TransferHistoryFile }) {
+  const palette = useThemePalette();
   const skipped = file.outcome === 'skipped';
   return (
     <View className="flex-row py-3 border-b border-border dark:border-border-dark">
       <Ionicons
         name={skipped ? 'play-skip-forward-outline' : 'alert-circle-outline'}
         size={20}
-        color={skipped ? theme.colors.warning : theme.colors.error}
+        color={skipped ? palette.warning : palette.error}
       />
       <View className="ml-3 flex-1">
         <Text className="text-[14px] text-on-surface dark:text-on-surface-dark" numberOfLines={2}>

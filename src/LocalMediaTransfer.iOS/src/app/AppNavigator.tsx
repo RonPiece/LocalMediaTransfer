@@ -17,7 +17,7 @@ import { DiscoveredServer } from '@/services/NativeCapabilities';
 import { PairingPayload } from '@/security/ConnectionSecurity';
 import { ConnectionHealthStatus, ConnectionSecurityState, MainTab, SavedConnection, ScreenState } from './types';
 import { PreparationMode } from '@/services/upload/types';
-import { useReduceMotionEnabled } from '@/theme';
+import { useReduceMotionEnabled, useThemeMode } from '@/theme';
 
 export type NavigationProps = {
   appState: ScreenState;
@@ -115,6 +115,7 @@ function IdleTransfers({ isConnected, onChooseMedia, onConnect }: { isConnected:
 }
 
 export default function AppNavigator({ navigation, connection, preferences, discovery, history }: AppNavigatorProps) {
+  const themeMode = useThemeMode();
   const transition = useAnimatedValue(1);
   const reduceMotionEnabled = useReduceMotionEnabled();
   const transitionMotion = pageTransitionMotion(reduceMotionEnabled);
@@ -157,7 +158,7 @@ export default function AppNavigator({ navigation, connection, preferences, disc
   return (
     <GestureHandlerRootView className="flex-1">
       <SafeAreaProvider>
-        <StatusBar style="auto" />
+        <StatusBar style={themeMode === 'dark' ? 'light' : 'dark'} />
         {navigation.appState === 'picker' ? (
           <MediaPickerScreen onTransfer={navigation.onTransfer} onDisconnect={navigation.onCancelPicker} />
         ) : (

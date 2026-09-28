@@ -53,7 +53,7 @@ export function ConnectionDetailsModal({
               </View>
               <TouchableOpacity
                 onPress={copyAddress}
-                className="w-full h-12 bg-primary rounded-xl items-center justify-center flex-row"
+                className="w-full h-12 bg-primary dark:bg-primary-dark rounded-xl items-center justify-center flex-row"
                 activeOpacity={0.8}
               >
                 <Ionicons name="copy-outline" size={20} color={palette.white} />

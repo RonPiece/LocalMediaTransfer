@@ -132,7 +132,7 @@ export const TransferSummaryCard = React.memo(function TransferSummaryCard({
       <View className="flex-row gap-2 mt-4">
         <TouchableOpacity
           onPress={onShowAll}
-          className="flex-1 h-12 rounded-[14px] bg-primary/20 items-center justify-center flex-row"
+          className="flex-1 h-12 rounded-[14px] bg-primary/20 dark:bg-primary-dark/20 items-center justify-center flex-row"
         >
           <Ionicons name="list-outline" size={19} color={palette.primary} />
           <Text className="text-primary dark:text-primary-dark font-semibold ml-2 text-[12px]">{transferText.viewAllResults(resultCount.toLocaleString())}</Text>
@@ -140,10 +140,10 @@ export const TransferSummaryCard = React.memo(function TransferSummaryCard({
         {errorCount > 0 && (
           <TouchableOpacity
             onPress={onShowErrors}
-            className="flex-1 h-12 rounded-[14px] bg-error/20 items-center justify-center flex-row"
+            className="flex-1 h-12 rounded-[14px] bg-error/20 dark:bg-error-dark/20 items-center justify-center flex-row"
           >
             <Ionicons name="warning-outline" size={19} color={palette.error} />
-            <Text className="text-error font-semibold ml-2 text-[12px]">{transferText.viewErrors(errorCount.toLocaleString())}</Text>
+            <Text className="text-error dark:text-error-dark font-semibold ml-2 text-[12px]">{transferText.viewErrors(errorCount.toLocaleString())}</Text>
           </TouchableOpacity>
         )}
       </View>

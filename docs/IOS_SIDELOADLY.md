@@ -4,6 +4,10 @@ This route does not require a paid Apple Developer membership. GitHub Actions
 uses a macOS runner to compile an unsigned IPA. Sideloadly signs that IPA with
 the user's Apple ID and installs it on the iPhone.
 
+Read [iOS environments, build profiles, and Metro](IOS_BUILD_CONFIGURATION.md)
+for the current selection rules, the Metro configuration gap, and the planned
+independent environment/profile behavior.
+
 ## 1. Build the unsigned IPA
 
 1. Commit and push the iOS app and `.github/workflows/ios-unsigned-ipa.yml`.
@@ -11,17 +15,20 @@ the user's Apple ID and installs it on the iPhone.
 3. Select **Actions** > **Build unsigned iOS IPA** > **Run workflow**.
 4. Select the branch containing the commit you intend to install. A workflow
    can build only committed, pushed GitHub content; local changes are invisible.
-5. Select the `production` environment (or `test` for the separate TEST app),
-   then wait for the build job to finish successfully.
+5. For a standalone app, select the `release` build profile and the `production`
+   environment (or `test` for the separate TEST app), then wait for the build
+   job to finish successfully. For Metro/Fast Refresh, follow the development
+   client steps below; the current workflow forces that profile to TEST.
 6. Open the completed workflow run and download the
    **LocalMediaTransfer-production-unsigned-ipa** artifact for production.
 7. Extract the downloaded ZIP. It contains
    `LocalMediaTransfer-production-unsigned.ipa` and native build evidence.
 
 The workflow also runs on pull requests and is called by Windows release
-verification. It verifies the generated application scheme, embedded JavaScript
-bundle, ExpoFont pod, and `LocalMediaTransferNative` Swift module before
-publishing the artifact.
+verification. It verifies the generated application scheme, ExpoFont pod, and
+`LocalMediaTransferNative` Swift module before publishing the artifact. Release
+builds require an embedded JavaScript bundle; Development builds require the
+Expo development launcher.
 
 ## 2. Prepare Windows and the iPhone
 
@@ -73,7 +80,15 @@ For Fast Refresh while retaining the custom Swift module:
    `LocalMediaTransfer-test-development-unsigned-ipa` artifact.
 4. Sign and install `LocalMediaTransfer-test-development-unsigned.ipa` with
    Sideloadly using the same free-signing steps above.
-5. On Windows, from `src\LocalMediaTransfer.iOS`, start Metro with:
+5. On Windows, open PowerShell in `src\LocalMediaTransfer.iOS`. On a fresh
+   checkout, or after changing `package.json` or `package-lock.json`, install
+   the locked JavaScript and TypeScript dependencies once:
+
+   ```powershell
+   npm ci
+   ```
+
+   Then start Metro with:
 
    ```powershell
    npm run start:dev-client

@@ -5,7 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 
 import AppHeader from '@/components/AppHeader';
-import { theme } from '@/theme';
+import { useThemePalette } from '@/theme';
 import { ConnectionDetailsModal } from './components/ConnectionDetailsModal';
 import { ConnectionStatusCard } from './components/ConnectionStatusCard';
 import { DashboardAboutModal } from './components/DashboardAboutModal';
@@ -36,6 +36,7 @@ export default function DashboardScreen({
   onDisconnect,
   onRetryConnection = () => undefined,
 }: DashboardScreenProps) {
+  const palette = useThemePalette();
   const [aboutOpen, setAboutOpen] = React.useState(false);
   const [connectionDetailsOpen, setConnectionDetailsOpen] = React.useState(false);
   const [settingsOpen, setSettingsOpen] = React.useState(false);
@@ -53,8 +54,8 @@ export default function DashboardScreen({
   };
 
   return (
-    <View className="flex-1 bg-background">
-      <SafeAreaView edges={['top']} className="bg-surface">
+    <View className="flex-1 bg-background dark:bg-background-dark">
+      <SafeAreaView edges={['top']} className="bg-surface dark:bg-surface-dark">
         <AppHeader title={dashboardText.title} showIcon />
       </SafeAreaView>
       <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 40 }}>
@@ -70,10 +71,10 @@ export default function DashboardScreen({
           disabled={!isConnected}
           onPress={chooseMedia}
           activeOpacity={0.8}
-          className={`h-[50px] rounded-[14px] items-center justify-center flex-row mb-6 ${isConnected ? 'bg-primary' : ''}`}
-          style={!isConnected ? { backgroundColor: theme.colors.disabledFill } : undefined}
+          className={`h-[50px] rounded-[14px] items-center justify-center flex-row mb-6 ${isConnected ? 'bg-primary dark:bg-primary-dark' : ''}`}
+          style={!isConnected ? { backgroundColor: palette.disabledFill } : undefined}
         >
-          <Ionicons name="images-outline" size={22} color={theme.colors.white} />
+          <Ionicons name="images-outline" size={22} color={palette.white} />
           <Text className="text-white text-[17px] font-semibold ml-2">{dashboardText.chooseMedia}</Text>
         </TouchableOpacity>
 

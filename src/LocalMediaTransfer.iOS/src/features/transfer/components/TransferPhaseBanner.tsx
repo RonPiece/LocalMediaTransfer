@@ -2,7 +2,7 @@ import React from 'react';
 import { Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-import { theme } from '@/theme';
+import { useThemePalette } from '@/theme';
 import { DuplicateCheckStage, PreparationMode } from '@/services/upload/types';
 
 type TransferPhaseBannerProps = {
@@ -50,6 +50,7 @@ export const TransferPhaseBanner = React.memo(function TransferPhaseBanner({
   duplicateCheck,
   processedFiles,
 }: TransferPhaseBannerProps) {
+  const palette = useThemePalette();
   const [expanded, setExpanded] = React.useState(false);
   if (isFinished) return null;
   const streamingTransferActive = preparationMode === 'streaming' && hasUploadStarted;
@@ -105,24 +106,24 @@ export const TransferPhaseBanner = React.memo(function TransferPhaseBanner({
         accessibilityState={{ expanded }}
         activeOpacity={0.75}
         onPress={() => setExpanded(value => !value)}
-        className={`rounded-[18px] border px-4 py-3 ${preparationComplete ? 'bg-primary/5 border-primary/20' : 'bg-surface border-border'}`}
+        className={`rounded-[18px] border px-4 py-3 ${preparationComplete ? 'bg-primary/5 dark:bg-primary-dark/5 border-primary/20 dark:border-primary-dark/20' : 'bg-surface dark:bg-surface-dark border-border dark:border-border-dark'}`}
       >
         <View className="flex-row items-center min-h-[44px]">
           <Ionicons
             name={preparationComplete ? 'cloud-upload-outline' : 'images-outline'}
             size={22}
-            color={theme.colors.primary}
+            color={palette.primary}
           />
           <View className="flex-1 ml-3">
             <Text
-              className={`text-on-surface font-semibold ${streamingTransferActive && !preparationComplete ? 'text-[15px]' : 'text-[16px]'}`}
+              className={`text-on-surface dark:text-on-surface-dark font-semibold ${streamingTransferActive && !preparationComplete ? 'text-[15px]' : 'text-[16px]'}`}
               numberOfLines={1}
             >
               {title}
             </Text>
             {status && (
               <Text
-                className={preparationComplete ? 'text-on-surface-variant text-[13px] mt-0.5' : 'text-primary text-[13px] font-semibold mt-0.5'}
+                className={preparationComplete ? 'text-on-surface-variant dark:text-on-surface-variant-dark text-[13px] mt-0.5' : 'text-primary dark:text-primary-dark text-[13px] font-semibold mt-0.5'}
                 numberOfLines={phase === 'checking' ? 2 : 1}
                 style={{ fontVariant: ['tabular-nums'] }}
               >
@@ -133,7 +134,7 @@ export const TransferPhaseBanner = React.memo(function TransferPhaseBanner({
           <Ionicons
             name={expanded ? 'chevron-up' : 'chevron-down'}
             size={19}
-            color={theme.colors.onSurfaceVariant}
+            color={palette.onSurfaceVariant}
           />
         </View>
         {expanded && (
@@ -141,7 +142,7 @@ export const TransferPhaseBanner = React.memo(function TransferPhaseBanner({
             {details.map((paragraph, index) => (
               <Text
                 key={paragraph}
-                className={`text-on-surface-variant text-[13px] leading-5 ${index > 0 ? 'mt-3' : ''}`}
+                className={`text-on-surface-variant dark:text-on-surface-variant-dark text-[13px] leading-5 ${index > 0 ? 'mt-3' : ''}`}
               >
                 {paragraph}
               </Text>

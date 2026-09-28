@@ -4,7 +4,7 @@ import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 
 import { MediaAsset, mediaScanner } from '@/services/MediaScanner';
-import { theme } from '@/theme';
+import { useThemePalette } from '@/theme';
 import { SelectionStore } from '../hooks/useMediaSelection';
 import { MEDIA_IMAGE_PERFORMANCE } from '../mediaGridPerformance';
 
@@ -25,6 +25,7 @@ export const MediaGridItem = React.memo(function MediaGridItem({
   suppressNextPress,
   onToggleSelection,
 }: MediaGridItemProps) {
+  const palette = useThemePalette();
   const formattedDuration = item.type === 'video'
     ? mediaScanner.formatDuration(item.duration)
     : undefined;
@@ -54,7 +55,7 @@ export const MediaGridItem = React.memo(function MediaGridItem({
     <TouchableOpacity
       activeOpacity={0.8}
       onPress={toggleSelection}
-      style={[styles.cell, itemStyle]}
+      style={[styles.cell, { backgroundColor: palette.surface }, itemStyle]}
     >
       <Image
         source={imageSource}
@@ -65,7 +66,7 @@ export const MediaGridItem = React.memo(function MediaGridItem({
       />
 
       {selected && (
-        <View className="absolute inset-0 bg-black/30 border-4 border-primary" />
+        <View className="absolute inset-0 bg-black/30 border-4 border-primary dark:border-primary-dark" />
       )}
 
       {item.type === 'video' && formattedDuration && (
@@ -75,8 +76,8 @@ export const MediaGridItem = React.memo(function MediaGridItem({
       )}
 
       {selected ? (
-        <View className="absolute top-2 right-2 w-6 h-6 rounded-full bg-primary items-center justify-center shadow-md">
-          <Ionicons name="checkmark" size={16} color={theme.colors.white} />
+        <View className="absolute top-2 right-2 w-6 h-6 rounded-full bg-primary dark:bg-primary-dark items-center justify-center shadow-md">
+          <Ionicons name="checkmark" size={16} color={palette.white} />
         </View>
       ) : (
         <View className="absolute top-2 right-2 w-6 h-6 rounded-full border border-white/50 bg-black/20 backdrop-blur-sm" />
@@ -89,7 +90,6 @@ const styles = StyleSheet.create({
   cell: {
     position: 'relative',
     overflow: 'hidden',
-    backgroundColor: theme.colors.surface,
   },
   image: {
     position: 'absolute',

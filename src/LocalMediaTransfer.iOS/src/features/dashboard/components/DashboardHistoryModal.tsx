@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import AppHeader from '@/components/AppHeader';
-import { theme } from '@/theme';
+import { useThemePalette } from '@/theme';
 import { formatHistoryDate, historyItemKey, historyStatus } from '../hooks/useDashboardHistory';
 import { HistoryItem } from '../types';
 import { HistoryProblemDetailsModal } from './HistoryProblemDetailsModal';
@@ -27,6 +27,7 @@ export function DashboardHistoryModal({
   onClose: () => void;
   onClear: () => void;
 }) {
+  const palette = useThemePalette();
   const [details, setDetails] = React.useState<{ files: NonNullable<HistoryItem['files']>; total: number } | null>(null);
   const closeModal = React.useCallback(() => {
     setDetails(null);
@@ -36,23 +37,23 @@ export function DashboardHistoryModal({
   return (
     <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={closeModal}>
       <SafeAreaProvider>
-        <View className="flex-1 bg-background">
-          <SafeAreaView edges={['top']} className="bg-surface">
+        <View className="flex-1 bg-background dark:bg-background-dark">
+          <SafeAreaView edges={['top']} className="bg-surface dark:bg-surface-dark">
             <AppHeader
               title="Transfer History"
               onClose={closeModal}
               closeStyle="back"
               onDone={historyData.length > 0 ? onClear : undefined}
               doneText="Clear"
-              doneColor={theme.colors.error}
+              doneColor={palette.error}
             />
           </SafeAreaView>
           {historyData.length === 0 ? (
             <View className="p-5">
-              <View className="bg-surface rounded-xl p-10 items-center">
-                <Ionicons name="time-outline" size={32} color={theme.colors.onSurfaceVariant} />
-                <Text className="text-[17px] font-semibold text-on-surface mt-3">No Transfer History</Text>
-                <Text className="text-[15px] text-on-surface-variant text-center mt-1">Completed transfers will appear here.</Text>
+              <View className="bg-surface dark:bg-surface-dark rounded-xl p-10 items-center">
+                <Ionicons name="time-outline" size={32} color={palette.onSurfaceVariant} />
+                <Text className="text-[17px] font-semibold text-on-surface dark:text-on-surface-dark mt-3">No Transfer History</Text>
+                <Text className="text-[15px] text-on-surface-variant dark:text-on-surface-variant-dark text-center mt-1">Completed transfers will appear here.</Text>
               </View>
             </View>
           ) : (
@@ -72,22 +73,22 @@ export function DashboardHistoryModal({
                 (item.additionalComponentsBytes ?? 0) > 0 ||
                 (item.additionalComponentsFiles ?? 0) > 0;
               return (
-                <View className="bg-surface rounded-xl p-4 mb-2.5">
-                  <Text className="text-[16px] font-semibold text-on-surface">{formatHistoryDate(item.completedAt)}</Text>
-                  <Text className="text-[14px] text-on-surface-variant mt-1">
+                <View className="bg-surface dark:bg-surface-dark rounded-xl p-4 mb-2.5">
+                  <Text className="text-[16px] font-semibold text-on-surface dark:text-on-surface-dark">{formatHistoryDate(item.completedAt)}</Text>
+                  <Text className="text-[14px] text-on-surface-variant dark:text-on-surface-variant-dark mt-1">
                     Status:{' '}
-                    <Text className={`font-semibold ${isError ? 'text-error' : 'text-success'}`}>{status}</Text>
+                    <Text className={`font-semibold ${isError ? 'text-error dark:text-error-dark' : 'text-success dark:text-success-dark'}`}>{status}</Text>
                   </Text>
-                  <Text className="text-[13px] text-on-surface-variant mt-1">
+                  <Text className="text-[13px] text-on-surface-variant dark:text-on-surface-variant-dark mt-1">
                     {item.uploadedFiles ?? 0} uploaded · {item.skippedFiles ?? 0} skipped · {item.failedFiles ?? 0} failed
                   </Text>
                   {(item.selectedAssets !== undefined || item.expandedFiles !== undefined) && (
-                    <Text className="text-[13px] text-on-surface-variant mt-1">
+                    <Text className="text-[13px] text-on-surface-variant dark:text-on-surface-variant-dark mt-1">
                       {item.selectedAssets ?? 0} selected assets · {item.expandedFiles ?? 0} files
                     </Text>
                   )}
                   {item.selectedBytes !== undefined && (
-                    <Text className="text-[13px] text-on-surface-variant mt-1">
+                    <Text className="text-[13px] text-on-surface-variant dark:text-on-surface-variant-dark mt-1">
                       {formatBytes(selectedMediaBytes)} selected media
                       {hasAdditionalComponents
                         ? ` · +${formatBytes(item.additionalComponentsBytes)} in ${(item.additionalComponentsFiles ?? 0).toLocaleString()} additional components · ${formatBytes(item.selectedBytes)} total content`
@@ -95,12 +96,12 @@ export function DashboardHistoryModal({
                     </Text>
                   )}
                   {(item.uploadedBytes !== undefined || item.avoidedBytes !== undefined) && (
-                    <Text className="text-[13px] text-on-surface-variant mt-1">
+                    <Text className="text-[13px] text-on-surface-variant dark:text-on-surface-variant-dark mt-1">
                       {formatBytes(item.uploadedBytes)} stored · {formatBytes(item.avoidedBytes)} avoided before upload
                     </Text>
                   )}
                   {(item.finalizationDuplicateBytes ?? 0) > 0 && (
-                    <Text className="text-[13px] text-on-surface-variant mt-1">
+                    <Text className="text-[13px] text-on-surface-variant dark:text-on-surface-variant-dark mt-1">
                       {formatBytes(item.finalizationDuplicateBytes)} uploaded, then verified as duplicate
                     </Text>
                   )}
@@ -109,18 +110,18 @@ export function DashboardHistoryModal({
                       accessibilityRole="button"
                       accessibilityLabel={`View ${problemFiles.length} problem file details`}
                       onPress={() => setDetails({ files: problemFiles, total: totalProblems })}
-                      className="mt-3 rounded-lg border border-border bg-background px-3 py-2 flex-row items-center justify-between"
+                      className="mt-3 rounded-lg border border-border dark:border-border-dark bg-background dark:bg-background-dark px-3 py-2 flex-row items-center justify-between"
                     >
-                      <Text className="text-[13px] font-semibold text-primary">
+                      <Text className="text-[13px] font-semibold text-primary dark:text-primary-dark">
                         View {problemFiles.length < totalProblems
                           ? `${problemFiles.length.toLocaleString()} of ${totalProblems.toLocaleString()}`
                           : problemFiles.length.toLocaleString()} problem files
                       </Text>
-                      <Ionicons name="chevron-forward" size={16} color={theme.colors.primary} />
+                      <Ionicons name="chevron-forward" size={16} color={palette.primary} />
                     </TouchableOpacity>
                   )}
                   {totalProblems > 0 && problemFiles.length === 0 && (
-                    <Text className="text-[12px] text-on-surface-variant mt-2">
+                    <Text className="text-[12px] text-on-surface-variant dark:text-on-surface-variant-dark mt-2">
                       Per-file details are unavailable for this saved record.
                     </Text>
                   )}

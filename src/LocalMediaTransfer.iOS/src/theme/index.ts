@@ -6,8 +6,12 @@ export const theme = tokens;
 
 export type ThemePalette = typeof tokens.colors;
 
+export function useThemeMode(): 'light' | 'dark' {
+  return useColorScheme() === 'dark' ? 'dark' : 'light';
+}
+
 export function useThemePalette(): ThemePalette {
-  return useColorScheme() === 'dark' ? tokens.darkColors : tokens.colors;
+  return useThemeMode() === 'dark' ? tokens.darkColors : tokens.colors;
 }
 
 export function useReduceMotionEnabled(): boolean {

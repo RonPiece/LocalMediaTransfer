@@ -79,7 +79,7 @@ export function TransferStatsBar({
       className={compact ? 'min-w-0 items-start px-3 pt-3 mt-3 border-t border-border dark:border-border-dark' : 'flex-1 min-w-0 items-start px-3 border-l border-border dark:border-border-dark'}
     >
       <Text className="text-on-surface-variant dark:text-on-surface-variant-dark text-[10px] font-bold uppercase tracking-wider">{timeLabel}</Text>
-      <Text className="text-[14px] leading-5 font-semibold mt-1 text-primary">
+      <Text className="text-[14px] leading-5 font-semibold mt-1 text-primary dark:text-primary-dark">
         {timeText}
       </Text>
       {timeHint && (

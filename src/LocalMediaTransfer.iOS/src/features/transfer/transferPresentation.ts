@@ -1,4 +1,4 @@
-import { theme } from '@/theme';
+import { theme, ThemePalette } from '@/theme';
 import type { MediaComponentSemantics, MediaVariantRole } from '@/services/upload/mediaVariants';
 import type { TransferErrorCode, TransferStage } from '@/services/upload/errors';
 
@@ -63,19 +63,19 @@ export function formatBytes(bytes: number) {
   return `${mb.toFixed(1)} MB`;
 }
 
-export function fileStatusPresentation(status: FileStatus) {
+export function fileStatusPresentation(status: FileStatus, palette: ThemePalette = theme.colors) {
   switch (status) {
     case 'uploading':
-      return { icon: 'cloud-upload-outline' as const, color: theme.colors.primary, text: 'Uploading...' };
+      return { icon: 'cloud-upload-outline' as const, color: palette.primary, text: 'Uploading...' };
     case 'success':
-      return { icon: 'checkmark-circle' as const, color: theme.colors.success, text: 'Success' };
+      return { icon: 'checkmark-circle' as const, color: palette.success, text: 'Success' };
     case 'error':
-      return { icon: 'alert-circle' as const, color: theme.colors.error, text: 'Failed' };
+      return { icon: 'alert-circle' as const, color: palette.error, text: 'Failed' };
     case 'skipped':
-      return { icon: 'play-skip-forward-outline' as const, color: theme.colors.warning, text: 'Skipped' };
+      return { icon: 'play-skip-forward-outline' as const, color: palette.warning, text: 'Skipped' };
     case 'pending':
     default:
-      return { icon: 'time-outline' as const, color: theme.colors.onSurfaceVariant, text: 'Pending' };
+      return { icon: 'time-outline' as const, color: palette.onSurfaceVariant, text: 'Pending' };
   }
 }
 
@@ -89,10 +89,10 @@ export function summaryBadgePresentation({
   skipCount: number;
 }) {
   if (errorCount > 0 && successCount === 0 && skipCount === 0) {
-    return { text: 'FAILED', backgroundClass: 'bg-error/20', textClass: 'text-error' };
+    return { text: 'FAILED', backgroundClass: 'bg-error/20 dark:bg-error-dark/20', textClass: 'text-error dark:text-error-dark' };
   }
   if (errorCount > 0 || skipCount > 0) {
-    return { text: 'MIXED', backgroundClass: 'bg-warning/20', textClass: 'text-warning' };
+    return { text: 'MIXED', backgroundClass: 'bg-warning/20 dark:bg-warning-dark/20', textClass: 'text-warning dark:text-warning-dark' };
   }
-  return { text: 'SUCCESS', backgroundClass: 'bg-success/20', textClass: 'text-success' };
+  return { text: 'SUCCESS', backgroundClass: 'bg-success/20 dark:bg-success-dark/20', textClass: 'text-success dark:text-success-dark' };
 }

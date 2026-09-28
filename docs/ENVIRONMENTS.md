@@ -5,6 +5,12 @@ validated `test`, `benchmark`, and `production` runtime environments. A runtime
 environment selects identity and storage; it is not the same as a compiler
 configuration such as Debug or Release.
 
+For the iOS workflow's `development`/`release` profiles, current TEST override,
+and Metro runtime configuration, see
+[iOS environments, build profiles, and Metro](IOS_BUILD_CONFIGURATION.md).
+That guide separates existing behavior from the plan to honor all four
+environment/profile combinations and verify native/JavaScript agreement.
+
 This document defines the target contract. Components must not claim an
 environment is isolated until their implementation and tests listed below are
 complete.

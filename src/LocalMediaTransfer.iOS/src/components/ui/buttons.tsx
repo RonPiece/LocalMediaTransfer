@@ -39,7 +39,7 @@ export function PrimaryButton({
       disabled={disabled}
       onPress={onPress}
       activeOpacity={0.8}
-      className={`h-[50px] w-full rounded-xl items-center justify-center flex-row ${disabled ? 'bg-border' : 'bg-primary'} ${className}`}
+      className={`h-[50px] w-full rounded-xl items-center justify-center flex-row ${disabled ? 'bg-border dark:bg-border-dark' : 'bg-primary dark:bg-primary-dark'} ${className}`}
     >
       {icon && <Ionicons name={icon} size={22} color={palette.white} />}
       <Text className={`text-white text-[17px] font-semibold ${icon ? 'ml-2' : ''}`}>{title}</Text>
@@ -67,10 +67,10 @@ export function SecondaryButton({
       disabled={disabled}
       onPress={onPress}
       activeOpacity={0.8}
-      className={`h-11 rounded-xl items-center justify-center flex-row ${disabled ? 'bg-border' : 'bg-primary'} ${className}`}
+      className={`h-11 rounded-xl items-center justify-center flex-row ${disabled ? 'bg-border dark:bg-border-dark' : 'bg-primary dark:bg-primary-dark'} ${className}`}
     >
       {icon && <Ionicons name={icon} size={18} color={palette.white} />}
-      <Text className={`text-[17px] font-semibold ${disabled ? 'text-on-surface-variant' : 'text-white'} ${icon ? 'ml-2' : ''}`}>{title}</Text>
+      <Text className={`text-[17px] font-semibold ${disabled ? 'text-on-surface-variant dark:text-on-surface-variant-dark' : 'text-white'} ${icon ? 'ml-2' : ''}`}>{title}</Text>
     </TouchableOpacity>
   );
 }

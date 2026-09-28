@@ -2,7 +2,8 @@ const tokens = require('./src/theme/tokens.json');
 
 /** @type {import('tailwindcss').Config} */
 module.exports = {
-  darkMode: 'media',
+  // Leave darkMode unset: NativeWind 2 supplies its native ::dark variant.
+  // Tailwind's browser media variant cannot match iOS/Android appearance.
   content: ["./App.{js,jsx,ts,tsx}", "./src/**/*.{js,jsx,ts,tsx}"],
   theme: {
     extend: {

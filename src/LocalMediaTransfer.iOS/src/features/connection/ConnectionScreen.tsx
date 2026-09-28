@@ -123,7 +123,7 @@ export default function ConnectionScreen({
             {pairingDesktopName && <PairingApprovalBanner desktopName={pairingDesktopName} />}
 
             {isConnected && (
-              <View className="rounded-xl bg-success/10 px-4 py-3 mb-4 flex-row items-center">
+              <View className="rounded-xl bg-success/10 dark:bg-success-dark/10 px-4 py-3 mb-4 flex-row items-center">
                 <Ionicons name="checkmark-circle" size={20} color={palette.success} />
                 <Text className="text-[13px] text-success dark:text-success-dark font-semibold ml-2 flex-1">Disconnect before pairing with another receiver.</Text>
               </View>

@@ -28,9 +28,12 @@ export const FloatingTransferBar = React.memo(function FloatingTransferBar({
     <>
       <View className="absolute bottom-6 left-0 right-0 px-6 items-center pointer-events-none">
         {isLargeTransfer && (
-          <View className="pointer-events-auto w-full max-w-md mb-3 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 flex-row">
-            <Ionicons name="thermometer-outline" size={20} color="#9A6700" />
-            <Text className="text-amber-900 text-[13px] leading-5 ml-2 flex-1">
+          <View
+            className="pointer-events-auto w-full max-w-md mb-3 rounded-2xl border px-4 py-3 flex-row"
+            style={{ backgroundColor: palette.warningSoft, borderColor: palette.warning }}
+          >
+            <Ionicons name="thermometer-outline" size={20} color={palette.warning} />
+            <Text className="text-on-surface dark:text-on-surface-dark text-[13px] leading-5 ml-2 flex-1">
               {largeTransferGuidance}
             </Text>
           </View>
@@ -83,7 +86,7 @@ export const FloatingTransferBar = React.memo(function FloatingTransferBar({
             <TouchableOpacity
               accessibilityRole="button"
               onPress={() => setInformationOpen(false)}
-              className="mt-5 h-12 bg-primary rounded-xl items-center justify-center"
+              className="mt-5 h-12 bg-primary dark:bg-primary-dark rounded-xl items-center justify-center"
             >
               <Text className="text-on-primary text-[16px] font-semibold">Got it</Text>
             </TouchableOpacity>

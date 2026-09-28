@@ -95,7 +95,7 @@ export function SessionDetails({ item, onClose }: { item: TransferHistoryItem | 
                 </View>
               ))}
               {problemFiles.length > 0 && (
-                <TouchableOpacity onPress={() => setProblemFilesOpen(true)} className="h-12 rounded-xl bg-warning/10 items-center justify-center mt-4">
+                <TouchableOpacity onPress={() => setProblemFilesOpen(true)} className="h-12 rounded-xl bg-warning/10 dark:bg-warning-dark/10 items-center justify-center mt-4">
                   <Text className="text-warning dark:text-warning-dark font-semibold">View problem files</Text>
                 </TouchableOpacity>
               )}
@@ -184,7 +184,7 @@ export default function HistoryScreen({
               </View>
 
               {error && (
-                <TouchableOpacity onPress={onRefresh} className="rounded-xl bg-error/10 px-4 py-3 mb-3">
+                <TouchableOpacity onPress={onRefresh} className="rounded-xl bg-error/10 dark:bg-error-dark/10 px-4 py-3 mb-3">
                   <Text className="text-error dark:text-error-dark text-[13px]">{error} Tap to try again.</Text>
                 </TouchableOpacity>
               )}

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Modal, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { CameraView } from 'expo-camera';
+import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { initialWindowMetrics } from 'react-native-safe-area-context';
 import { connectionText } from '../content/connectionText';
@@ -24,6 +25,7 @@ function QrScannerContent({
 
   return (
     <View className="flex-1 bg-black">
+        <StatusBar style="light" />
         <CameraView
           style={StyleSheet.absoluteFill}
           facing="back"
@@ -50,7 +52,7 @@ function QrScannerContent({
           <View className="w-11" />
         </View>
         <View style={StyleSheet.absoluteFill} className="items-center justify-center" pointerEvents="none">
-          <View className="w-60 h-60 rounded-2xl border-2 border-primary" />
+          <View className="w-60 h-60 rounded-2xl border-2 border-primary dark:border-primary-dark" />
         </View>
     </View>
   );

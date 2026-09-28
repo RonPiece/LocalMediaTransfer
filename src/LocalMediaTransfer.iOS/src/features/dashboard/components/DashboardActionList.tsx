@@ -18,14 +18,14 @@ export function DashboardActionList({
 }) {
   return (
     <>
-      <Text className="text-[13px] font-semibold text-on-surface-variant uppercase tracking-[0.5px] mb-2 px-1">Manage</Text>
-      <View className="bg-surface rounded-xl overflow-hidden mb-6">
+      <Text className="text-[13px] font-semibold text-on-surface-variant dark:text-on-surface-variant-dark uppercase tracking-[0.5px] mb-2 px-1">Manage</Text>
+      <View className="bg-surface dark:bg-surface-dark rounded-xl overflow-hidden mb-6">
         <ActionRow icon="time-outline" title="Transfer History" subtitle="Review previous uploads" onPress={onOpenHistory} />
-        <View className="h-[0.5px] bg-border ml-16" />
+        <View className="h-[0.5px] bg-border dark:bg-border-dark ml-16" />
         <ActionRow icon="options-outline" title="Settings" subtitle="Duplicates and transfer preferences" onPress={onOpenSettings} />
-        <View className="h-[0.5px] bg-border ml-16" />
+        <View className="h-[0.5px] bg-border dark:bg-border-dark ml-16" />
         <ActionRow icon="information-circle-outline" title="About" subtitle={`iOS ${IOS_APP_VERSION} · Server ${api.serverVersion || 'unknown'}`} onPress={onOpenAbout} />
-        <View className="h-[0.5px] bg-border ml-16" />
+        <View className="h-[0.5px] bg-border dark:bg-border-dark ml-16" />
         <ActionRow icon="log-out-outline" title="Disconnect" subtitle="Return to the connection screen" onPress={onDisconnect} danger />
       </View>
     </>
