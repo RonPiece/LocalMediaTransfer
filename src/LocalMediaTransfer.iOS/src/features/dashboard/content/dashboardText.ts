@@ -16,6 +16,7 @@ export const dashboardText = {
   tapSecurityDetails: 'Tap for secure connection details',
   encryptedStatus: (tlsVersion: string) => `Encrypted · ${tlsVersion} · certificate verified`,
   httpStatus: 'Using HTTP',
+  unverifiedStatus: 'Connection verification unavailable',
   reconnectingStatus: 'Connection interrupted · Retrying',
   disconnectedStatus: 'Desktop unavailable',
   retryConnection: 'Try reconnecting',

@@ -2,7 +2,7 @@ import React from 'react';
 import { Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-import { useThemePalette } from '@/theme';
+import { actionAppearance, toneAppearance, useThemePalette } from '@/theme';
 import { transferText } from '../content/transferText';
 import { formatBytes, formatDuration, summaryBadgePresentation } from '../transferPresentation';
 
@@ -51,13 +51,14 @@ export const TransferSummaryCard = React.memo(function TransferSummaryCard({
 }: TransferSummaryCardProps) {
   const palette = useThemePalette();
   const summaryBadge = summaryBadgePresentation({ errorCount, successCount, skipCount });
+  const badgeAppearance = toneAppearance(palette, summaryBadge.tone);
 
   return (
     <View className="bg-surface dark:bg-surface-dark rounded-[20px] p-5 mb-4 border border-border dark:border-border-dark">
       <View className="flex-row items-center justify-between mb-4">
         <Text className="text-on-surface dark:text-on-surface-dark font-bold text-[18px]">{transferText.summaryTitle}</Text>
-        <View className={`px-3 py-1.5 rounded-full flex-shrink ml-2 ${summaryBadge.backgroundClass}`}>
-          <Text className={`text-[12px] font-bold ${summaryBadge.textClass}`} numberOfLines={1} adjustsFontSizeToFit>{summaryBadge.text}</Text>
+        <View className="px-3 py-1.5 rounded-full flex-shrink ml-2" style={{ backgroundColor: badgeAppearance.background }}>
+          <Text className="text-[12px] font-bold" style={{ color: badgeAppearance.foreground }} numberOfLines={1} adjustsFontSizeToFit>{summaryBadge.text}</Text>
         </View>
       </View>
       <View className="flex-row mb-4">
@@ -67,13 +68,13 @@ export const TransferSummaryCard = React.memo(function TransferSummaryCard({
           { label: transferText.failed, value: errorCount, color: palette.error },
           { label: transferText.total, value: processedCount, color: palette.onSurface },
         ].map((stat, index) => (
-          <View key={stat.label} className={`flex-1 items-center ${index > 0 ? 'border-l border-border dark:border-border-dark' : ''}`}>
+          <View key={stat.label} className={`flex-1 items-center ${index > 0 ? 'border-l border-separator dark:border-separator-dark' : ''}`}>
             <Text style={{ color: stat.color, fontVariant: ['tabular-nums'] }} className="text-[20px] font-bold">{stat.value}</Text>
             <Text className="text-on-surface-variant dark:text-on-surface-variant-dark text-[10px] font-semibold uppercase mt-1">{stat.label}</Text>
           </View>
         ))}
       </View>
-      <View className="bg-background dark:bg-background-dark rounded-[14px] px-4 py-3">
+      <View className="bg-surface-inset dark:bg-surface-inset-dark rounded-[14px] px-4 py-3">
         <View className="flex-row justify-between">
           <Text className="text-on-surface-variant dark:text-on-surface-variant-dark text-[12px]">
             {byteTotalComplete ? 'Selected media' : 'Prepared selected media'}
@@ -132,7 +133,8 @@ export const TransferSummaryCard = React.memo(function TransferSummaryCard({
       <View className="flex-row gap-2 mt-4">
         <TouchableOpacity
           onPress={onShowAll}
-          className="flex-1 h-12 rounded-[14px] bg-primary/20 dark:bg-primary-dark/20 items-center justify-center flex-row"
+          activeOpacity={actionAppearance(palette, 'secondary').activeOpacity}
+          className="flex-1 h-12 rounded-[14px] bg-primary-soft dark:bg-primary-soft-dark items-center justify-center flex-row"
         >
           <Ionicons name="list-outline" size={19} color={palette.primary} />
           <Text className="text-primary dark:text-primary-dark font-semibold ml-2 text-[12px]">{transferText.viewAllResults(resultCount.toLocaleString())}</Text>
@@ -140,7 +142,8 @@ export const TransferSummaryCard = React.memo(function TransferSummaryCard({
         {errorCount > 0 && (
           <TouchableOpacity
             onPress={onShowErrors}
-            className="flex-1 h-12 rounded-[14px] bg-error/20 dark:bg-error-dark/20 items-center justify-center flex-row"
+            activeOpacity={actionAppearance(palette, 'destructive').activeOpacity}
+            className="flex-1 h-12 rounded-[14px] bg-error-soft dark:bg-error-soft-dark items-center justify-center flex-row"
           >
             <Ionicons name="warning-outline" size={19} color={palette.error} />
             <Text className="text-error dark:text-error-dark font-semibold ml-2 text-[12px]">{transferText.viewErrors(errorCount.toLocaleString())}</Text>

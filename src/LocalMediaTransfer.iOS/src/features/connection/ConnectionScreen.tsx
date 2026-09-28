@@ -20,7 +20,7 @@ import { useQrScanner } from './hooks/useQrScanner';
 import { DiscoveredServer, nativeCapabilities } from '@/services/NativeCapabilities';
 import { PairingPayload } from '@/security/ConnectionSecurity';
 import { SavedConnection } from '@/app/types';
-import { useThemePalette } from '@/theme';
+import { actionAppearance, interactionAppearance, useThemePalette } from '@/theme';
 
 function savedReceiverLabel(savedReceiver: SavedConnection): string {
   if (savedReceiver.name?.trim()) return savedReceiver.name.trim();
@@ -83,8 +83,10 @@ export default function ConnectionScreen({
   const qrDisabled = isConnecting || isConnected;
 
   React.useEffect(() => {
-    if (scanRequestId > 0) startScanning();
-  }, [scanRequestId, startScanning]);
+    if (scanRequestId > 0 && !qrDisabled) startScanning();
+  }, [scanRequestId, startScanning, qrDisabled]);
+
+  const qrAppearance = actionAppearance(palette, 'primary', { disabled: qrDisabled });
 
   if (qrScanner.isScanning) {
     return (
@@ -104,30 +106,25 @@ export default function ConnectionScreen({
 
             <TouchableOpacity
               accessibilityRole="button"
-              accessibilityLabel="Scan Receiver QR"
+              accessibilityLabel={isConnected ? "Disconnect before pairing with another receiver" : "Scan Receiver QR"}
+              accessibilityState={{ disabled: qrDisabled }}
               disabled={qrDisabled}
               onPress={qrScanner.startScanning}
-              activeOpacity={0.82}
-              className={`rounded-[18px] px-4 py-4 flex-row items-center mb-4 border ${qrDisabled ? 'bg-surface dark:bg-surface-dark border-border dark:border-border-dark opacity-70' : 'bg-primary dark:bg-primary-dark border-primary dark:border-primary-dark'}`}
+              activeOpacity={qrAppearance.activeOpacity}
+              style={qrAppearance.container}
+              className="rounded-[18px] px-4 py-4 flex-row items-center mb-4 border"
             >
-              <View className={`w-12 h-12 rounded-2xl items-center justify-center ${qrDisabled ? 'bg-primary/10 dark:bg-primary-dark/20' : 'bg-white/20'}`}>
-                <Ionicons name="qr-code-outline" size={29} color={qrDisabled ? palette.onSurfaceVariant : '#FFFFFF'} />
+              <View className={`w-12 h-12 rounded-2xl items-center justify-center ${qrDisabled ? 'bg-primary-soft dark:bg-primary-soft-dark' : 'bg-white/20'}`}>
+                <Ionicons name="qr-code-outline" size={29} color={qrAppearance.foreground} />
               </View>
               <View className="flex-1 ml-3">
-                <Text className={`text-[18px] font-bold ${qrDisabled ? 'text-on-surface dark:text-on-surface-dark' : 'text-white'}`}>Scan Receiver QR</Text>
-                <Text className={`text-[13px] mt-0.5 ${qrDisabled ? 'text-on-surface-variant dark:text-on-surface-variant-dark' : 'text-white/80'}`}>Point your camera at the QR code shown on Windows.</Text>
+                <Text className="text-[18px] font-bold" style={{ color: qrAppearance.foreground }}>{isConnected ? "Disconnect before pairing with another receiver" : "Scan Receiver QR"}</Text>
+                {!isConnected && <Text className={`text-[13px] mt-0.5 ${qrDisabled ? 'text-on-surface-variant dark:text-on-surface-variant-dark' : 'text-white/80'}`}>Point your camera at the QR code shown on Windows.</Text>}
               </View>
-              <Ionicons name="chevron-forward" size={23} color={qrDisabled ? palette.onSurfaceVariant : '#FFFFFF'} />
+              {!qrDisabled && <Ionicons name="chevron-forward" size={23} color={qrAppearance.foreground} />}
             </TouchableOpacity>
 
             {pairingDesktopName && <PairingApprovalBanner desktopName={pairingDesktopName} />}
-
-            {isConnected && (
-              <View className="rounded-xl bg-success/10 dark:bg-success-dark/10 px-4 py-3 mb-4 flex-row items-center">
-                <Ionicons name="checkmark-circle" size={20} color={palette.success} />
-                <Text className="text-[13px] text-success dark:text-success-dark font-semibold ml-2 flex-1">Disconnect before pairing with another receiver.</Text>
-              </View>
-            )}
 
             <NearbyDesktopSection
               discoveredServers={discoveredServers}
@@ -171,7 +168,8 @@ export default function ConnectionScreen({
                     accessibilityLabel="Reconnect to trusted receiver"
                     disabled={isConnecting || isConnected}
                     onPress={() => void onConnectTrusted()}
-                    className={`p-4 flex-row items-center ${isConnecting || isConnected ? 'opacity-40' : ''}`}
+                    className="p-4 flex-row items-center"
+                    style={{ opacity: interactionAppearance('row', { disabled: isConnecting || isConnected }).opacity }}
                   >
                     <IconTile icon="star-outline" />
                     <View className="flex-1 min-w-0">

@@ -4,7 +4,7 @@ import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 
 import { MediaAsset, mediaScanner } from '@/services/MediaScanner';
-import { useThemePalette } from '@/theme';
+import { interactionAppearance, mediaSelectionAppearance, useThemePalette } from '@/theme';
 import { SelectionStore } from '../hooks/useMediaSelection';
 import { MEDIA_IMAGE_PERFORMANCE } from '../mediaGridPerformance';
 
@@ -34,6 +34,7 @@ export const MediaGridItem = React.memo(function MediaGridItem({
     React.useCallback(() => selectionStore.isSelected(item.id), [item.id, selectionStore]),
     () => false,
   );
+  const selection = mediaSelectionAppearance(palette, selected);
   const imageSource = React.useMemo(() => ({
     uri: item.uri,
     width: itemSize,
@@ -53,7 +54,10 @@ export const MediaGridItem = React.memo(function MediaGridItem({
 
   return (
     <TouchableOpacity
-      activeOpacity={0.8}
+      accessibilityRole="button"
+      accessibilityLabel={`Select ${item.type}`}
+      accessibilityState={{ selected }}
+      activeOpacity={interactionAppearance('action').activeOpacity}
       onPress={toggleSelection}
       style={[styles.cell, { backgroundColor: palette.surface }, itemStyle]}
     >
@@ -66,7 +70,7 @@ export const MediaGridItem = React.memo(function MediaGridItem({
       />
 
       {selected && (
-        <View className="absolute inset-0 bg-black/30 border-4 border-primary dark:border-primary-dark" />
+        <View testID="media-selection-overlay" pointerEvents="none" style={[styles.selectionOverlay, { backgroundColor: selection.overlay, borderColor: selection.border }]} />
       )}
 
       {item.type === 'video' && formattedDuration && (
@@ -75,13 +79,9 @@ export const MediaGridItem = React.memo(function MediaGridItem({
         </View>
       )}
 
-      {selected ? (
-        <View className="absolute top-2 right-2 w-6 h-6 rounded-full bg-primary dark:bg-primary-dark items-center justify-center shadow-md">
-          <Ionicons name="checkmark" size={16} color={palette.white} />
-        </View>
-      ) : (
-        <View className="absolute top-2 right-2 w-6 h-6 rounded-full border border-white/50 bg-black/20 backdrop-blur-sm" />
-      )}
+      <View testID="media-selection-badge" pointerEvents="none" style={[styles.selectionBadge, { backgroundColor: selection.badgeFill, borderColor: selection.badgeBorder }]}>
+        {selected && <Ionicons name="checkmark" size={18} color={palette.white} />}
+      </View>
     </TouchableOpacity>
   );
 });
@@ -91,6 +91,8 @@ const styles = StyleSheet.create({
     position: 'relative',
     overflow: 'hidden',
   },
+  selectionOverlay: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, borderWidth: 3 },
+  selectionBadge: { position: 'absolute', top: 8, right: 8, width: 26, height: 26, borderRadius: 13, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   image: {
     position: 'absolute',
     top: 0,

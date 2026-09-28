@@ -11,9 +11,9 @@ const resultsListContentStyle = { paddingHorizontal: 20, paddingBottom: 24 };
 const renderTransferFile = ({ item }: { item: FileState }) => <TransferFileItem item={item} />;
 
 const renderFailureGroup = ({ item }: { item: TransferFailureGroup }) => (
-  <View className="py-4 border-b border-border dark:border-border-dark">
+  <View className="py-4 border-b border-separator dark:border-separator-dark">
     <View className="flex-row items-start">
-      <View className="px-2.5 py-1 rounded-full bg-error/10 dark:bg-error-dark/10">
+      <View className="px-2.5 py-1 rounded-full bg-error-soft dark:bg-error-soft-dark">
         <Text className="text-error dark:text-error-dark text-[12px] font-bold">{item.count.toLocaleString()}</Text>
       </View>
       <View className="flex-1 ml-3">
@@ -88,7 +88,7 @@ export const TransferResultsModal = React.memo(function TransferResultsModal({
         <TouchableOpacity
           accessibilityRole="button"
           onPress={() => setShowIndividualErrors(true)}
-          className="h-11 mt-3 rounded-xl bg-primary/10 dark:bg-primary-dark/10 items-center justify-center"
+          className="h-11 mt-3 rounded-xl bg-primary-soft dark:bg-primary-soft-dark items-center justify-center"
         >
           <Text className="text-primary dark:text-primary-dark text-[13px] font-semibold">
             View all {errorResults.length.toLocaleString()} affected filenames
@@ -101,7 +101,7 @@ export const TransferResultsModal = React.memo(function TransferResultsModal({
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <SafeAreaView className="flex-1 bg-background dark:bg-background-dark" accessibilityViewIsModal>
-        <View className="h-16 px-5 flex-row items-center justify-between border-b border-border dark:border-border-dark bg-surface dark:bg-surface-dark">
+        <View className="h-16 px-5 flex-row items-center justify-between border-b border-separator dark:border-separator-dark bg-surface dark:bg-surface-dark">
           <View className="flex-1 flex-row items-center">
             {showingIndividualErrors && (
               <TouchableOpacity

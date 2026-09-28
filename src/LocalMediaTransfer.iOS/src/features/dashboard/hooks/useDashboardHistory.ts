@@ -1,6 +1,7 @@
 import React from 'react';
 import { Alert } from 'react-native';
 
+import { clearProblemPreviews } from '@/services/history/ProblemPreviewStore';
 import { api } from '@/api/ApiClient';
 import { HistoryItem } from '../types';
 
@@ -80,6 +81,7 @@ export function useDashboardHistory() {
   }, []);
 
   const confirmClearHistory = React.useCallback(() => {
+    const scope = api.url;
     Alert.alert('Delete transfer history?', 'This permanently removes the saved transfer history from the desktop.', [
       { text: 'Cancel', style: 'cancel' },
       {
@@ -87,8 +89,10 @@ export function useDashboardHistory() {
         style: 'destructive',
         onPress: async () => {
           try {
+            if (api.url !== scope) throw new Error('The connected receiver changed. Try again.');
             await api.clearHistory();
-            setHistoryData([]);
+            void clearProblemPreviews(scope).catch(() => undefined);
+            if (api.url === scope) setHistoryData([]);
           } catch (err) {
             Alert.alert('Could not delete history', err instanceof Error ? err.message : 'Try again while connected.');
           }

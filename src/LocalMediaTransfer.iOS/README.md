@@ -2,6 +2,9 @@
 
 Developer guide for the iOS app. The user-facing overview lives in the
 [root README](../../README.md).
+The [styling guide](../../docs/IOS_STYLING.md) describes semantic colors, typed
+appearance recipes, grouped controls, saved System/Light/Dark preference and
+local problem-file previews, plus the Light/Dark device review checklist.
 The shared user-visible transfer rules live in
 [`docs/TRANSFER_UX_CONTRACT.md`](../../docs/TRANSFER_UX_CONTRACT.md).
 The [maintainability plan and responsibility map](../../docs/IOS_REFACTORING.md)

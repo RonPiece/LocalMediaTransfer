@@ -19,17 +19,17 @@ export const TransferFileItem = React.memo(function TransferFileItem({
   const active = item.status === 'uploading' || item.status === 'pending';
 
   return (
-    <View className="flex-row items-center justify-between py-3 border-b border-border dark:border-border-dark">
+    <View className="flex-row items-center justify-between py-3 border-b border-separator dark:border-separator-dark">
       <View className="flex-row items-center flex-1 min-w-0">
         {item.thumbnailUri ? (
           <View className="w-12 h-12 rounded-xl overflow-hidden bg-background dark:bg-background-dark">
             <Image source={{ uri: item.thumbnailUri }} style={{ width: 48, height: 48 }} contentFit="cover" cachePolicy="disk" recyclingKey={item.assetId || item.id} />
             {item.mediaType === 'video' && (
-              <View className="absolute inset-0 items-center justify-center bg-black/15"><Ionicons name="play" size={17} color="#FFFFFF" /></View>
+              <View className="absolute inset-0 items-center justify-center bg-black/15"><Ionicons name="play" size={17} color={palette.white} /></View>
             )}
           </View>
         ) : (
-          <View className="w-12 h-12 rounded-xl bg-primary/10 dark:bg-primary-dark/20 items-center justify-center">
+          <View className="w-12 h-12 rounded-xl bg-primary-soft dark:bg-primary-soft-dark items-center justify-center">
             <Ionicons name="document-outline" size={23} color={palette.primary} />
           </View>
         )}

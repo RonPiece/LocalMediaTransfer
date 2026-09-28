@@ -1,7 +1,7 @@
 import React from 'react';
 import { Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useThemePalette } from '@/theme';
+import { toneAppearance, useThemePalette } from '@/theme';
 import { IconName } from './types';
 
 export function Card({
@@ -15,7 +15,7 @@ export function Card({
 }
 
 export function Divider({ inset = true, className = '' }: { inset?: boolean; className?: string }) {
-  return <View className={`h-[0.5px] bg-border dark:bg-border-dark ${inset ? 'ml-4' : ''} ${className}`} />;
+  return <View className={`h-[0.5px] bg-separator dark:bg-separator-dark ${inset ? 'ml-4' : ''} ${className}`} />;
 }
 
 export function InlineBanner({
@@ -32,15 +32,13 @@ export function InlineBanner({
   className?: string;
 }) {
   const palette = useThemePalette();
-  const color = tone === 'error' ? palette.error : tone === 'warning' ? palette.warning : palette.primary;
-  const backgroundColor = tone === 'error' ? palette.errorSoft : tone === 'warning' ? palette.warningSoft : palette.primarySoft;
-  const borderColor = color;
+  const appearance = toneAppearance(palette, tone);
   return (
     <View
       className={`rounded-xl p-4 flex-row items-center border ${className}`}
-      style={{ backgroundColor, borderColor }}
+      style={{ backgroundColor: appearance.background, borderColor: appearance.border }}
     >
-      <Ionicons name={icon} size={22} color={color} />
+      <Ionicons name={icon} size={22} color={appearance.foreground} />
       <View className="ml-3 flex-1">
         <Text className="text-on-surface dark:text-on-surface-dark font-semibold">{title}</Text>
         <Text className="text-on-surface-variant dark:text-on-surface-variant-dark mt-1 leading-5">{message}</Text>

@@ -2,7 +2,7 @@ import React from 'react';
 import { Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { connectionText } from '../content/connectionText';
-import { useThemePalette } from '@/theme';
+import { interactionAppearance, useThemePalette } from '@/theme';
 import {
   Card,
   Divider,
@@ -56,7 +56,7 @@ export function ConnectionOptionsSection({
           accessibilityState={{ expanded: manualEntryOpen }}
           onPress={onToggleManualEntry}
           className="p-4 flex-row items-center"
-          activeOpacity={0.7}
+          activeOpacity={interactionAppearance('row').activeOpacity}
         >
           <IconTile icon="create-outline" />
           <View className="flex-1">
@@ -72,7 +72,7 @@ export function ConnectionOptionsSection({
           <View className="px-4 pb-4">
             <Divider className="mb-3" inset={false} />
             <SectionLabel className="mb-2">{connectionText.manualServerAddressLabel}</SectionLabel>
-            <View className="bg-background dark:bg-background-dark rounded-xl overflow-hidden">
+            <View className="bg-surface-inset dark:bg-surface-inset-dark rounded-xl overflow-hidden">
               <TextField
                 value={ip}
                 onChangeText={onIpChange}

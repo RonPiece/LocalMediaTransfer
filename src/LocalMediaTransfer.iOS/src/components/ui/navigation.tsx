@@ -1,11 +1,12 @@
 import React from 'react';
-import { Platform, Text, TouchableOpacity, useColorScheme, View } from 'react-native';
+import { Platform, Text, TouchableOpacity, View } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { MainTab } from '@/app/types';
-import { theme, useThemePalette } from '@/theme';
+import { navigationAppearance, tabAppearance, toneAppearance, useReduceTransparencyEnabled, useThemeMode, useThemePalette } from '@/theme';
+import type { Tone } from '@/theme';
 import { IconName } from './types';
 
 const tabs: {
@@ -31,13 +32,15 @@ export function BottomTabBar({
   locked?: boolean;
 }) {
   const palette = useThemePalette();
-  const colorScheme = useColorScheme();
+  const mode = useThemeMode();
+  const reduceTransparency = useReduceTransparencyEnabled();
+  const material = navigationAppearance(palette, mode, reduceTransparency);
   const content = (
-    <SafeAreaView edges={['bottom']} className="border-t border-border dark:border-border-dark">
+    <SafeAreaView edges={['bottom']} className="border-t" style={{ borderTopColor: material.separator }}>
       {locked && (
         <View
           accessibilityRole="alert"
-          className="h-7 flex-row items-center justify-center bg-primary/10 dark:bg-primary-dark/20 border-b border-border dark:border-border-dark px-3"
+          className="h-7 flex-row items-center justify-center bg-primary-soft dark:bg-primary-soft-dark border-b border-separator dark:border-separator-dark px-3"
         >
           <Ionicons name="lock-closed" size={12} color={palette.primary} />
           <Text className="text-[10px] font-semibold text-primary dark:text-primary-dark ml-1.5">
@@ -49,6 +52,7 @@ export function BottomTabBar({
         {tabs.map(tab => {
           const selected = tab.id === activeTab;
           const disabled = locked && !selected;
+          const appearance = tabAppearance(palette, { selected, disabled });
           return (
             <TouchableOpacity
               key={tab.id}
@@ -57,16 +61,18 @@ export function BottomTabBar({
               accessibilityState={{ selected, disabled }}
               disabled={disabled}
               onPress={() => onSelect(tab.id)}
-              activeOpacity={0.65}
-              className={`flex-1 items-center justify-center ${disabled ? 'opacity-50' : ''}`}
+              activeOpacity={appearance.activeOpacity}
+              className="flex-1 items-center justify-center"
+              style={{ opacity: appearance.opacity }}
             >
               <Ionicons
                 name={selected ? tab.activeIcon : tab.icon}
                 size={23}
-                color={selected ? palette.primary : palette.onSurfaceVariant}
+                color={appearance.foreground}
               />
               <Text
-                className={`text-[10px] mt-0.5 ${selected ? 'font-semibold text-primary dark:text-primary-dark' : 'text-on-surface-variant dark:text-on-surface-variant-dark'}`}
+                className={`text-[10px] mt-0.5 ${selected ? 'font-semibold' : ''}`}
+                style={{ color: appearance.foreground }}
               >
                 {tab.label}
               </Text>
@@ -77,18 +83,18 @@ export function BottomTabBar({
     </SafeAreaView>
   );
 
-  if (Platform.OS === 'ios') {
+  if (Platform.OS === 'ios' && !reduceTransparency) {
     return (
       <BlurView
         intensity={72}
-        tint={colorScheme === 'dark' ? 'dark' : 'light'}
-        className="bg-white/80 dark:bg-black/75"
+        tint={material.tint}
+        style={{ backgroundColor: material.background }}
       >
         {content}
       </BlurView>
     );
   }
-  return <View style={{ backgroundColor: palette.surface }}>{content}</View>;
+  return <View style={{ backgroundColor: reduceTransparency ? material.background : palette.surface }}>{content}</View>;
 }
 
 export function ScreenHeader({
@@ -107,7 +113,7 @@ export function ScreenHeader({
     <View className="px-5 pt-4 pb-3 bg-background dark:bg-background-dark">
       <View className="flex-row items-start">
         {icon && (
-          <View className="w-11 h-11 rounded-[13px] bg-primary/10 dark:bg-primary-dark/20 items-center justify-center mr-3">
+          <View className="w-11 h-11 rounded-[13px] bg-primary-soft dark:bg-primary-soft-dark items-center justify-center mr-3">
             <Ionicons name={icon} size={25} color={palette.primary} />
           </View>
         )}
@@ -131,34 +137,19 @@ export function StatusBadge({
   label,
   tone,
   icon,
+  compact = false,
 }: {
   label: string;
-  tone: 'success' | 'warning' | 'error' | 'info' | 'neutral';
+  tone: Tone;
   icon?: IconName;
+  compact?: boolean;
 }) {
   const palette = useThemePalette();
-  const color = tone === 'success'
-    ? palette.success
-    : tone === 'warning'
-      ? palette.warning
-      : tone === 'error'
-        ? palette.error
-        : tone === 'info'
-          ? palette.primary
-          : palette.onSurfaceVariant;
-  const background = tone === 'success'
-    ? palette.success + '1F'
-    : tone === 'warning'
-      ? palette.warning + '1F'
-      : tone === 'error'
-        ? palette.error + '1F'
-        : tone === 'info'
-          ? palette.primary + '1F'
-          : palette.disabledFill;
+  const appearance = toneAppearance(palette, tone);
   return (
-    <View className="self-start rounded-full px-2.5 py-1 flex-row items-center" style={{ backgroundColor: background }}>
-      {icon && <Ionicons name={icon} size={13} color={color} />}
-      <Text className={`text-[12px] font-semibold ${icon ? 'ml-1' : ''}`} style={{ color }}>{label}</Text>
+    <View className="self-start rounded-full px-2.5 py-1 flex-row items-center" style={{ backgroundColor: appearance.background }}>
+      {icon && <Ionicons name={icon} size={13} color={appearance.foreground} />}
+      <Text className={`text-[12px] font-semibold ${icon ? 'ml-1' : ''}`} style={{ color: appearance.foreground, ...(compact ? { fontSize: 10 } : {}) }}>{label}</Text>
     </View>
   );
 }
@@ -177,7 +168,7 @@ export function EmptyState({
   const palette = useThemePalette();
   return (
     <View className="rounded-[22px] bg-surface dark:bg-surface-dark border border-border dark:border-border-dark px-6 py-8 items-center">
-      <View className="w-14 h-14 rounded-2xl bg-primary/10 dark:bg-primary-dark/20 items-center justify-center">
+      <View className="w-14 h-14 rounded-2xl bg-primary-soft dark:bg-primary-soft-dark items-center justify-center">
         <Ionicons name={icon} size={29} color={palette.primary} />
       </View>
       <Text className="text-[18px] font-bold text-on-surface dark:text-on-surface-dark mt-4 text-center">{title}</Text>
@@ -186,5 +177,3 @@ export function EmptyState({
     </View>
   );
 }
-
-export const tabBarTokens = { lightSurface: theme.colors.surface };

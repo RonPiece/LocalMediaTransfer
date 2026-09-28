@@ -260,3 +260,15 @@ describe('native Swift source contracts', () => {
     expect(httpSource).toContain('origin(for: url) == baseUrl');
   });
 });
+
+// Source contract only: this does not compile Swift or exercise PhotoKit.
+it('keeps history thumbnail capture local, small, bounded and off the main queue', () => {
+  const source = swiftFile('PhotoThumbnailService.swift');
+  expect(source).toContain('assetIds.count <= 20');
+  expect(source).toContain('options.isNetworkAccessAllowed = false');
+  expect(source).toContain('width: 160, height: 160');
+  expect(source).toContain('result.count <= 24_000');
+  expect(source).toContain('.milliseconds(500)');
+  expect(source).toContain('cancelImageRequest(request)');
+  expect(moduleSource).toContain('.runOnQueue(thumbnailQueue)');
+});

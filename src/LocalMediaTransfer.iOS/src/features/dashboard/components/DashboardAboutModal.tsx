@@ -5,7 +5,7 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import AppHeader from '@/components/AppHeader';
 import { api } from '@/api/ApiClient';
-import { useThemePalette } from '@/theme';
+import { interactionAppearance, useThemePalette } from '@/theme';
 import { IOS_APP_VERSION } from '@/version';
 import { dashboardText } from '../content/dashboardText';
 
@@ -40,7 +40,7 @@ export function DashboardAboutModal({
             <AppHeader title="About" onClose={onClose} closeStyle="back" />
           </SafeAreaView>
           <ScrollView contentContainerStyle={{ padding: 20 }}>
-            <View className="bg-surface dark:bg-surface-dark rounded-2xl p-6 items-center mb-6">
+            <View className="bg-surface-elevated dark:bg-surface-elevated-dark rounded-2xl p-6 items-center mb-6">
               <View className="w-[72px] h-[72px] rounded-2xl items-center justify-center mb-4" style={{ backgroundColor: palette.primarySoft }}>
                 <Ionicons name="sync-outline" size={36} color={palette.primary} />
               </View>
@@ -52,7 +52,7 @@ export function DashboardAboutModal({
                 onPress={openGithub}
                 className="w-full h-12 rounded-xl items-center justify-center flex-row mt-2"
                 style={{ backgroundColor: palette.github }}
-                activeOpacity={0.8}
+                activeOpacity={interactionAppearance('action').activeOpacity}
               >
                 <Ionicons name="logo-github" size={20} color={palette.background} />
                 <Text className="text-base font-semibold ml-2" style={{ color: palette.background }}>DM me on GitHub</Text>

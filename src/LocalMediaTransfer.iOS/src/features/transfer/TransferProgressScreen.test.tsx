@@ -1,5 +1,7 @@
 import React from 'react';
 import { Alert } from 'react-native';
+import * as ReactNative from 'react-native';
+import tokens from '@/theme/tokens.json';
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
 import TransferProgressScreen, { transferProgressLayout } from './TransferProgressScreen';
 import { uploadManager } from '@/services/UploadManager';
@@ -537,4 +539,24 @@ describe('TransferProgressScreen', () => {
     expect(screen.queryByText(/reduced speed/i)).toBeNull();
     expect(screen.queryByText(/paused/i)).toBeNull();
   });
+});
+
+describe.each(['light', 'dark'] as const)('%s completion action', mode => {
+ afterEach(() => jest.restoreAllMocks());
+ it.each(['completed', 'cancelled', 'fatal'] as const)('keeps Done visible and actionable for %s transfers', async completionStatus => {
+  jest.spyOn(ReactNative, 'useColorScheme').mockReturnValue(mode);
+  const palette = mode === 'dark' ? tokens.darkColors : tokens.colors;
+  jest.mocked(uploadManager.uploadFilesConcurrent).mockImplementation(async (_assets, observer) => {
+   observer.onComplete?.({ sessionId: 'fixture', selectedFiles: 1, uploadedFiles: 0, skippedFiles: 0, failedFiles: 0, selectedBytes: 0, selectedMediaBytes: 0, additionalComponentsBytes: 0, selectedMediaFiles: 0, additionalComponentsFiles: 0, byteTotalComplete: true, diagnosticReportAvailable: false, avoidedBytes: 0, finalizationDuplicateBytes: 0, uploadedBytes: 0, skippedBytes: 0, uploadDurationMs: 0, averageMediaMBps: 0, peakMediaMBps: 0, completionStatus });
+  });
+  const onComplete = jest.fn();
+  const screen = render(<TransferProgressScreen assets={[]} onCancel={jest.fn()} onComplete={onComplete} />);
+  const done = await screen.findByRole('button', { name: 'Done' });
+  expect(done).toHaveStyle({ backgroundColor: palette.primaryFill, minHeight: 56, width: '100%' });
+  expect(screen.getByText('Done')).toHaveStyle({ color: palette.onPrimary });
+  expect(screen.getByTestId('transfer-completion-footer')).toHaveStyle({ backgroundColor: palette.surface, paddingVertical: 12 });
+  expect(ReactNative.StyleSheet.flatten(screen.getByTestId('transfer-completion-footer').props.style).position).toBeUndefined();
+  fireEvent.press(done);
+  expect(onComplete).toHaveBeenCalledTimes(1);
+ });
 });

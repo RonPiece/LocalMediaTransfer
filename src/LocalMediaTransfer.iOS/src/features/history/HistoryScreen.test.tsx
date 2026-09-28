@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render } from '@testing-library/react-native';
+import { fireEvent, render, waitFor, within } from '@testing-library/react-native';
 
 import HistoryScreen from './HistoryScreen';
 
@@ -66,7 +66,7 @@ describe('HistoryScreen', () => {
     expect(onConnect).toHaveBeenCalled();
   });
 
-  it('uses returned records for aggregates and filters mixed sessions into Needs Attention', () => {
+  it('keeps problem sessions in All without a Needs Attention segment', () => {
     const onClear = jest.fn();
     const screen = render(
       <HistoryScreen isConnected items={items} loading={false} error={null} onRefresh={jest.fn()} onClear={onClear} onConnect={jest.fn()} />,
@@ -77,24 +77,55 @@ describe('HistoryScreen', () => {
     expect(screen.getByText('Duplicates skipped')).toBeTruthy();
     expect(screen.getByText('7.0 KB')).toBeTruthy();
 
-    fireEvent.press(screen.getByText('Needs Attention'));
+    expect(screen.queryByText('Needs Attention')).toBeNull();
     expect(screen.getByText('Mixed')).toBeTruthy();
     expect(screen.getByText('Canceled')).toBeTruthy();
-    expect(screen.getAllByText('Completed')).toHaveLength(1);
+    expect(screen.getAllByText('Completed')).toHaveLength(2);
 
     fireEvent.press(screen.getByText('Clear All'));
     expect(onClear).toHaveBeenCalled();
   });
 
-  it('shows expanded real metrics with human-readable durations', () => {
+  it('shows expanded real metrics with human-readable durations', async () => {
     const screen = render(
       <HistoryScreen isConnected items={items} loading={false} error={null} onRefresh={jest.fn()} onClear={jest.fn()} onConnect={jest.fn()} />,
     );
 
     fireEvent.press(screen.getByLabelText(/Open canceled transfer/));
-    expect(screen.getByText('Transfer Details')).toBeTruthy();
+    await waitFor(() => expect(screen.getByText('Transfer Details')).toBeTruthy());
     expect(screen.getByText('6m 28s')).toBeTruthy();
     expect(screen.getByText('Additional components')).toBeTruthy();
     expect(screen.getByText('2 · 2.0 KB')).toBeTruthy();
   });
+});
+
+it('includes partial skips in the Skipped segment', () => {
+  const screen = render(<HistoryScreen isConnected items={items} loading={false} error={null} onRefresh={jest.fn()} onClear={jest.fn()} onConnect={jest.fn()} />);
+  fireEvent.press(screen.getByRole('button', { name: 'Skipped' }));
+  expect(screen.getByText('Mixed')).toBeTruthy();
+  expect(screen.getByText('Canceled')).toBeTruthy();
+  expect(screen.queryByLabelText(/Open completed transfer/)).toBeNull();
+});
+
+ it('labels partial duplicate skips without changing successful completion', () => {
+  const screen = render(<HistoryScreen isConnected items={[{ ...items[0], expandedFiles: 4, skippedFiles: 2 }]} loading={false} error={null} onRefresh={jest.fn()} onClear={jest.fn()} onConnect={jest.fn()} />);
+  expect(screen.getByText('2 duplicates skipped')).toBeTruthy();
+  expect(screen.getByLabelText(/Open completed transfer/)).toBeTruthy();
+  fireEvent.press(screen.getByRole('button', { name: 'Skipped' }));
+  expect(screen.getByText('2 duplicates skipped')).toBeTruthy();
+});
+it('uses smaller text for all-skipped badges', () => {
+ const screen = render(<HistoryScreen isConnected items={[{ ...items[0], uploadedFiles: 0, skippedFiles: 2 }]} loading={false} error={null} onRefresh={jest.fn()} onClear={jest.fn()} onConnect={jest.fn()} />);
+ expect(screen.getByText('Skipped duplicates')).toHaveStyle({ fontSize: 10 });
+});
+
+it('filters failed sessions and mixed sessions with failed files without including cancellation alone', () => {
+ const screen = render(<HistoryScreen isConnected items={[...items, { ...items[0], sessionId: 'fatal', uploadedFiles: 0, completionStatus: 'fatal' }]} loading={false} error={null} onRefresh={jest.fn()} onClear={jest.fn()} onConnect={jest.fn()} />);
+ fireEvent.press(within(screen.getByLabelText('History filters')).getByRole('button', { name: 'Failed' }));
+ expect(screen.getByLabelText(/Open mixed transfer|Open completed with errors transfer/)).toBeTruthy();
+ expect(screen.getByLabelText(/Open failed transfer/)).toBeTruthy();
+ expect(screen.queryByLabelText(/Open completed transfer/)).toBeNull();
+ expect(screen.queryByLabelText(/Open canceled transfer/)).toBeNull();
+ fireEvent.press(screen.getByRole('button', { name: 'All' }));
+ expect(screen.getByLabelText(/Open canceled transfer/)).toBeTruthy();
 });

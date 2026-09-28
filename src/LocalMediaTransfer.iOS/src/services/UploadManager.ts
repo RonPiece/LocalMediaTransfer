@@ -2,6 +2,7 @@ import { TransferOutcomes, UploadWorkerActivity } from './upload/TransferAccount
 import { retryChunkRequest } from './upload/RetryPolicy';
 import { ApiRequestError, isUnauthorizedError } from '@/api/errors';
 import * as FileSystem from 'expo-file-system/legacy';
+import { MAX_PROBLEM_PREVIEWS, PreviewRequest, saveProblemPreviews } from '@/services/history/ProblemPreviewStore';
 import { TransferLimits } from './upload/transferLimits';
 
 import { api } from '@/api/ApiClient';
@@ -183,9 +184,12 @@ export class UploadManager {
     const workerActivity = new UploadWorkerActivity();
     let fatalError: Error | null = null;
     const historyFiles: TransferHistoryFile[] = [];
-    const recordHistoryProblem = (file: TransferHistoryFile) => {
+    const previewRequests: PreviewRequest[] = [];
+    const historyScope = api.url;
+    const recordHistoryProblem = (file: TransferHistoryFile, asset: MediaAsset) => {
       if (historyFiles.length < MAX_HISTORY_PROBLEM_DETAILS) {
         historyFiles.push(file);
+        if (previewRequests.length < MAX_PROBLEM_PREVIEWS) previewRequests.push({ fileId: file.id, asset });
       }
     };
     const outgoingHashes: OutgoingHashRegistry = new Map();
@@ -199,6 +203,7 @@ export class UploadManager {
       reportedFailedFiles: number,
       uploadDurationMs: number,
     ) => {
+      void saveProblemPreviews(historyScope, sessionId, previewRequests);
       const expandedFiles = readyFiles + outcomes.preparationFailedFiles;
       const historyPayload = {
         sessionId,
@@ -331,7 +336,7 @@ export class UploadManager {
         size: 0,
         outcome: 'failed',
         error: code,
-      });
+      }, asset);
       diagnostics.recordFailure({ fileRef, stage, code, retryCount: 0 });
       onFileStatusChange?.({
         assetId: asset.id,
@@ -665,7 +670,7 @@ export class UploadManager {
                 ? 'outgoing-selection'
                 : 'preflight',
               avoidedBytes: size,
-            });
+            }, asset);
             onFileStatusChange?.({
               assetId: asset.id,
               itemId: item.variantId,
@@ -692,7 +697,7 @@ export class UploadManager {
               size,
               outcome: 'failed',
               error: item.preflightFailureCode,
-            });
+            }, asset);
             diagnostics.recordFailure({
               fileRef,
               stage: 'preflight',
@@ -879,7 +884,7 @@ export class UploadManager {
                 outcome: 'skipped',
                 duplicateStage: 'finalization',
                 avoidedBytes: 0,
-              });
+              }, asset);
               onFileStatusChange?.({
                 assetId: asset.id,
                 itemId: item.variantId,
@@ -924,7 +929,7 @@ export class UploadManager {
               size,
               outcome: 'failed',
               error: failure.code,
-            });
+            }, asset);
             plannedUploadMediaBytes = Math.max(
               throughput.current.uploadedMediaBytes,
               plannedUploadMediaBytes - Math.max(0, size - fileAcknowledgedBytes),

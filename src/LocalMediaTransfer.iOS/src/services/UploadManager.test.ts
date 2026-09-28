@@ -1,3 +1,4 @@
+import { saveProblemPreviews } from './history/ProblemPreviewStore';
 import { UploadManager } from './UploadManager';
 import { MediaScanner } from './MediaScanner';
 import { ThroughputTracker } from './upload/ThroughputTracker';
@@ -107,6 +108,8 @@ function latestPersistedDiagnostic(): PersistedDiagnostic {
   expect(reports).not.toHaveLength(0);
   return JSON.parse(reports.at(-1)?.[1].contents ?? '{}') as PersistedDiagnostic;
 }
+
+jest.mock('./history/ProblemPreviewStore', () => ({ MAX_PROBLEM_PREVIEWS: 200, saveProblemPreviews: jest.fn().mockResolvedValue(undefined) }));
 
 jest.mock('@/api/ApiClient', () => ({
   ApiRequestError: jest.requireActual('@/api/errors').ApiRequestError,
@@ -1121,6 +1124,9 @@ describe('UploadManager Integration', () => {
       transferFilename: asset.filename,
       message: 'The selected item could not be read.',
     }));
+    const history = jest.mocked(api.transferHistory).mock.calls.at(-1)![0];
+    expect(history.files[0].outcome).toBe('failed');
+    expect(saveProblemPreviews).toHaveBeenCalledWith(api.url, history.sessionId, [{ fileId: history.files[0].id, asset }]);
     expect(onError).not.toHaveBeenCalled();
     expect(onComplete).toHaveBeenCalledWith(expect.objectContaining({
       failedFiles: 1,
@@ -1432,6 +1438,14 @@ describe('UploadManager Integration', () => {
         metadataRequestCount: 1,
       }),
     }));
+    expect(saveProblemPreviews).toHaveBeenCalledTimes(1);
+    const payload = jest.mocked(api.transferHistory).mock.calls.at(-1)![0];
+    const preview = jest.mocked(saveProblemPreviews).mock.calls[0];
+    expect(preview.slice(0, 2)).toEqual([api.url, payload.sessionId]);
+    expect(preview[2]).toEqual([{ fileId: payload.files[0].id, asset: assets[1] }]);
+    expect(payload.files[0]).not.toHaveProperty('assetId');
+    expect(payload.files[0]).not.toHaveProperty('thumbnailUri');
+    expect(payload.files[0]).not.toHaveProperty('uri');
   });
 
   it('requests authenticated server cleanup when a transfer is cancelled', async () => {

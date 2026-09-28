@@ -1,12 +1,12 @@
 import React from 'react';
-import { ScrollView, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useKeepAwake } from 'expo-keep-awake';
 
 import AppHeader from '@/components/AppHeader';
 import { MediaAsset } from '@/services/MediaScanner';
-import { useThemePalette } from '@/theme';
+import { actionAppearance, useThemePalette } from '@/theme';
 import { RecentActivityPanel } from './components/RecentActivityPanel';
 import { ConcurrentTransferProgress } from './components/ConcurrentTransferProgress';
 import { TransferProgressRing } from './components/TransferProgressRing';
@@ -138,7 +138,7 @@ export default function TransferProgressScreen({
 
       <ScrollView
         className="flex-1"
-        contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 24, paddingBottom: isFinished ? 96 : 8, paddingTop: compactHeight ? 12 : 24 }}
+        contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 24, paddingBottom: 8, paddingTop: compactHeight ? 12 : 24 }}
       >
         {!isFinished && (
           <ConcurrentTransferProgress
@@ -173,7 +173,7 @@ export default function TransferProgressScreen({
         )}
 
         {skipCount > 0 && !isFinished && (
-          <View className="rounded-[16px] bg-warning/10 dark:bg-warning-dark/10 border border-warning/25 dark:border-warning-dark/25 px-4 py-3 mb-4 flex-row items-center">
+          <View className="rounded-[16px] bg-warning-soft dark:bg-warning-soft-dark border border-border dark:border-border-dark px-4 py-3 mb-4 flex-row items-center">
             <Ionicons name="play-skip-forward-outline" size={20} color={palette.warning} />
             <Text className="text-warning dark:text-warning-dark text-[13px] font-semibold ml-2 flex-1">
               {skipCount.toLocaleString()} {skipCount === 1 ? 'duplicate' : 'duplicates'} skipped · SHA-256 verified
@@ -227,7 +227,8 @@ export default function TransferProgressScreen({
           <View className={compactHeight ? 'mt-2' : 'mt-4'}>
           <TouchableOpacity
             onPress={cancelTransfer}
-            className="w-full h-14 rounded-xl items-center justify-center flex-row bg-error/10 dark:bg-error-dark/10 border border-error/20 dark:border-error-dark/20"
+            activeOpacity={actionAppearance(palette, 'destructive').activeOpacity}
+            className="w-full h-14 rounded-xl items-center justify-center flex-row bg-error-soft dark:bg-error-soft-dark border border-border dark:border-border-dark"
           >
             <Ionicons name="close-circle-outline" size={20} color={palette.error} />
             <Text className="text-error dark:text-error-dark text-lg font-semibold ml-2">{transferText.cancelTransfer}</Text>
@@ -237,15 +238,16 @@ export default function TransferProgressScreen({
       </ScrollView>
 
       {isFinished && (
-        <View className="absolute left-0 right-0 bottom-0 px-6 pt-3 pb-3 bg-surface/95 dark:bg-surface-dark/95 border-t border-border dark:border-border-dark">
+        <View testID="transfer-completion-footer" style={[styles.footer, { backgroundColor: palette.surface, borderTopColor: palette.separator }]}>
           <TouchableOpacity
             accessibilityRole="button"
             accessibilityLabel={transferText.done}
             onPress={onComplete}
-            className="w-full h-14 rounded-xl items-center justify-center flex-row bg-primary dark:bg-primary-dark border border-primary/20 dark:border-primary-dark/20"
+            activeOpacity={actionAppearance(palette, 'primary').activeOpacity}
+            style={[styles.doneButton, actionAppearance(palette, 'primary').container]}
           >
             <Ionicons name="checkmark-circle-outline" size={20} color={palette.white} />
-            <Text className="text-on-primary text-lg font-semibold ml-2">{transferText.done}</Text>
+            <Text style={[styles.doneLabel, { color: palette.onPrimary }]}>{transferText.done}</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -261,3 +263,11 @@ export default function TransferProgressScreen({
     </View>
   );
 }
+
+// Flow layout reserves the footer above the tab bar; it cannot overlap the
+// summary or depend on NativeWind absolute edges/opacity color modifiers.
+const styles = StyleSheet.create({
+  footer: { paddingHorizontal: 24, paddingVertical: 12, borderTopWidth: StyleSheet.hairlineWidth },
+  doneButton: { width: '100%', minHeight: 56, borderRadius: 12, borderWidth: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+  doneLabel: { fontSize: 18, fontWeight: '600', marginLeft: 8 },
+});

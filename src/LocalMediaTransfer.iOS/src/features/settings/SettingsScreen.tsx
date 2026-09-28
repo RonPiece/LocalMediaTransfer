@@ -1,3 +1,4 @@
+import { DiagnosticExportButton } from './DiagnosticExportButton';
 import React from 'react';
 import { Alert, Linking, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -5,7 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { api } from '@/api/ApiClient';
 import { ConnectionSecurityState } from '@/app/types';
-import { Divider, ScreenHeader, SettingRow, StatusBadge } from '@/components/ui';
+import { Divider, ScreenHeader, SegmentedControl, SettingRow, StatusBadge } from '@/components/ui';
 import { expectedServerEnvironment } from '@/services/NativeCapabilities';
 import {
   DiagnosticReportSummary,
@@ -14,7 +15,7 @@ import {
   listDiagnosticReports,
 } from '@/services/diagnostics/DiagnosticStore';
 import { PreparationMode } from '@/services/upload/types';
-import { useThemePalette } from '@/theme';
+import { useAppearancePreference, useThemePalette } from '@/theme';
 import { IOS_APP_VERSION } from '@/version';
 
 function SettingsGroup({ children }: { children: React.ReactNode }) {
@@ -29,7 +30,7 @@ function InfoRow({ icon, title, detail, badge }: { icon: React.ComponentProps<ty
   const palette = useThemePalette();
   return (
     <View className="px-4 py-3 flex-row items-center min-h-[64px]">
-      <View className="w-9 h-9 rounded-lg bg-primary/10 dark:bg-primary-dark/20 items-center justify-center mr-3">
+      <View className="w-9 h-9 rounded-lg bg-primary-soft dark:bg-primary-soft-dark items-center justify-center mr-3">
         <Ionicons name={icon} size={20} color={palette.primary} />
       </View>
       <View className="flex-1 mr-2">
@@ -73,6 +74,7 @@ export default function SettingsScreen({
   onIncludeAdditionalMediaComponentsChange: (enabled: boolean) => void;
 }) {
   const palette = useThemePalette();
+  const { preference, setPreference } = useAppearancePreference();
   const [reports, setReports] = React.useState<DiagnosticReportSummary[]>([]);
   const [diagnosticState, setDiagnosticState] = React.useState<'loading' | 'loaded' | 'failed'>('loading');
 
@@ -126,6 +128,15 @@ export default function SettingsScreen({
           {expectedServerEnvironment() === 'test' && (
             <View className="items-center mb-1"><StatusBadge label="TEST ENVIRONMENT" tone="warning" icon="flask-outline" /></View>
           )}
+
+          <SectionTitle>Appearance</SectionTitle>
+          <SettingsGroup>
+            <View className="px-4 pt-3">
+              <Text className="text-[13px] text-on-surface-variant dark:text-on-surface-variant-dark mb-3">System follows your iPhone. Light and Dark override it for this app.</Text>
+              <SegmentedControl label="App appearance" value={preference} onChange={setPreference}
+                options={[{ value: 'system', label: 'System' }, { value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }]} />
+            </View>
+          </SettingsGroup>
 
           <SectionTitle>Connection</SectionTitle>
           <SettingsGroup>
@@ -200,24 +211,25 @@ export default function SettingsScreen({
             {reports.map((report, index) => (
               <React.Fragment key={report.path}>
                 <Divider />
-                <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Export diagnostic transfer ${index + 1}`} onPress={() => void exportReport(report.path)} className="px-4 py-3 flex-row items-center">
+                <View testID={`diagnostic-report-row-${index}`} className="px-4 py-3 flex-row items-center">
                   <Ionicons name="document-outline" size={20} color={palette.primary} />
                   <View className="flex-1 ml-3">
                     <Text className="text-[14px] font-semibold text-on-surface dark:text-on-surface-dark">{new Date(report.startedAt).toLocaleString()}</Text>
                     <Text className="text-[12px] text-on-surface-variant dark:text-on-surface-variant-dark">{report.selectedAssets.toLocaleString()} assets · {report.completionStatus}</Text>
                   </View>
-                  <Ionicons name="share-outline" size={20} color={palette.primary} />
-                </TouchableOpacity>
+                  <DiagnosticExportButton label={`Export diagnostic transfer ${index + 1}`} onPress={() => void exportReport(report.path)} />
+                </View>
               </React.Fragment>
             ))}
             {diagnosticState === 'loading' && <Text className="px-4 pb-4 text-[13px] text-on-surface-variant dark:text-on-surface-variant-dark">Loading diagnostics…</Text>}
             {diagnosticState === 'failed' && <TouchableOpacity onPress={() => void loadDiagnostics()} className="px-4 pb-4"><Text className="text-error dark:text-error-dark text-[13px]">Diagnostics could not be loaded. Tap to retry.</Text></TouchableOpacity>}
             {diagnosticState === 'loaded' && reports.length === 0 && <Text className="px-4 pb-4 text-[13px] text-on-surface-variant dark:text-on-surface-variant-dark">No diagnostic reports are available.</Text>}
             <Divider />
-            <TouchableOpacity accessibilityRole="button" onPress={() => void exportAll()} disabled={reports.length === 0} className={`px-4 py-4 flex-row items-center ${reports.length === 0 ? 'opacity-35' : ''}`}>
+            <View testID="diagnostic-export-all-row" className="px-4 py-3 flex-row items-center">
               <Ionicons name="documents-outline" size={21} color={palette.primary} />
-              <Text className="text-primary dark:text-primary-dark font-semibold ml-3">Export all available reports</Text>
-            </TouchableOpacity>
+              <Text className="text-on-surface dark:text-on-surface-dark font-semibold ml-3 flex-1 mr-2">Export all available reports</Text>
+              <DiagnosticExportButton label="Export all transfer diagnostics" onPress={() => void exportAll()} disabled={diagnosticState !== 'loaded' || reports.length === 0} />
+            </View>
           </SettingsGroup>
 
           <SectionTitle>About</SectionTitle>

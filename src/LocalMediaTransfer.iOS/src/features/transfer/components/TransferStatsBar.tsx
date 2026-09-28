@@ -52,7 +52,7 @@ export function TransferStatsBar({
     </View>
   );
   const speedStat = (
-    <View className={`flex-1 min-w-0 items-start ${statHorizontalPadding} border-l border-border dark:border-border-dark`}>
+    <View className={`flex-1 min-w-0 items-start ${statHorizontalPadding} border-l border-separator dark:border-separator-dark`}>
       <Text className={`text-on-surface-variant dark:text-on-surface-variant-dark ${labelTextSize} font-bold uppercase tracking-wider`}>{transferText.currentSpeed}</Text>
       <Text className={`text-on-surface dark:text-on-surface-dark ${valueTextSize} font-semibold mt-1`} style={{ fontVariant: ['tabular-nums'] }}>
         {currentMediaMBps.toFixed(1)} <Text className={hasTransferredColumn ? 'text-[10px]' : 'text-[11px]'}>MB/s</Text>
@@ -60,7 +60,7 @@ export function TransferStatsBar({
     </View>
   );
   const transferredStat = transferredBytes === undefined ? null : (
-    <View className={`flex-1 min-w-0 items-start ${statHorizontalPadding} border-l border-border dark:border-border-dark`}>
+    <View className={`flex-1 min-w-0 items-start ${statHorizontalPadding} border-l border-separator dark:border-separator-dark`}>
       <Text className={`text-on-surface-variant dark:text-on-surface-variant-dark ${labelTextSize} font-bold uppercase tracking-wider`}>Transferred</Text>
       <Text
         className={`text-on-surface dark:text-on-surface-dark ${valueTextSize} font-semibold mt-1`}
@@ -76,7 +76,7 @@ export function TransferStatsBar({
   const timeStat = (
     <View
       testID={compact ? 'transfer-eta-compact' : 'transfer-eta-wide'}
-      className={compact ? 'min-w-0 items-start px-3 pt-3 mt-3 border-t border-border dark:border-border-dark' : 'flex-1 min-w-0 items-start px-3 border-l border-border dark:border-border-dark'}
+      className={compact ? 'min-w-0 items-start px-3 pt-3 mt-3 border-t border-border dark:border-border-dark' : 'flex-1 min-w-0 items-start px-3 border-l border-separator dark:border-separator-dark'}
     >
       <Text className="text-on-surface-variant dark:text-on-surface-variant-dark text-[10px] font-bold uppercase tracking-wider">{timeLabel}</Text>
       <Text className="text-[14px] leading-5 font-semibold mt-1 text-primary dark:text-primary-dark">

@@ -1,3 +1,4 @@
+import { DuplicateSkipMarker } from '@/features/history/DuplicateSkipMarker';
 import React from 'react';
 import { Image, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -12,7 +13,7 @@ import { ConnectionStatusCard } from '@/features/dashboard/components/Connection
 import { formatHistoryDate, historyStatus } from '@/features/dashboard/hooks/useDashboardHistory';
 import { SessionDetails } from '@/features/history/HistoryScreen';
 import { expectedServerEnvironment } from '@/services/NativeCapabilities';
-import { useThemePalette } from '@/theme';
+import { interactionAppearance, useThemePalette } from '@/theme';
 
 function RecentSessionRow({ item, onPress }: { item: TransferHistoryItem; onPress: () => void }) {
   const palette = useThemePalette();
@@ -29,10 +30,10 @@ function RecentSessionRow({ item, onPress }: { item: TransferHistoryItem; onPres
       accessibilityRole="button"
       accessibilityLabel={`${status}. Open transfer details from ${formatHistoryDate(item.completedAt)}`}
       onPress={onPress}
-      activeOpacity={0.7}
-      className="flex-row items-center px-3.5 py-2.5 border-b border-border dark:border-border-dark"
+      activeOpacity={interactionAppearance('row').activeOpacity}
+      className="flex-row items-center px-3.5 py-2.5 border-b border-separator dark:border-separator-dark"
     >
-      <View className="w-10 h-10 rounded-[11px] bg-primary/10 dark:bg-primary-dark/20 items-center justify-center">
+      <View className="w-10 h-10 rounded-[11px] bg-primary-soft dark:bg-primary-soft-dark items-center justify-center">
         <Ionicons name="phone-portrait-outline" size={21} color={palette.primary} />
       </View>
       <View className="flex-1 ml-2.5 min-w-0">
@@ -40,6 +41,7 @@ function RecentSessionRow({ item, onPress }: { item: TransferHistoryItem; onPres
         <Text className="text-[12px] text-on-surface-variant dark:text-on-surface-variant-dark mt-0.5" numberOfLines={1}>
           {count.toLocaleString()} {count === 1 ? 'file' : 'files'} · {formatHistoryDate(item.completedAt)}
         </Text>
+        <DuplicateSkipMarker uploaded={item.uploadedFiles} skipped={item.skippedFiles} />
       </View>
       <StatusBadge
         label={compactStatus}
@@ -123,7 +125,7 @@ export default function HomeScreen({
             <TouchableOpacity
               accessibilityRole="button"
               onPress={onOpenConnect}
-              className="h-12 rounded-xl bg-primary/10 dark:bg-primary-dark/20 items-center justify-center flex-row mb-5"
+              className="h-12 rounded-xl bg-primary-soft dark:bg-primary-soft-dark items-center justify-center flex-row mb-5"
             >
               <Ionicons name="desktop-outline" size={20} color={palette.primary} />
               <Text className="text-primary dark:text-primary-dark font-semibold ml-2">Open Connect</Text>
@@ -132,7 +134,7 @@ export default function HomeScreen({
 
           <View className="flex-row items-center justify-between mb-2 px-1">
             <Text className="text-[20px] font-bold text-on-surface dark:text-on-surface-dark">Recent Receiver Activity</Text>
-            <TouchableOpacity accessibilityRole="button" onPress={onOpenHistory} disabled={!isConnected} className={!isConnected ? 'opacity-35' : ''}>
+            <TouchableOpacity accessibilityRole="button" onPress={onOpenHistory} disabled={!isConnected} style={{ opacity: interactionAppearance('row', { disabled: !isConnected }).opacity }}>
               <Text className="text-primary dark:text-primary-dark text-[15px]">View All</Text>
             </TouchableOpacity>
           </View>

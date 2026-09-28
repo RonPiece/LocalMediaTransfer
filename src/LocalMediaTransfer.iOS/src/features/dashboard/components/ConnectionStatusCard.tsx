@@ -1,3 +1,4 @@
+import { CopyAddressButton } from './CopyAddressButton';
 import React from 'react';
 import { Alert, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -6,7 +7,8 @@ import * as Haptics from 'expo-haptics';
 
 import { ConnectionHealthStatus, ConnectionSecurityState } from '@/app/types';
 import { api } from '@/api/ApiClient';
-import { useThemePalette } from '@/theme';
+import { addressPanelAppearance, interactionAppearance, toneAppearance, useThemePalette } from '@/theme';
+import { connectionStatusPresentation } from '../connectionPresentation';
 import { dashboardText } from '../content/dashboardText';
 
 export function ConnectionStatusCard({
@@ -34,28 +36,16 @@ export function ConnectionStatusCard({
     }
   };
 
-  const statusText = connectionHealthStatus === 'checking' || connectionHealthStatus === 'retrying'
-    ? dashboardText.reconnectingStatus
-    : isConnected && connectionSecurity.mode === 'https' && connectionSecurity.certificateVerified
-      ? dashboardText.encryptedStatus(connectionSecurity.tlsVersion || 'TLS')
-      : isConnected && connectionSecurity.mode === 'http'
-        ? dashboardText.httpStatus
-        : dashboardText.disconnectedStatus;
-
-  const statusColor = !isConnected
-    ? palette.warning
-    : connectionSecurity.mode === 'http'
-      ? palette.error
-      : palette.connected;
-
-  const dotClass = !isConnected ? 'bg-warning dark:bg-warning-dark' : connectionSecurity.mode === 'http' ? 'bg-error dark:bg-error-dark' : 'bg-success dark:bg-success-dark';
+  const status = connectionStatusPresentation({ isConnected, connectionHealthStatus, connectionSecurity });
+  const statusAppearance = toneAppearance(palette, status.tone);
+  const networkAppearance = toneAppearance(palette, isConnected ? 'success' : 'warning');
   return (
     <View className="bg-surface dark:bg-surface-dark border border-border dark:border-border-dark rounded-2xl p-4 mb-5">
       <View className="mb-3">
         <View className="flex-row items-center">
-          <View className={`w-2 h-2 rounded-full mr-2 ${dotClass}`} />
-          <Text className="text-[12px] font-bold uppercase tracking-[0.6px]" style={{ color: statusColor }}>
-            {statusText}
+          <View className="w-2 h-2 rounded-full mr-2" style={{ backgroundColor: statusAppearance.foreground }} />
+          <Text className="text-[12px] font-bold uppercase tracking-[0.6px]" style={{ color: statusAppearance.foreground }}>
+            {status.label}
           </Text>
         </View>
         {isConnected && connectionSecurity.mode === 'http' && (
@@ -70,7 +60,7 @@ export function ConnectionStatusCard({
           accessibilityRole="button"
           accessibilityLabel={dashboardText.retryConnection}
           onPress={onRetryConnection}
-          className="self-start mb-3 px-3 py-2 rounded-lg bg-primary/15 dark:bg-primary-dark/15 flex-row items-center"
+          className="self-start mb-3 px-3 py-2 rounded-lg bg-primary-soft dark:bg-primary-soft-dark flex-row items-center"
         >
           <Ionicons name="refresh-outline" size={15} color={palette.primary} />
           <Text className="text-primary dark:text-primary-dark text-[13px] font-semibold ml-1.5">{dashboardText.retryConnection}</Text>
@@ -78,10 +68,14 @@ export function ConnectionStatusCard({
       )}
 
       <TouchableOpacity
-        activeOpacity={0.7}
+        accessibilityRole="button"
+        accessibilityLabel="Open connection security details"
+        accessibilityState={{ disabled: !isConnected }}
+        activeOpacity={interactionAppearance('row').activeOpacity}
         onPress={onOpenDetails}
         disabled={!isConnected}
-        className={`bg-background dark:bg-background-dark rounded-xl px-[14px] py-3 flex-row items-center justify-between mb-3 ${!isConnected ? 'opacity-55' : ''}`}
+        className="bg-surface-inset dark:bg-surface-inset-dark rounded-xl px-[14px] py-3 flex-row items-center justify-between mb-3"
+        style={[addressPanelAppearance(palette), { borderWidth: 1, opacity: interactionAppearance('row', { disabled: !isConnected }).opacity }]}
       >
         <View className="flex-1 mr-3">
           <Text className="text-on-surface dark:text-on-surface-dark text-[15px] font-semibold" numberOfLines={1}>{api.url || 'No receiver connected'}</Text>
@@ -92,24 +86,15 @@ export function ConnectionStatusCard({
         </View>
       </TouchableOpacity>
 
-      <View className="flex-row items-center justify-between">
-        <View className="bg-background dark:bg-background-dark rounded-lg px-2.5 py-1.5 flex-row items-center">
-          <Ionicons name="wifi" size={12} color={isConnected ? palette.connected : palette.warning} style={{ marginRight: 6 }} />
-          <Text className="text-[12px] font-medium" style={{ color: isConnected ? palette.connected : palette.warning }}>
+      <View className="flex-row items-center justify-between" style={{ gap: 8 }}>
+        <View className="bg-surface-inset dark:bg-surface-inset-dark rounded-lg px-2.5 py-1.5 flex-row items-center">
+          <Ionicons name="wifi" size={12} color={networkAppearance.foreground} style={{ marginRight: 6 }} />
+          <Text className="text-[12px] font-medium" style={{ color: networkAppearance.foreground }}>
             {dashboardText.localNetwork}
           </Text>
         </View>
 
-        <TouchableOpacity
-          accessibilityRole="button"
-          accessibilityLabel="Copy server address"
-          onPress={copyAddress}
-          disabled={!isConnected}
-          className={`px-3 py-1.5 rounded-lg bg-primary/15 dark:bg-primary-dark/15 flex-row items-center ${!isConnected ? 'opacity-35' : ''}`}
-        >
-          <Ionicons name="copy-outline" size={14} color={palette.primary} />
-          <Text className="text-primary dark:text-primary-dark text-[13px] font-semibold ml-1.5">{dashboardText.copyLink}</Text>
-        </TouchableOpacity>
+        <CopyAddressButton onPress={() => void copyAddress()} disabled={!isConnected} />
       </View>
     </View>
   );

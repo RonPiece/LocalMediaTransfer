@@ -2,7 +2,7 @@ import React from 'react';
 import { Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-import { useThemePalette } from '@/theme';
+import { interactionAppearance, useThemePalette } from '@/theme';
 import { DuplicateCheckStage, PreparationMode } from '@/services/upload/types';
 
 type TransferPhaseBannerProps = {
@@ -104,9 +104,9 @@ export const TransferPhaseBanner = React.memo(function TransferPhaseBanner({
         accessibilityRole="button"
         accessibilityLabel={`${title}.${status ? ` ${status}.` : ''} ${expanded ? 'Hide details' : 'Show details'}`}
         accessibilityState={{ expanded }}
-        activeOpacity={0.75}
+        activeOpacity={interactionAppearance('row').activeOpacity}
         onPress={() => setExpanded(value => !value)}
-        className={`rounded-[18px] border px-4 py-3 ${preparationComplete ? 'bg-primary/5 dark:bg-primary-dark/5 border-primary/20 dark:border-primary-dark/20' : 'bg-surface dark:bg-surface-dark border-border dark:border-border-dark'}`}
+        className={`rounded-[18px] border px-4 py-3 ${preparationComplete ? 'bg-primary-soft dark:bg-primary-soft-dark border-border dark:border-border-dark' : 'bg-surface dark:bg-surface-dark border-border dark:border-border-dark'}`}
       >
         <View className="flex-row items-center min-h-[44px]">
           <Ionicons

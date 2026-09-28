@@ -49,8 +49,8 @@ describe('HomeScreen', () => {
             completedAt: '2026-09-12T09:30:00Z',
             selectedAssets: 2,
             expandedFiles: 3,
-            uploadedFiles: 3,
-            skippedFiles: 0,
+            uploadedFiles: 2,
+            skippedFiles: 1,
             failedFiles: 0,
             uploadedBytes: 3_000,
             totalDurationMs: 90_000,
@@ -67,6 +67,7 @@ describe('HomeScreen', () => {
 
     expect(screen.queryByText('Ready to Send')).toBeNull();
     expect(screen.getByText('Skipped')).toBeTruthy();
+    expect(screen.getByText('1 duplicate skipped')).toBeTruthy();
     expect(screen.queryByText('Skipped duplicates')).toBeNull();
     expect(screen.getByText(/1 file ·/)).toBeTruthy();
     fireEvent.press(screen.getByLabelText(/^Completed\./));

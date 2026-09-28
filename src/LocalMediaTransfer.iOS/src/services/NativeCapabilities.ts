@@ -170,6 +170,7 @@ export interface NativeHttpResponse {
 }
 
 interface LocalMediaTransferNativeModule {
+  historyThumbnails?(assetIds: string[]): Promise<unknown>;
   discover(timeoutMs: number, port: number, environment: ClientServerEnvironment): Promise<unknown[]>;
   configureSecureConnection(options: { baseUrl: string; fingerprint: string }): Promise<void>;
   clearSecureConnection(): void;
@@ -482,6 +483,19 @@ let controlRequestSequence = 0;
 
 export const nativeCapabilities = {
   available: nativeModule !== null,
+  historyThumbnails: async (assetIds: string[]): Promise<{ assetId: string; jpegBase64: string }[]> => {
+    if (!nativeModule?.historyThumbnails) return []; // Older installed clients / Expo Go.
+    const ids = new Set(assetIds.slice(0, 20));
+    const raw = await nativeModule.historyThumbnails([...ids]);
+    if (!Array.isArray(raw)) return [];
+    return raw.flatMap(value => {
+      if (!value || typeof value !== 'object') return [];
+      const { assetId, jpegBase64 } = value as Record<string, unknown>;
+      return typeof assetId === 'string' && ids.has(assetId) && typeof jpegBase64 === 'string'
+        && jpegBase64.length <= 32_000 && /^[A-Za-z0-9+/]+={0,2}$/.test(jpegBase64)
+        ? [{ assetId, jpegBase64 }] : [];
+    }).slice(0, 20);
+  },
   discover: async (timeoutMs = 1500): Promise<DiscoveredServer[]> => {
     if (!nativeModule) return [];
     const environment = expectedServerEnvironment();

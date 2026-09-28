@@ -120,6 +120,8 @@ public final class LocalMediaTransferNativeModule: Module {
   )
   private let thermalMonitor = ThermalMonitor()
   private let uploader = NativeUploadService()
+  private let photoThumbnails = PhotoThumbnailService()
+  private let thumbnailQueue = DispatchQueue(label: "lmt.history-thumbnails", qos: .utility)
 
   public func definition() -> ModuleDefinition {
     Name("LocalMediaTransferNative")
@@ -141,6 +143,10 @@ public final class LocalMediaTransferNativeModule: Module {
       self.preparationSessions.endAll()
       self.httpClient.clear()
     }
+
+    AsyncFunction("historyThumbnails") { (assetIds: [String]) -> [[String: String]] in
+      return self.photoThumbnails.thumbnails(assetIds: assetIds)
+    }.runOnQueue(thumbnailQueue)
 
     AsyncFunction("discover") {
       (timeoutMs: Int, port: Int, environment: String) -> [[String: Any]] in

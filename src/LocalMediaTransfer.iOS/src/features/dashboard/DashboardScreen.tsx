@@ -5,7 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 
 import AppHeader from '@/components/AppHeader';
-import { useThemePalette } from '@/theme';
+import { interactionAppearance, useThemePalette } from '@/theme';
 import { ConnectionDetailsModal } from './components/ConnectionDetailsModal';
 import { ConnectionStatusCard } from './components/ConnectionStatusCard';
 import { DashboardAboutModal } from './components/DashboardAboutModal';
@@ -70,8 +70,8 @@ export default function DashboardScreen({
         <TouchableOpacity
           disabled={!isConnected}
           onPress={chooseMedia}
-          activeOpacity={0.8}
-          className={`h-[50px] rounded-[14px] items-center justify-center flex-row mb-6 ${isConnected ? 'bg-primary dark:bg-primary-dark' : ''}`}
+          activeOpacity={interactionAppearance('action').activeOpacity}
+          className={`h-[50px] rounded-[14px] items-center justify-center flex-row mb-6 ${isConnected ? 'bg-primary-fill dark:bg-primary-fill-dark' : ''}`}
           style={!isConnected ? { backgroundColor: palette.disabledFill } : undefined}
         >
           <Ionicons name="images-outline" size={22} color={palette.white} />

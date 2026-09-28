@@ -1,4 +1,4 @@
-import { theme, ThemePalette } from '@/theme';
+import { theme, ThemePalette, Tone } from '@/theme';
 import type { MediaComponentSemantics, MediaVariantRole } from '@/services/upload/mediaVariants';
 import type { TransferErrorCode, TransferStage } from '@/services/upload/errors';
 
@@ -89,10 +89,10 @@ export function summaryBadgePresentation({
   skipCount: number;
 }) {
   if (errorCount > 0 && successCount === 0 && skipCount === 0) {
-    return { text: 'FAILED', backgroundClass: 'bg-error/20 dark:bg-error-dark/20', textClass: 'text-error dark:text-error-dark' };
+    return { text: 'FAILED', tone: 'error' as Tone };
   }
   if (errorCount > 0 || skipCount > 0) {
-    return { text: 'MIXED', backgroundClass: 'bg-warning/20 dark:bg-warning-dark/20', textClass: 'text-warning dark:text-warning-dark' };
+    return { text: 'MIXED', tone: 'warning' as Tone };
   }
-  return { text: 'SUCCESS', backgroundClass: 'bg-success/20 dark:bg-success-dark/20', textClass: 'text-success dark:text-success-dark' };
+  return { text: 'SUCCESS', tone: 'success' as Tone };
 }

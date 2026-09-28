@@ -1,3 +1,4 @@
+import { DiagnosticExportButton } from '@/features/settings/DiagnosticExportButton';
 import React from 'react';
 import { Alert, Modal, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -112,23 +113,23 @@ export function DashboardSettingsModal({
             <Text className="text-[13px] font-semibold text-on-surface-variant dark:text-on-surface-variant-dark uppercase tracking-[0.5px] mb-2 px-1">Preferences</Text>
             <View className="bg-surface dark:bg-surface-dark rounded-xl overflow-hidden">
               <SettingRow title="Skip Exact Duplicates" detail="Recommended. When off, byte-identical files are deliberately transferred again, consuming network bandwidth and storage; filename collisions use (2), (3), and later numbers." value={settings.skipDuplicates} onChange={(value) => onSaveSettings({ ...settings, skipDuplicates: value })} />
-              <View className="h-[0.5px] bg-border dark:bg-border-dark ml-4" />
+              <View className="h-[0.5px] bg-separator dark:bg-separator-dark ml-4" />
               <SettingRow
                 title="Include additional media components"
                 detail="Also transfers Live Photo motion, RAW companions, and original versions of edited media. Off transfers the primary/current version shown in Photos."
                 value={settings.includeAdditionalMediaComponents}
                 onChange={(value) => onSaveSettings({ ...settings, includeAdditionalMediaComponents: value })}
               />
-              <View className="h-[0.5px] bg-border dark:bg-border-dark ml-4" />
+              <View className="h-[0.5px] bg-separator dark:bg-separator-dark ml-4" />
               <SettingRow
                 title="Transfer while preparing"
                 detail="Off prepares up to 250 selected items before uploading. Larger selections automatically use the storage-saving mode. On always uploads prepared groups while the remaining media is prepared."
                 value={preparationMode === 'streaming'}
                 onChange={enabled => onPreparationModeChange(enabled ? 'streaming' : 'prepare-first')}
               />
-              <View className="h-[0.5px] bg-border dark:bg-border-dark ml-4" />
+              <View className="h-[0.5px] bg-separator dark:bg-separator-dark ml-4" />
               <SettingRow title="Nearby Desktop Discovery" detail={nativeHttpsAvailable ? 'Use credential-free UDP requests to find desktops on this Wi-Fi network.' : 'Requires the installed iOS app. Expo Go can connect by QR code or manual HTTP address.'} value={nearbyDiscoveryEnabled} onChange={onNearbyDiscoveryChange} disabled={!nativeHttpsAvailable} />
-              <View className="h-[0.5px] bg-border dark:bg-border-dark ml-4" />
+              <View className="h-[0.5px] bg-separator dark:bg-separator-dark ml-4" />
               <SettingRow title="Use Unencrypted HTTP" detail={nativeHttpsAvailable ? 'Only for older desktop builds. HTTPS stays preferred and each HTTP session still asks for confirmation.' : 'Expo Go uses HTTP and the compatibility uploader because pinned HTTPS and native transfer are available only in the installed IPA.'} value={allowInsecureHttp} onChange={onAllowInsecureHttpChange} disabled={!nativeHttpsAvailable} onInfo={onExplainUnencryptedHttp} infoLabel="Explain unencrypted HTTP" danger />
             </View>
             <Text className="text-[13px] font-semibold text-on-surface-variant dark:text-on-surface-variant-dark uppercase tracking-[0.5px] mt-6 mb-2 px-1">Support</Text>
@@ -141,13 +142,8 @@ export function DashboardSettingsModal({
               </View>
               {diagnosticReports.map((report, index) => (
                 <React.Fragment key={report.path}>
-                  <View className="h-[0.5px] bg-border dark:bg-border-dark ml-4" />
-                  <TouchableOpacity
-                    accessibilityRole="button"
-                    accessibilityLabel={`Export diagnostic transfer ${index + 1}`}
-                    onPress={() => void exportDiagnostics(report.path)}
-                    className="px-4 py-3 flex-row items-center"
-                  >
+                  <View className="h-[0.5px] bg-separator dark:bg-separator-dark ml-4" />
+                  <View className="px-4 py-3 flex-row items-center">
                     <Ionicons name="document-text-outline" size={21} color={palette.primary} />
                     <View className="flex-1 ml-3">
                       <Text className="text-on-surface dark:text-on-surface-dark text-[15px] font-semibold">
@@ -157,8 +153,8 @@ export function DashboardSettingsModal({
                         {report.selectedAssets.toLocaleString()} assets · {report.completionStatus} · {report.environment}
                       </Text>
                     </View>
-                    <Ionicons name="share-outline" size={20} color={palette.primary} />
-                  </TouchableOpacity>
+                    <DiagnosticExportButton label={`Export diagnostic transfer ${index + 1}`} onPress={() => void exportDiagnostics(report.path)} />
+                  </View>
                 </React.Fragment>
               ))}
               {diagnosticsLoadState === 'loading' && (
@@ -185,19 +181,13 @@ export function DashboardSettingsModal({
                   No transfer diagnostics are available yet.
                 </Text>
               )}
-              <View className="h-[0.5px] bg-border dark:bg-border-dark ml-4" />
-              <TouchableOpacity
-                accessibilityRole="button"
-                accessibilityLabel="Export all transfer diagnostics"
-                onPress={() => void exportAllDiagnostics()}
-                disabled={diagnosticsLoadState !== 'loaded' || diagnosticReports.length === 0}
-                className={`px-4 py-4 flex-row items-center ${diagnosticsLoadState !== 'loaded' || diagnosticReports.length === 0 ? 'opacity-40' : ''}`}
-              >
+              <View className="h-[0.5px] bg-separator dark:bg-separator-dark ml-4" />
+              <View className="px-4 py-3 flex-row items-center">
                 <Ionicons name="documents-outline" size={22} color={palette.primary} />
-                <Text className="text-primary dark:text-primary-dark text-[15px] font-semibold ml-3">
-                  Export all available reports
-                </Text>
-              </TouchableOpacity>
+                <Text className="text-on-surface dark:text-on-surface-dark text-[15px] font-semibold ml-3 flex-1 mr-2">Export all available reports</Text>
+                <DiagnosticExportButton label="Export all transfer diagnostics" onPress={() => void exportAllDiagnostics()}
+                  disabled={diagnosticsLoadState !== 'loaded' || diagnosticReports.length === 0} />
+              </View>
             </View>
           </ScrollView>
         </View>

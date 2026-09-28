@@ -1,3 +1,5 @@
+import tokens from '@/theme/tokens.json';
+import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { Alert } from 'react-native';
 import * as ReactNative from 'react-native';
@@ -161,8 +163,8 @@ describe('ConnectionScreen QR Logic', () => {
     NativeWindStyleSheet.setColorScheme('dark');
     const screen = render(<ConnectionScreen onConnect={jest.fn()} isConnected nativeHttpsAvailable />);
     try {
-      expect(screen.getByLabelText('Scan Receiver QR')).toHaveStyle({ backgroundColor: '#1C1C1E' });
-      expect(screen.getByText('Scan Receiver QR')).toHaveStyle({ color: '#FFFFFF' });
+      expect(screen.getByLabelText('Disconnect before pairing with another receiver')).toHaveStyle({ backgroundColor: tokens.darkColors.disabledFill });
+      expect(screen.getByText('Disconnect before pairing with another receiver')).toHaveStyle({ color: tokens.darkColors.onSurfaceVariant });
     } finally {
       screen.unmount();
       NativeWindStyleSheet.setColorScheme('system');
@@ -170,13 +172,17 @@ describe('ConnectionScreen QR Logic', () => {
     }
   });
 
-  it('uses a readable grouped-surface style for the disabled QR action', () => {
+  it('uses the shared disabled treatment for the unavailable QR action', () => {
     const screen = render(<ConnectionScreen onConnect={jest.fn()} isConnected nativeHttpsAvailable />);
 
-    const qrAction = screen.getByLabelText('Scan Receiver QR');
+    const qrAction = screen.getByLabelText('Disconnect before pairing with another receiver');
     expect(qrAction.props.accessibilityState?.disabled ?? qrAction.props.disabled).toBeTruthy();
-    expect(qrAction).toHaveStyle({ backgroundColor: '#FFFFFF' });
-    expect(screen.getByText('Scan Receiver QR')).toHaveStyle({ color: '#000000' });
+    expect(qrAction).toHaveStyle({ backgroundColor: tokens.colors.disabledFill });
+    expect(qrAction.findAllByType(Ionicons).map(icon => icon.props.name)).toEqual(['qr-code-outline']);
+    expect(screen.queryByText('Use Disconnect below when you want to change receivers.')).toBeNull();
+    fireEvent.press(qrAction);
+    expect(screen.queryByTestId('mock-camera')).toBeNull();
+    expect(screen.getByText('Disconnect before pairing with another receiver')).toHaveStyle({ color: tokens.colors.onSurfaceVariant });
   });
 
   it('extracts URL base and token from a QR code scan', async () => {

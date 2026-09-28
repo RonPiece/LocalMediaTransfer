@@ -32,7 +32,7 @@ export const RecentActivityPanel = React.memo(function RecentActivityPanel({
           accessibilityLabel={`${label}. Open full list`}
           accessibilityState={{ expanded }}
           onPress={() => setExpanded(true)}
-          className="bg-surface dark:bg-surface-dark px-4 py-2.5 border-b border-border dark:border-border-dark flex-row items-center justify-between"
+          className="bg-surface dark:bg-surface-dark px-4 py-2.5 border-b border-separator dark:border-separator-dark flex-row items-center justify-between"
         >
           <View className="flex-row items-center flex-1">
             <Text className="text-on-surface-variant dark:text-on-surface-variant-dark text-xs font-bold uppercase tracking-wider">
@@ -76,7 +76,7 @@ export const RecentActivityPanel = React.memo(function RecentActivityPanel({
           className="flex-1 bg-background dark:bg-background-dark"
           accessibilityViewIsModal
         >
-          <View className="h-16 px-5 flex-row items-center justify-between border-b border-border dark:border-border-dark bg-surface dark:bg-surface-dark">
+          <View className="h-16 px-5 flex-row items-center justify-between border-b border-separator dark:border-separator-dark bg-surface dark:bg-surface-dark">
             <View>
               <Text accessibilityRole="header" className="text-on-surface dark:text-on-surface-dark text-lg font-bold">
                 Recent activity

@@ -1,5 +1,9 @@
 import React from 'react';
 import { fireEvent, render } from '@testing-library/react-native';
+import { StyleSheet, View } from 'react-native';
+import { BlurView } from 'expo-blur';
+import * as theme from '@/theme';
+import tokens from '@/theme/tokens.json';
 
 import { BottomTabBar } from './navigation';
 
@@ -9,6 +13,21 @@ jest.mock('@expo/vector-icons', () => {
 }, { virtual: true });
 
 describe('BottomTabBar', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it.each(['light', 'dark'] as const)('uses solid %s navigation when transparency is reduced', mode => {
+    const palette = mode === 'dark' ? tokens.darkColors : tokens.colors;
+    jest.spyOn(theme, 'useThemeMode').mockReturnValue(mode);
+    jest.spyOn(theme, 'useThemePalette').mockReturnValue(palette);
+    jest.spyOn(theme, 'useReduceTransparencyEnabled').mockReturnValue(true);
+    const screen = render(<BottomTabBar activeTab="home" onSelect={jest.fn()} />);
+    expect(screen.UNSAFE_queryByType(BlurView)).toBeNull();
+    expect(screen.UNSAFE_getAllByType(View).some(view =>
+      StyleSheet.flatten(view.props.style)?.backgroundColor === palette.elevatedSurface,
+    )).toBe(true);
+    screen.unmount();
+  });
+
   it('exposes all five tabs and selects an unlocked tab', () => {
     const onSelect = jest.fn();
     const screen = render(<BottomTabBar activeTab="connect" onSelect={onSelect} />);

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Alert } from 'react-native';
 
+import { clearProblemPreviews } from '@/services/history/ProblemPreviewStore';
 import { api } from '@/api/ApiClient';
 import { TransferHistoryItem } from '@/api/types';
 import { normalizeHistoryItems } from '@/features/dashboard/hooks/useDashboardHistory';
@@ -46,6 +47,7 @@ export function useReceiverHistory({ isConnected }: { isConnected: boolean }) {
   }, [isConnected]);
 
   const confirmClear = React.useCallback(() => {
+    const scope = api.url;
     Alert.alert(
       'Delete receiver history?',
       'This permanently deletes the saved transfer history from the connected receiver.',
@@ -56,8 +58,15 @@ export function useReceiverHistory({ isConnected }: { isConnected: boolean }) {
           style: 'destructive',
           onPress: async () => {
             try {
+              if (api.url !== scope) throw new Error('The connected receiver changed. Try again.');
               await api.clearHistory();
-              setItems([]);
+              void clearProblemPreviews(scope).catch(() => undefined);
+              if (api.url === scope) {
+                requestId.current++;
+                setItems([]);
+                setLoading(false);
+                setError(null);
+              }
             } catch (reason) {
               Alert.alert('Could not delete history', reason instanceof Error ? reason.message : 'Try again while connected.');
             }

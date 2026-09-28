@@ -62,7 +62,7 @@ const AlbumGridItem = React.memo(function AlbumGridItem({
           </View>
         )}
         {selected && (
-          <View className="absolute top-2 left-2 bg-primary dark:bg-primary-dark rounded-full p-0.5">
+          <View className="absolute top-2 left-2 bg-primary-fill dark:bg-primary-fill-dark rounded-full p-0.5">
             <Ionicons name="checkmark" size={14} color={theme.colors.white} />
           </View>
         )}
@@ -117,7 +117,7 @@ export const AlbumPickerModal = React.memo(function AlbumPickerModal({
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <SafeAreaView className="flex-1 bg-background dark:bg-background-dark">
-        <View className="h-16 px-5 flex-row items-center justify-between border-b border-border dark:border-border-dark bg-surface dark:bg-surface-dark">
+        <View className="h-16 px-5 flex-row items-center justify-between border-b border-separator dark:border-separator-dark bg-surface dark:bg-surface-dark">
           <Text className="text-on-surface dark:text-on-surface-dark text-xl font-bold">Albums</Text>
           <TouchableOpacity onPress={onClose} className="h-10 px-4 rounded-full bg-background dark:bg-background-dark items-center justify-center">
             <Text className="text-primary dark:text-primary-dark font-semibold">Close</Text>

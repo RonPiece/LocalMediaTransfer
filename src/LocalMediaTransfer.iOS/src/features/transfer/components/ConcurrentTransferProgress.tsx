@@ -64,7 +64,7 @@ export function ConcurrentTransferProgress({
       className={`bg-surface dark:bg-surface-dark rounded-[18px] border border-border dark:border-border-dark px-4 ${compact ? 'py-3 mb-3' : 'py-4 mb-4'}`}
     >
       <View className="flex-row items-center">
-        <View className="w-10 h-10 rounded-full bg-success/10 dark:bg-success-dark/10 items-center justify-center">
+        <View className="w-10 h-10 rounded-full bg-success-soft dark:bg-success-soft-dark items-center justify-center">
           <Ionicons name="images-outline" size={20} color={palette.success} />
         </View>
         <View className="flex-1 ml-3 min-w-0">
@@ -100,7 +100,7 @@ export function ConcurrentTransferProgress({
       <View className={`${compact ? 'my-2.5' : 'my-3'} border-t border-border dark:border-border-dark`} />
 
       <View className="flex-row items-center">
-        <View className="w-10 h-10 rounded-full bg-primary/10 dark:bg-primary-dark/10 items-center justify-center">
+        <View className="w-10 h-10 rounded-full bg-primary-soft dark:bg-primary-soft-dark items-center justify-center">
           <Ionicons name="cloud-upload-outline" size={20} color={palette.primary} />
         </View>
         <View className="flex-1 ml-3 min-w-0">

@@ -28,7 +28,7 @@ export function DashboardHistoryModal({
   onClear: () => void;
 }) {
   const palette = useThemePalette();
-  const [details, setDetails] = React.useState<{ files: NonNullable<HistoryItem['files']>; total: number } | null>(null);
+  const [details, setDetails] = React.useState<{ files: NonNullable<HistoryItem['files']>; total: number; sessionId?: string } | null>(null);
   const closeModal = React.useCallback(() => {
     setDetails(null);
     onClose();
@@ -109,7 +109,7 @@ export function DashboardHistoryModal({
                     <TouchableOpacity
                       accessibilityRole="button"
                       accessibilityLabel={`View ${problemFiles.length} problem file details`}
-                      onPress={() => setDetails({ files: problemFiles, total: totalProblems })}
+                      onPress={() => setDetails({ files: problemFiles, total: totalProblems, sessionId: item.sessionId })}
                       className="mt-3 rounded-lg border border-border dark:border-border-dark bg-background dark:bg-background-dark px-3 py-2 flex-row items-center justify-between"
                     >
                       <Text className="text-[13px] font-semibold text-primary dark:text-primary-dark">
@@ -130,7 +130,8 @@ export function DashboardHistoryModal({
             }}
             />
           )}
-          <HistoryProblemDetailsModal
+          <HistoryProblemDetailsModal key={details?.sessionId}
+            sessionId={details?.sessionId}
             files={details?.files ?? null}
             totalProblems={details?.total ?? 0}
             onClose={() => setDetails(null)}

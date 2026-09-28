@@ -77,7 +77,12 @@ describe('DashboardSettingsModal diagnostics', () => {
     );
 
     await waitFor(() => expect(listDiagnosticReports).toHaveBeenCalledTimes(1));
-    fireEvent.press(await screen.findByLabelText('Export diagnostic transfer 2'));
+    await screen.findByLabelText('Export diagnostic transfer 2');
+    fireEvent.press(screen.getByText('12 assets · mixed · test'));
+    fireEvent.press(screen.getByText('Export all available reports'));
+    expect(exportDiagnosticReport).not.toHaveBeenCalled();
+    expect(exportAllDiagnosticReports).not.toHaveBeenCalled();
+    fireEvent.press(screen.getByLabelText('Export diagnostic transfer 2'));
     expect(exportDiagnosticReport).toHaveBeenCalledWith(reports[1].path);
 
     fireEvent.press(screen.getByLabelText('Export all transfer diagnostics'));
