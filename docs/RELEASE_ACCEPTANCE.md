@@ -60,7 +60,7 @@ blocks public publication. Rebuild/retest affected rows if the candidate changes
 |---|---|---|
 | Fresh Windows developer setup | Clean VM, documented prerequisites, setup command then `verify -Target all`; no undeclared tools or private paths | Pending |
 | macOS Swift compiler | Production unsigned-IPA workflow succeeds for the exact candidate commit | Pending |
-| Windows installer | Clean install, upgrade, normal/tray exit, uninstall while running; unrelated instances survive; user files preserved | Pending |
+| Windows installer | Clean install, upgrade, normal/tray exit, uninstall while running; unrelated instances survive; uploaded files and per-user settings preserved | Pending |
 | Windows UI | Minimum window size, compact/expanded navigation, send/receive, cancel, restart, tray lifecycle | Pending |
 | iPhone native | Physical device; small/large and 1,000-item selection, limited Photos permission, iCloud-only asset, cancel during preparation/upload; bounded memory and responsive UI | Pending |
 | Security/recovery | Denied/revoked pairing, stale credential, incorrect certificate, rejected grant, Wi-Fi drop/reconnect, server restart; no unauthorized upload or false completion | Pending |

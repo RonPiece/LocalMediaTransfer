@@ -47,6 +47,13 @@ set(HEADERS
     include/discovery/DiscoveryServer.hpp
 )
 
+if(WIN32)
+    enable_language(RC)
+    configure_file(resources/Version.rc.in
+        "${CMAKE_CURRENT_BINARY_DIR}/Version.rc" @ONLY)
+    list(APPEND SOURCES "${CMAKE_CURRENT_BINARY_DIR}/Version.rc")
+endif()
+
 # Create executable
 add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS})
 

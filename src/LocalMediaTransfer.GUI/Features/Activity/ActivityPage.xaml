@@ -86,11 +86,11 @@
                         BorderBrush="{StaticResource MetricSpeedBrush}" BorderThickness="4,0,0,0"
                         CornerRadius="8" Padding="18" MinHeight="108">
                     <StackPanel Spacing="8">
-                        <TextBlock Text="Current receive speed" Foreground="{StaticResource MetricSpeedBrush}" />
+                        <TextBlock Text="Current transfer speed" Foreground="{StaticResource MetricSpeedBrush}" />
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="{Binding CurrentSpeed}" FontSize="32" FontWeight="Bold"
                                        Foreground="{StaticResource MetricSpeedBrush}"
-                                       AutomationProperties.Name="Current receive speed" />
+                                       AutomationProperties.Name="Current transfer speed" />
                             <TextBlock Text="{Binding CurrentSpeedUnit}" Margin="6,0,0,6" VerticalAlignment="Bottom"
                                        Foreground="{StaticResource MetricSpeedBrush}" />
                         </StackPanel>
@@ -142,12 +142,12 @@
             <Border Grid.Row="2" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                     CornerRadius="8" Padding="18" MinHeight="250">
                 <StackPanel Spacing="8">
-                    <TextBlock Text="Receive speed" FontWeight="SemiBold" />
-                    <TextBlock Text="Rolling current media throughput · latest 30 samples · MB/s"
+                        <TextBlock Text="Transfer speed" FontWeight="SemiBold" />
+                    <TextBlock Text="Client-reported current rate · latest 30 seconds · MB/s"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                     <lvc:CartesianChart x:Name="SpeedChart"
                                         MinHeight="180" Height="210"
-                                        AutomationProperties.Name="Receive speed over the latest 30 samples" />
+                                        AutomationProperties.Name="Transfer speed over the latest 30 seconds" />
                 </StackPanel>
             </Border>
 

@@ -57,29 +57,27 @@ public sealed class NativeTransferClient
         TransferApproval approval = await NativeTransferAuthorization.RequestApprovalAsync(
             client, receiver,
             clientSessionId, sources, skipExactDuplicates, cancellationToken);
+        var telemetry = new NativeTransferTelemetry(client, receiver.Credential, clientSessionId);
+        await telemetry.StartAsync();
         var results = new ConcurrentDictionary<string, TransferFileResult>();
-        long acknowledged = 0;
         long planned = sources.Sum(file => file.SizeBytes);
         int terminal = 0;
-        double peak = 0;
-        var samples = new ConcurrentQueue<(long Bytes, long Ticks)>();
         Stopwatch timer = Stopwatch.StartNew();
+        var rate = new NativeTransferRateTracker(Stopwatch.GetTimestamp());
+        string outcome = "transfer_failed";
 
-        void Report(TransferFileResult? file = null)
+        void Report(TransferFileResult? file = null, long newlyAcknowledged = 0)
         {
-            long bytes = Interlocked.Read(ref acknowledged);
-            long ticks = Stopwatch.GetTimestamp();
-            samples.Enqueue((bytes, ticks));
-            while (samples.TryPeek(out var first) &&
-                Stopwatch.GetElapsedTime(first.Ticks, ticks) > TimeSpan.FromSeconds(2))
-                samples.TryDequeue(out _);
-            double current = 0;
-            if (samples.TryPeek(out var start))
+            long bytes;
+            double current;
+            lock (rate)
             {
-                double seconds = Stopwatch.GetElapsedTime(start.Ticks, ticks).TotalSeconds;
-                if (seconds > 0.05) current = (bytes - start.Bytes) / seconds / 1_000_000d;
+                long ticks = Stopwatch.GetTimestamp();
+                if (newlyAcknowledged > 0) rate.Acknowledge(newlyAcknowledged, ticks);
+                bytes = rate.AcknowledgedBytes;
+                current = rate.CurrentMBps(ticks);
             }
-            lock (samples) peak = Math.Max(peak, current);
+            telemetry.RecordCurrentMediaRate(current);
             progress?.Report(new NativeTransferProgress(bytes, planned,
                 Volatile.Read(ref terminal), sources.Count, current, file));
         }
@@ -93,6 +91,7 @@ public sealed class NativeTransferClient
                 : [];
             TransferSource[] pending = sources
                 .Where(file => !skipped.Contains(file.FileId)).ToArray();
+            await using var displayTimer = new Timer(_ => Report(), null, 1000, 1000);
             await BoundedWorkerPool.RunAsync(pending,
                 Math.Clamp(configuration.ParallelFiles, 1, DefaultParallelFiles),
                 async (_, file, workerToken) =>
@@ -102,7 +101,7 @@ public sealed class NativeTransferClient
                         TransferFileResult result = await NativeUploadWorker.UploadFileAsync(
                             client, approval,
                             file, configuration.ChunkSizeBytes, skipExactDuplicates,
-                            bytes => { Interlocked.Add(ref acknowledged, bytes); Report(); },
+                            bytes => Report(newlyAcknowledged: bytes),
                             workerToken);
                         results[file.FileId] = result;
                         Interlocked.Increment(ref terminal);
@@ -137,24 +136,33 @@ public sealed class NativeTransferClient
                 exception => exception is NativeClientException native && IsSessionFatal(native),
                 cancellationToken);
             double average = timer.Elapsed.TotalSeconds <= 0 ? 0 :
-                Interlocked.Read(ref acknowledged) / timer.Elapsed.TotalSeconds / 1_000_000d;
+                rate.AcknowledgedBytes / timer.Elapsed.TotalSeconds / 1_000_000d;
+            outcome = "transfer_completed";
             return new NativeTransferSummary(sources.Select(file =>
                 results.TryGetValue(file.FileId, out TransferFileResult? result) ? result :
                 new TransferFileResult(file.FileId, file.Name, TransferFileState.Failed,
                     ErrorCode: "not_processed")).ToArray(),
-                Interlocked.Read(ref acknowledged), average, peak, false);
+                rate.AcknowledgedBytes, average, rate.PeakMBps, false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            outcome = "transfer_cancelled";
             return new NativeTransferSummary(sources.Select(file =>
                 results.TryGetValue(file.FileId, out TransferFileResult? result) ? result :
                 new TransferFileResult(file.FileId, file.Name, TransferFileState.Cancelled))
-                .ToArray(), Interlocked.Read(ref acknowledged), 0, peak, true);
+                .ToArray(), rate.AcknowledgedBytes, 0, rate.PeakMBps, true);
         }
         finally
         {
-            await NativeTransferAuthorization.BestEffortCancelAsync(client, approval,
-                CancellationToken.None);
+            try
+            {
+                await telemetry.FinishAsync(outcome);
+            }
+            finally
+            {
+                await NativeTransferAuthorization.BestEffortCancelAsync(client, approval,
+                    CancellationToken.None);
+            }
         }
     }
 

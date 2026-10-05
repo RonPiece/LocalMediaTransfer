@@ -2460,9 +2460,15 @@ internal static class TestHarness
                 throw new InvalidOperationException("Current-session client speed was rejected.");
             }
         }
-        _ = await pipe.WaitForMetricsAsync(
+        JsonElement liveSpeed = await pipe.WaitForMetricsAsync(
             metrics => Math.Abs(metrics.GetProperty("speedMBps").GetDouble() - 20.0) < 0.01,
             TimeSpan.FromSeconds(5));
+        int freshForMs = liveSpeed.GetProperty("speedFreshForMs").GetInt32();
+        if (!liveSpeed.GetProperty("speedAvailable").GetBoolean() ||
+            freshForMs <= 0 || freshForMs > 5000)
+        {
+            throw new InvalidOperationException("Live speed did not carry its bounded freshness lifetime.");
+        }
 
         using (HttpResponseMessage staleResponse = await http.PostAsJsonAsync(
             "/client_metrics",
@@ -2476,6 +2482,18 @@ internal static class TestHarness
             }
         }
 
+        using (HttpResponseMessage peerStart = await http.PostAsJsonAsync("/client_log",
+            new { session = "metrics-peer-test", level = "INFO", @event = "transfer_started",
+                message = "second transfer" })) peerStart.EnsureSuccessStatusCode();
+        using (HttpResponseMessage peerSpeed = await http.PostAsJsonAsync("/client_metrics",
+            new { sessionId = "metrics-peer-test", bytesPerSecond = 5_000_000 }))
+            peerSpeed.EnsureSuccessStatusCode();
+        JsonElement concurrentSpeed = await pipe.WaitForMetricsAsync(
+            metrics => Math.Abs(metrics.GetProperty("speedMBps").GetDouble() - 25.0) < 0.01,
+            TimeSpan.FromSeconds(5));
+        if (concurrentSpeed.GetProperty("rateComponents").GetArrayLength() != 2)
+            throw new InvalidOperationException("Concurrent client rates were not retained separately.");
+
         using (var completeRequest = new HttpRequestMessage(HttpMethod.Post, "/client_log"))
         {
             completeRequest.Content = JsonContent.Create(new
@@ -2488,10 +2506,31 @@ internal static class TestHarness
             using HttpResponseMessage completeResponse = await http.SendAsync(completeRequest);
             completeResponse.EnsureSuccessStatusCode();
         }
-        _ = await pipe.WaitForMetricsAsync(
+        JsonElement peerRemains = await pipe.WaitForMetricsAsync(
+            metrics => metrics.GetProperty("isActive").GetBoolean() &&
+                       Math.Abs(metrics.GetProperty("speedMBps").GetDouble() - 5.0) < 0.01,
+            TimeSpan.FromSeconds(5));
+        if (peerRemains.GetProperty("rateComponents").GetArrayLength() != 1)
+            throw new InvalidOperationException("Ending one client removed another client's rate.");
+        using (HttpResponseMessage oldSpeed = await http.PostAsJsonAsync("/client_metrics",
+            new { sessionId = "metrics-reset-test", bytesPerSecond = 90_000_000 }))
+        {
+            oldSpeed.EnsureSuccessStatusCode();
+            using JsonDocument oldBody = JsonDocument.Parse(await oldSpeed.Content.ReadAsStringAsync());
+            if (oldBody.RootElement.GetProperty("accepted").GetBoolean())
+                throw new InvalidOperationException("Ended client changed the active peer rate.");
+        }
+        using (HttpResponseMessage peerEnd = await http.PostAsJsonAsync("/client_log",
+            new { session = "metrics-peer-test", level = "INFO", @event = "transfer_completed",
+                message = "second transfer complete" })) peerEnd.EnsureSuccessStatusCode();
+        JsonElement endedSpeed = await pipe.WaitForMetricsAsync(
             metrics => !metrics.GetProperty("isActive").GetBoolean() &&
                        Math.Abs(metrics.GetProperty("speedMBps").GetDouble()) < 0.01,
             TimeSpan.FromSeconds(5));
+        if (endedSpeed.GetProperty("speedFreshForMs").GetInt32() != 0)
+        {
+            throw new InvalidOperationException("Completed transfer retained a live speed lease.");
+        }
 
         using var delete = await http.DeleteAsync("/transfer_history");
         delete.EnsureSuccessStatusCode();

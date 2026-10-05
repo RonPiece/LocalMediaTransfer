@@ -6,6 +6,9 @@ repository.
 
 ## [Unreleased]
 
+- Improved Windows installer branding and file-version metadata, added matching
+  server EXE metadata, and made uninstall preserve each user's local settings
+  and transfer history.
 - Fixed Windows nearby discovery when VPN or virtual adapters such as Tailscale
   appear before the physical Wi-Fi or Ethernet adapter. Discovery now ignores
   known virtual adapters and fairly scans every eligible local subnet.
@@ -78,6 +81,3 @@ Initial public release.
 - Keep Expo Go and browser upload as explicit compatibility paths.
 - Store transfer data, settings, credentials, and history locally; no cloud
   account, advertising, or external analytics service is required.
-
-Before publishing this release, replace `Unreleased` on the `2.0.0` heading
-with its release date in `YYYY-MM-DD` format.

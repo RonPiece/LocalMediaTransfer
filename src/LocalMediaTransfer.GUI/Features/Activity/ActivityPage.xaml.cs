@@ -5,6 +5,7 @@ using LiveChartsCore.SkiaSharpView;
 using LocalMediaTransfer.GUI.AppServices;
 using LocalMediaTransfer.GUI.Features.Dashboard;
 using LocalMediaTransfer.GUI.Services;
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
@@ -16,6 +17,7 @@ namespace LocalMediaTransfer.GUI.Features.Activity
         private PipeClient? _pipeClient;
         private MainWindow? _mainWindow;
         private bool? _isWideTransferTable;
+        private DispatcherQueueTimer? _graphTimer;
 
         public DashboardViewModel ViewModel { get; } = new();
 
@@ -52,7 +54,14 @@ namespace LocalMediaTransfer.GUI.Features.Activity
             _pipeClient = mainWindow.PipeClient;
             _pipeClient.MetricsReceived += OnMetricsReceived;
             _pipeClient.TransferHistoryReceived += OnTransferHistoryReceived;
+            _pipeClient.ConnectionChanged += OnConnectionChanged;
+            if (_pipeClient.LatestMetrics is { } snapshot)
+                ViewModel.ApplyMetrics(snapshot.Metrics, snapshot.ReceivedAt);
             _pipeClient.RequestTransferHistory();
+            _graphTimer = DispatcherQueue.CreateTimer();
+            _graphTimer.Interval = TimeSpan.FromSeconds(1);
+            _graphTimer.Tick += OnGraphTick;
+            _graphTimer.Start();
         }
 
         protected override void OnNavigatedFrom(NavigationEventArgs e)
@@ -65,10 +74,26 @@ namespace LocalMediaTransfer.GUI.Features.Activity
 
             _pipeClient.MetricsReceived -= OnMetricsReceived;
             _pipeClient.TransferHistoryReceived -= OnTransferHistoryReceived;
+            _pipeClient.ConnectionChanged -= OnConnectionChanged;
+            if (_graphTimer != null)
+            {
+                _graphTimer.Stop();
+                _graphTimer.Tick -= OnGraphTick;
+                _graphTimer = null;
+            }
         }
 
-        private void OnMetricsReceived(MetricsData metrics) =>
-            DispatcherQueue.TryEnqueue(() => ViewModel.ApplyMetrics(metrics));
+        private void OnGraphTick(DispatcherQueueTimer sender, object args) =>
+            ViewModel.SampleGraph(DateTimeOffset.UtcNow);
+
+        private void OnMetricsReceived(MetricsSnapshot snapshot) =>
+            DispatcherQueue.TryEnqueue(() =>
+                ViewModel.ApplyMetrics(snapshot.Metrics, snapshot.ReceivedAt));
+
+        private void OnConnectionChanged(bool connected)
+        {
+            if (!connected) DispatcherQueue.TryEnqueue(ViewModel.ClearLiveSpeed);
+        }
 
         private void OnTransferHistoryReceived(
             System.Collections.Generic.IReadOnlyList<TransferHistoryData> sessions) =>

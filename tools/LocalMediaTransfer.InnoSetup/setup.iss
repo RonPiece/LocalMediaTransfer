@@ -5,7 +5,9 @@
 ; has a different layout than dotnet build output.
 
 #define MyAppName "Local Media Transfer"
-#define MyAppVersion "2.0.0"
+#ifndef MyAppVersion
+  #error MyAppVersion must be supplied from VERSION by build.ps1
+#endif
 #define MyAppPublisher "Ron Blanki"
 #define MyAppURL "https://github.com/RonPiece/LocalMediaTransfer"
 #define MyGuiExeName "LocalMediaTransfer.GUI.exe"
@@ -37,9 +39,14 @@ PrivilegesRequired=admin
 PrivilegesRequiredOverridesAllowed=commandline
 OutputDir={#OutputDir}
 OutputBaseFilename=LocalMediaTransfer-Setup-{#MyAppVersion}-x64
+VersionInfoVersion={#MyAppVersion}
+VersionInfoCompany={#MyAppPublisher}
+VersionInfoDescription={#MyAppName} Setup
+VersionInfoProductName={#MyAppName}
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
+WizardSmallImageFile={#StagingDir}\Assets\Icons\AppIcon_master_1024.png
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 SetupIconFile={#StagingDir}\Assets\Icons\AppIcon.ico
@@ -53,7 +60,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
-Name: "firewall"; Description: "Add private-network firewall exceptions for local-device transfers"; GroupDescription: "{cm:AdditionalIcons}"
+Name: "firewall"; Description: "Allow local-device transfers on Private networks (local subnet only)"; GroupDescription: "Network access:"
 
 [Files]
 ; Staged layout:
@@ -82,81 +89,11 @@ Filename: "netsh"; Parameters: "advfirewall firewall delete rule name=""{#Discov
 Type: filesandordirs; Name: "{app}"
 
 [Code]
-var
-  DeleteUserDataOnUninstall: Boolean;
-
-function ConfirmUninstallOptions(): Boolean;
-var
-  Form: TSetupForm;
-  MessageLabel: TNewStaticText;
-  CleanupCheckBox: TNewCheckBox;
-  ContinueButton: TNewButton;
-  CancelButton: TNewButton;
-begin
-  Result := False;
-  DeleteUserDataOnUninstall := False;
-
-  Form := CreateCustomForm(ScaleX(460), ScaleY(190), False, False);
-  try
-    Form.Caption := 'Uninstall Local Media Transfer';
-    Form.Position := poScreenCenter;
-
-    MessageLabel := TNewStaticText.Create(Form);
-    MessageLabel.Parent := Form;
-    MessageLabel.Left := ScaleX(16);
-    MessageLabel.Top := ScaleY(16);
-    MessageLabel.Width := ScaleX(428);
-    MessageLabel.Height := ScaleY(72);
-    MessageLabel.WordWrap := True;
-    MessageLabel.Caption :=
-      'Local Media Transfer can keep running in the background from the system tray.' + #13#10#13#10 +
-      'The uninstaller will close the app and its local server before removing program files.';
-
-    CleanupCheckBox := TNewCheckBox.Create(Form);
-    CleanupCheckBox.Parent := Form;
-    CleanupCheckBox.Left := ScaleX(16);
-    CleanupCheckBox.Top := ScaleY(98);
-    CleanupCheckBox.Width := ScaleX(428);
-    CleanupCheckBox.Height := ScaleY(36);
-    CleanupCheckBox.Checked := True;
-    CleanupCheckBox.Caption := 'Delete local settings, logs, history, and benchmark data';
-
-    ContinueButton := TNewButton.Create(Form);
-    ContinueButton.Parent := Form;
-    ContinueButton.Left := ScaleX(268);
-    ContinueButton.Top := ScaleY(150);
-    ContinueButton.Width := ScaleX(86);
-    ContinueButton.Height := ScaleY(28);
-    ContinueButton.Caption := 'Continue';
-    ContinueButton.ModalResult := mrOk;
-
-    CancelButton := TNewButton.Create(Form);
-    CancelButton.Parent := Form;
-    CancelButton.Left := ScaleX(364);
-    CancelButton.Top := ScaleY(150);
-    CancelButton.Width := ScaleX(80);
-    CancelButton.Height := ScaleY(28);
-    CancelButton.Caption := 'Cancel';
-    CancelButton.ModalResult := mrCancel;
-
-    if Form.ShowModal = mrOk then
-    begin
-      DeleteUserDataOnUninstall := CleanupCheckBox.Checked;
-      Result := True;
-    end;
-  finally
-    Form.Free;
-  end;
-end;
-
 function InitializeUninstall(): Boolean;
 var
   ResultCode: Integer;
 begin
   Result := False;
-
-  if (not UninstallSilent) and (not ConfirmUninstallOptions()) then
-    Exit;
 
   if not Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
     '-NoProfile -ExecutionPolicy Bypass -File "' + ExpandConstant('{app}\uninstall-support\stop-installed-processes.ps1') +
@@ -168,22 +105,4 @@ begin
   end;
 
   Result := True;
-end;
-
-procedure CurStepChanged(CurStep: TSetupStep);
-begin
-  if CurStep = ssPostInstall then
-  begin
-    if not DirExists(ExpandConstant('{localappdata}\LocalMediaTransfer')) then
-      CreateDir(ExpandConstant('{localappdata}\LocalMediaTransfer'));
-  end;
-end;
-
-procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
-begin
-  if CurUninstallStep = usUninstall then
-  begin
-    if DeleteUserDataOnUninstall then
-      DelTree(ExpandConstant('{localappdata}\LocalMediaTransfer'), True, True, True);
-  end;
 end;

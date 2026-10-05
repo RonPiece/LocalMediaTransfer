@@ -24,11 +24,16 @@ Run from the repository root:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\LocalMediaTransfer.InnoSetup\build.ps1
 ```
 
-Optional version override:
+`VERSION` is the product version for the staged app and installer. Inspect or
+change it through the repository version command before building:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\LocalMediaTransfer.InnoSetup\build.ps1 -Version "2.0.1"
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\set-version.ps1 -Status
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\set-version.ps1 -Version "2.0.1"
 ```
+
+The builder rejects version drift and passes `VERSION` to Inno Setup when it
+compiles `setup.iss`. Change the release number only when preparing a release.
 
 Reuse existing Release outputs:
 
@@ -53,6 +58,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File `
 This produces the installer EXE, a portable x64 ZIP, and `SHA256SUMS.txt`.
 Both Windows artifacts include a generated `THIRD_PARTY_LICENSES` bundle from
 the exact vcpkg and NuGet runtime dependency closure used by the build.
+The installer and staged GUI/server executables must also carry the same
+Windows file version as `VERSION`; packaging rejects a stale Release binary.
 
 For a tagged public release, pushing a `v*` tag runs the manual-capable
 `Build Windows release artifacts` GitHub workflow. It executes this same build
@@ -124,8 +131,13 @@ The server working directory is the `server` folder, so the web UI must be under
 - Creates Start Menu and optional Desktop shortcuts with the app icon.
 - Optionally adds private/local-subnet Windows Firewall rules for the server
   executable: inbound TCP transfers and UDP discovery on port `45892`.
-- Preserves `%LOCALAPPDATA%\LocalMediaTransfer` on uninstall unless the user
-  explicitly chooses to delete settings, logs, history, and benchmark data.
+- Shows the app icon in the wizard and identifies the installer version in
+  Windows file properties.
+- Preserves uploaded files and `%LOCALAPPDATA%\LocalMediaTransfer` on uninstall.
+  The app owns per-user settings and creates that directory when needed. An
+  elevated uninstaller cannot safely identify every account whose data should
+  be deleted; users may remove their own local settings, logs, history, and
+  benchmark data separately after closing the app.
 
 ## Troubleshooting
 

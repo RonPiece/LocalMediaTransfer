@@ -549,6 +549,11 @@ test('manager speed sum expires without queue scans and recovers with epoch acco
         assert.equal(manager.getCurrentSpeedForDisplay(), 0);
         assert.equal(manager.activeSpeedSum, 0);
 
+        manager.displaySpeedEMA = 100;
+        now += 2500;
+        assert.equal(manager.getCurrentSpeedForDisplay(), 0);
+        assert.equal(manager.displaySpeedEMA, 0);
+
         manager.lastProgressTs = now;
         manager.updateFileSpeed(file, 50);
         assert.equal(manager.getCurrentSpeedForDisplay(), 50);

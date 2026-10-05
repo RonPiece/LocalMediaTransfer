@@ -55,6 +55,24 @@ function Assert-NoPdbFiles {
     }
 }
 
+function Assert-ExecutableVersion {
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][string]$Description,
+        [Parameter(Mandatory)][string]$ExpectedVersion
+    )
+
+    Assert-File -Path $Path -Description $Description
+    $versionInfo = (Get-Item -LiteralPath $Path).VersionInfo
+    $actual = [Version]::new($versionInfo.FileMajorPart,
+        $versionInfo.FileMinorPart, $versionInfo.FileBuildPart,
+        $versionInfo.FilePrivatePart)
+    $expected = [Version]("$ExpectedVersion.0")
+    if ($actual -ne $expected) {
+        throw "$Description version $actual does not match VERSION $ExpectedVersion."
+    }
+}
+
 function Test-LicenseManifest {
     param([Parameter(Mandatory)][string]$ApplicationRoot)
 
@@ -131,6 +149,7 @@ $checksumsPath = Join-Path $ArtifactsDirectory "SHA256SUMS.txt"
 Assert-File -Path $installerPath -Description "Windows installer"
 Assert-File -Path $portablePath -Description "Portable ZIP"
 Assert-File -Path $checksumsPath -Description "Release checksum file"
+Assert-ExecutableVersion -Path $installerPath -Description "Windows installer" -ExpectedVersion $Version
 
 $checksumEntries = @{}
 foreach ($line in @(Get-Content -LiteralPath $checksumsPath)) {
@@ -163,6 +182,10 @@ foreach ($name in $expectedNames) {
 
 Assert-NoPdbFiles -Root $StagingDirectory -Description "Installer staging tree"
 Test-LicenseManifest -ApplicationRoot $StagingDirectory
+Assert-ExecutableVersion -Path (Join-Path $StagingDirectory "LocalMediaTransfer.GUI.exe") `
+    -Description "Staged GUI executable" -ExpectedVersion $Version
+Assert-ExecutableVersion -Path (Join-Path $StagingDirectory "server\LocalMediaTransferServer.exe") `
+    -Description "Staged server executable" -ExpectedVersion $Version
 
 $temporaryRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).
     TrimEnd([IO.Path]::DirectorySeparatorChar)
@@ -183,6 +206,10 @@ try {
         -Description "Portable GUI executable"
     Assert-File -Path (Join-Path $resolvedExtractRoot "server\LocalMediaTransferServer.exe") `
         -Description "Portable server executable"
+    Assert-ExecutableVersion -Path (Join-Path $resolvedExtractRoot "LocalMediaTransfer.GUI.exe") `
+        -Description "Portable GUI executable" -ExpectedVersion $Version
+    Assert-ExecutableVersion -Path (Join-Path $resolvedExtractRoot "server\LocalMediaTransferServer.exe") `
+        -Description "Portable server executable" -ExpectedVersion $Version
     Assert-NoPdbFiles -Root $resolvedExtractRoot -Description "Portable ZIP"
     Test-LicenseManifest -ApplicationRoot $resolvedExtractRoot
 }
@@ -192,4 +219,4 @@ finally {
     }
 }
 
-Write-Host "Verified release checksums, ZIP extraction, license manifests, and PDB exclusion." -ForegroundColor Green
+Write-Host "Verified release checksums, executable versions, ZIP extraction, license manifests, and PDB exclusion." -ForegroundColor Green

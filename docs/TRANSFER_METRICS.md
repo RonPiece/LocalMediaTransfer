@@ -9,6 +9,7 @@ Application-facing transfer rates use decimal megabytes per second:
 Do not label a binary `1,048,576 bytes` calculation as MB/s. Developer
 benchmarks must state their unit explicitly and remain separate from normal app
 telemetry.
+Visible file sizes use decimal MB and GB as well.
 
 ## User-facing contract
 
@@ -33,9 +34,13 @@ telemetry.
   smooths the raw estimate with a time-based EWMA using a 5-second half-life.
   It may rise after a sustained slowdown; forcing a monotonic countdown would
   be misleading.
-- A rate sample becomes stale after
+- An iPhone acknowledged-rate sample becomes stale after
   `clamp(2 * 8 MiB / currentBytesPerSecond, 5s, 30s)`. While stale, ETA returns
-  to `Calculating…` and recovers after acknowledgements resume.
+  to `Calculating…`, the live speed shows zero, and both recover after
+  acknowledgements resume. The receiver applies the same freshness window to
+  reported client rates. Each named-pipe speed message carries its remaining
+  freshness time so the Activity page can expire the rate without a new upload
+  event. Missing receiver speed is shown as `Unavailable`.
 - ETA is published to React once per second and only changes when its formatted
   bucket changes: `Calculating…`, `Finishing…`, `A few seconds`, rounded
   `About Ns`, `About N min`, `About N hr`, `Over 1 day`, or `Done`.
@@ -52,6 +57,19 @@ telemetry.
   replaceable metrics and snapshot messages are coalesced, capacity is
   reserved for important lifecycle messages, and best-effort logs may be
   dropped if the GUI falls behind.
+- Native Windows outbound progress and telemetry count successful chunk
+  responses. Its current rate uses the same five-second acknowledged-media
+  window and adaptive freshness rule as iOS. The sender samples the latest
+  rate once per second while active so its own display expires on a stall.
+  It reports through the
+  existing trusted-device credential after approval; its telemetry does not
+  grant upload access.
+- Browser live rate uses XHR request-body progress (bytes sent by the browser),
+  then smooths and reports that value. It can lead receiver acknowledgement
+  during buffering, retries, or slow disk writes. Browser and native rates keep
+  their distinct, useful semantics rather than claiming equivalent measurements.
+  Its display smoothing decays after two seconds without progress and reaches
+  an exact zero after five seconds, which is also reported to the receiver.
 - Before iOS streaming upload begins, the preparation ring represents analyzed
   Photos assets divided by selected Photos assets. While preparation and upload
   overlap, two compact rows keep asset analysis and transfer activity separate;
@@ -71,9 +89,19 @@ telemetry.
 - Every transfer creates a fresh session ID. `/client_log` starts and ends that
   session, and `/client_metrics` includes the same ID. The server rejects a
   delayed sample or completion from an older session.
-- Live speed has one source: the session-scoped client acknowledgement tracker.
-  If that telemetry is missing or stale, Windows displays `Unavailable`; the
-  server does not substitute a differently calculated rate.
+- Receiver live speed has one source: active clients' reported rates. The
+  server does not substitute its own write rate. If telemetry is missing or
+  stale, Windows displays `Unavailable`; the Activity graph has a gap rather
+  than a false zero. The graph samples pushed state once per wall-clock second
+  and covers the latest 30 seconds, so bursts of messages do not distort time.
+  Concurrent senders retain independent rate leases. Activity sums only fresh
+  components, and a sender ending cannot erase a still-active peer's rate.
+  Because browser and native clients measure different stages of the transfer,
+  a mixed-source sum is an approximate activity rate, not a receiver-ingress
+  counter.
+  The GUI pipe client retains the latest authenticated snapshot for Activity
+  navigation without resetting its original freshness clock; disconnect clears
+  that snapshot.
 - Ending a session immediately publishes `0 MB/s` and inactive state while
   retaining average and peak in persisted transfer history.
 - Exported iOS diagnostic schema `6` keeps performance investigation separate

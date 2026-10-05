@@ -62,15 +62,41 @@ namespace LocalMediaTransfer.GUI.Services
             : "Not connected yet";
     }
 
+    public sealed record SpeedComponentData(double SpeedMBps, int FreshForMs);
+    public sealed record MetricsSnapshot(MetricsData Metrics, DateTimeOffset ReceivedAt);
+
     /// <summary>Real-time metrics from the C++ server.</summary>
     public sealed class MetricsData
     {
         public double SpeedMBps { get; set; }
         public bool SpeedAvailable { get; set; }
+        public int SpeedFreshForMs { get; set; }
+        public IReadOnlyList<SpeedComponentData>? RateComponents { get; set; }
         public int FilesTransferred { get; set; }
         public long TotalBytes { get; set; }
         public long DurationSeconds { get; set; }
         public bool IsActive { get; set; }
+
+        public double? FreshSpeedAt(DateTimeOffset receivedAt, DateTimeOffset now)
+        {
+            if (!SpeedAvailable || !IsActive || now < receivedAt) return null;
+            TimeSpan age = now - receivedAt;
+            if (RateComponents is { } components)
+            {
+                double total = 0;
+                bool hasFreshComponent = false;
+                foreach (SpeedComponentData component in components)
+                {
+                    if (component.FreshForMs <= 0 ||
+                        age >= TimeSpan.FromMilliseconds(component.FreshForMs)) continue;
+                    total += component.SpeedMBps;
+                    hasFreshComponent = true;
+                }
+                return hasFreshComponent ? total : null;
+            }
+            return SpeedFreshForMs > 0 && age < TimeSpan.FromMilliseconds(SpeedFreshForMs)
+                ? SpeedMBps : null;
+        }
     }
 
     /// <summary>Log entry from the C++ server.</summary>

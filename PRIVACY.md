@@ -32,8 +32,10 @@ only when the user follows a link.
 - Uploaded files remain until the user deletes them.
 - Transfer history retains the latest configured sessions and can be cleared
   from Settings.
-- Uninstall can optionally delete LocalAppData settings, logs, history, and
-  benchmark data.
+- Uninstall removes program files and preserves uploaded media and per-user
+  LocalAppData. After closing the app, a user may separately remove their own
+  `%LOCALAPPDATA%\LocalMediaTransfer` folder to erase local settings, saved
+  credentials, logs, history, and benchmark data.
 - The duplicate index is stored under the upload directory's
   `Local Media Transfer Data` folder and can be rebuilt by the server. Existing
   `_dont_delete` folders are migrated locally during startup.

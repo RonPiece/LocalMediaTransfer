@@ -297,11 +297,20 @@ void PipeServer::stop() {
 }
 
 void PipeServer::sendMetrics(const lmt::RealtimeMetrics& metrics) {
+    json rateComponents = json::array();
+    for (const auto& component : metrics.rateComponents) {
+        rateComponents.push_back({
+            {"speedMBps", component.speedMBps},
+            {"freshForMs", component.freshForMs}
+        });
+    }
     json msg = {
         {"type", "metrics"},
         {"data", {
             {"speedMBps", metrics.currentSpeedMBps},
             {"speedAvailable", metrics.speedAvailable},
+            {"speedFreshForMs", metrics.speedFreshForMs},
+            {"rateComponents", rateComponents},
             {"filesTransferred", metrics.filesTransferred},
             {"totalBytes", metrics.totalBytes},
             {"durationSeconds", metrics.sessionDurationSeconds},

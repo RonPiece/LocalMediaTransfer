@@ -1,8 +1,26 @@
 # Release process
 
-`VERSION` is the source of truth for the Windows GUI, C++ server, iPhone app,
-installer, and benchmark client. Product releases use Semantic Versioning in
-`MAJOR.MINOR.PATCH` form.
+`VERSION` is the single source of truth for the Windows GUI, C++ server,
+iPhone app, installer, and benchmark client. Product releases use Semantic
+Versioning in `MAJOR.MINOR.PATCH` form. Static manifests in several toolchains
+must contain a copy; `scripts/set-version.ps1` updates them together, and
+repository validation rejects drift. The installer takes its version directly
+from `VERSION` at build time and places it in its filename and Windows file
+properties.
+
+| Identifier | Purpose | When to change it |
+|---|---|---|
+| `VERSION` | User-visible product release number across desktop, server, iPhone, installer, and benchmark client | When preparing a new product release |
+| Git commit | Identifies exact development source and built artifacts | Every commit; no product version bump required |
+| `vMAJOR.MINOR.PATCH` tag, `CHANGELOG.md`, GitHub Release | Identifies and describes a published product release | Once the candidate is accepted |
+| iOS `CFBundleVersion` build number | Distinguishes iPhone builds with the same product version | Increment before distributing another build when the distribution channel requires it |
+| Protocol, pairing, database, and diagnostic schema versions | Select compatibility and storage formats | Only when their own contracts change |
+
+`VERSION` may therefore remain `2.0.0` on commits after the `v2.0.0` tag. Those
+commits are development work until a later version is prepared, tested, tagged,
+and published. A local tag alone does not establish that a GitHub Release or
+downloadable binary was published. Do not rewrite the existing tag just to
+relabel later fixes.
 
 The initial public release is `2.0.0`. After it is released:
 
@@ -20,6 +38,10 @@ own compatibility rules require it.
 From the repository root, run:
 
 ```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File `
+  .\scripts\set-version.ps1 `
+  -Status
+
 powershell -NoProfile -ExecutionPolicy Bypass -File `
   .\scripts\set-version.ps1 `
   -Version "2.0.1"
@@ -59,10 +81,12 @@ new version. On release day, use the UTC date in `YYYY-MM-DD` format.
    ```
 
    This creates the installer EXE, portable x64 ZIP, and `SHA256SUMS.txt` under
-   `tools\LocalMediaTransfer.InnoSetup\output`. Both binaries contain the
-   generated license bundle for the exact native, NuGet, and browser runtime
-   closure. Review that bundle before publishing and independently recompute
-   both SHA-256 hashes before upload.
+   `tools\LocalMediaTransfer.InnoSetup\output`. Packaging checks that the
+   installer's Windows file version and the staged GUI/server file versions
+   match `VERSION`. Both artifacts contain the generated license bundle for
+   the exact native, NuGet, and browser runtime closure. Review that bundle
+   before publishing and independently recompute both SHA-256 hashes before
+   upload.
 
 4. Commit the release preparation, merge it into `main`, and push `main`.
 5. Confirm the unsigned iOS PR workflow passed for the candidate. Windows cannot

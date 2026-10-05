@@ -14,6 +14,9 @@ namespace LocalMediaTransfer.GUI.Features.Dashboard
     {
         public ObservableCollection<ObservableValue> SpeedValues { get; } = new();
         public ObservableCollection<TransferHistoryItem> RecentTransfers { get; } = new();
+        private MetricsData? _latestMetrics;
+        private DateTimeOffset _metricsReceivedAt;
+        private long _lastGraphSecond = -1;
 
         private string _connectionUrl = "No active browser link.";
         public string ConnectionUrl
@@ -70,14 +73,14 @@ namespace LocalMediaTransfer.GUI.Features.Dashboard
             set => SetProperty(ref _selectedConnectionModeIndex, value);
         }
 
-        private string _currentSpeed = "0";
+        private string _currentSpeed = "\u2014";
         public string CurrentSpeed
         {
             get => _currentSpeed;
             set => SetProperty(ref _currentSpeed, value);
         }
 
-        private string _currentSpeedUnit = "MB/s";
+        private string _currentSpeedUnit = "Unavailable";
         public string CurrentSpeedUnit
         {
             get => _currentSpeedUnit;
@@ -109,7 +112,7 @@ namespace LocalMediaTransfer.GUI.Features.Dashboard
         {
             for (int i = 0; i < 30; i++)
             {
-                SpeedValues.Add(new ObservableValue(0));
+                SpeedValues.Add(new ObservableValue(null));
             }
         }
 
@@ -289,19 +292,51 @@ namespace LocalMediaTransfer.GUI.Features.Dashboard
             }
         }
 
-        public void ApplyMetrics(MetricsData metrics)
+        public void ApplyMetrics(MetricsData metrics, DateTimeOffset receivedAt)
         {
-            if (SpeedValues.Count > 0)
-            {
-                SpeedValues.RemoveAt(0);
-            }
-
-            SpeedValues.Add(new ObservableValue(metrics.SpeedAvailable ? metrics.SpeedMBps : 0));
-            CurrentSpeed = metrics.SpeedAvailable ? metrics.SpeedMBps.ToString("F1") : "\u2014";
-            CurrentSpeedUnit = metrics.SpeedAvailable ? "MB/s" : "Unavailable";
+            if (receivedAt < _metricsReceivedAt) return;
+            _latestMetrics = metrics;
+            _metricsReceivedAt = receivedAt;
+            UpdateSpeed(DateTimeOffset.UtcNow);
             FileCount = metrics.FilesTransferred.ToString();
-            TotalSizeGb = (metrics.TotalBytes / (1024.0 * 1024.0 * 1024.0)).ToString("F2");
+            TotalSizeGb = (metrics.TotalBytes / 1_000_000_000.0).ToString("F2");
             SessionDuration = TimeSpan.FromSeconds(metrics.DurationSeconds).ToString(@"hh\:mm\:ss");
+        }
+
+        public void ClearLiveSpeed()
+        {
+            _latestMetrics = null;
+            UpdateSpeed(DateTimeOffset.UtcNow);
+        }
+
+        /// <summary>Sample latest pushed state once per wall-clock second, including idle gaps.</summary>
+        public void SampleGraph(DateTimeOffset now)
+        {
+            long second = now.ToUnixTimeSeconds();
+            if (_lastGraphSecond >= second) return;
+            long first = _lastGraphSecond < 0 ? second : Math.Max(_lastGraphSecond + 1, second - 29);
+            for (long slot = first; slot <= second; slot++)
+            {
+                DateTimeOffset sampledAt = slot == second ? now :
+                    DateTimeOffset.FromUnixTimeSeconds(slot + 1);
+                double? speed = FreshSpeed(sampledAt);
+                SpeedValues.RemoveAt(0);
+                SpeedValues.Add(new ObservableValue(speed));
+            }
+            _lastGraphSecond = second;
+            UpdateSpeed(now);
+        }
+
+        private double? FreshSpeed(DateTimeOffset now)
+        {
+            return _latestMetrics?.FreshSpeedAt(_metricsReceivedAt, now);
+        }
+
+        private void UpdateSpeed(DateTimeOffset now)
+        {
+            double? speed = FreshSpeed(now);
+            CurrentSpeed = speed?.ToString("F1") ?? "\u2014";
+            CurrentSpeedUnit = speed.HasValue ? "MB/s" : "Unavailable";
         }
     }
 }

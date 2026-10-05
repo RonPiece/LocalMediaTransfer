@@ -1,4 +1,5 @@
 using System.Net;
+using System.Diagnostics;
 using System.Text;
 using LocalMediaTransfer.WindowsClient;
 
@@ -18,6 +19,8 @@ var tests = new (string Name, Func<Task> Run)[]
     ("pinned TLS trickling body cancels", () => PinnedNetworkCancellation.RunAsync(true)),
     ("invalid approval identifiers are typed errors", InvalidApprovalIdentifiers),
     ("authenticated unpair request", AuthenticatedUnpairRequest),
+    ("outbound telemetry reports acknowledged speed and lifecycle", NativeTelemetryLifecycle),
+    ("slow native chunks retain rate until acknowledgement freshness expires", NativeRateFreshness),
     ("DPAPI trust persistence and corruption", TrustPersistence)
 };
 
@@ -42,6 +45,60 @@ static Task ChunkCapacity()
         "Compatibility chunk capacity is incorrect.");
     Assert(NativeTransferClient.MaximumFileBytes(16 * 1024 * 1024) == 100L * 1024 * 1024 * 1024,
         "Server byte limit must also apply.");
+    return Task.CompletedTask;
+}
+
+static async Task NativeTelemetryLifecycle()
+{
+    var requests = new List<(string Path, string Body, string Credential)>();
+    var firstSpeed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    using var client = new HttpClient(new CallbackHandler(request =>
+    {
+        string body = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+        requests.Add((request.RequestUri!.AbsolutePath, body,
+            request.Headers.GetValues("X-Upload-Token").Single()));
+        if (request.RequestUri.AbsolutePath == "/client_metrics" &&
+            body.Contains("12500000", StringComparison.Ordinal)) firstSpeed.TrySetResult();
+        return new HttpResponseMessage(HttpStatusCode.Accepted);
+    })) { BaseAddress = new Uri("https://127.0.0.1:8443") };
+    var telemetry = new NativeTransferTelemetry(client, "trusted-device", "win-session");
+    await telemetry.StartAsync();
+    telemetry.RecordCurrentMediaRate(12.5);
+    await firstSpeed.Task.WaitAsync(TimeSpan.FromSeconds(2));
+    await telemetry.FinishAsync("transfer_completed");
+
+    Assert(requests.Count >= 4, "Telemetry omitted a lifecycle or speed message.");
+    Assert(requests.All(request => request.Credential == "trusted-device"),
+        "Telemetry did not use the existing trusted-device credential.");
+    Assert(requests[0].Path == "/client_log" &&
+        requests[0].Body.Contains("transfer_started", StringComparison.Ordinal),
+        "Telemetry did not begin the receiver session.");
+    Assert(requests.Any(request => request.Path == "/client_metrics" &&
+        request.Body.Contains("12500000", StringComparison.Ordinal)),
+        "Telemetry did not report the acknowledged decimal byte rate.");
+    Assert(requests[^2].Path == "/client_metrics" &&
+        requests[^2].Body.Contains("\"bytesPerSecond\":0", StringComparison.Ordinal),
+        "Telemetry did not clear the receiver speed.");
+    Assert(requests[^1].Path == "/client_log" &&
+        requests[^1].Body.Contains("transfer_completed", StringComparison.Ordinal),
+        "Telemetry did not end the receiver session.");
+}
+
+static Task NativeRateFreshness()
+{
+    const long origin = 1_000_000;
+    static long At(double seconds) => origin + (long)(seconds * Stopwatch.Frequency);
+    var rate = new NativeTransferRateTracker(At(0));
+    rate.Acknowledge(1_000_000, At(1));
+    Assert(Math.Abs(rate.CurrentMBps(At(2)) - 1.0) < 0.01,
+        "First acknowledged chunk did not establish a decimal media rate.");
+    Assert(rate.CurrentMBps(At(6)) > 0,
+        "A slow chunk was shown as stalled after only five seconds.");
+    rate.Acknowledge(8 * 1024 * 1024, At(9));
+    Assert(Math.Abs(rate.CurrentMBps(At(10)) - 1.6777216) < 0.01,
+        "A sparse acknowledgement did not use the five-second rolling media window.");
+    Assert(rate.CurrentMBps(At(18)) > 0 && rate.CurrentMBps(At(20)) == 0,
+        "A slow acknowledged rate did not expire on its adaptive lease.");
     return Task.CompletedTask;
 }
 

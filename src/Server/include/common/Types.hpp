@@ -9,6 +9,7 @@
 #include <string>
 #include <chrono>
 #include <cstdint>
+#include <vector>
 
 namespace lmt {
 
@@ -49,9 +50,16 @@ struct SessionStats {
 /**
  * Real-time metrics (sent to GUI via Named Pipe)
  */
+  struct RealtimeRateComponent {
+      double speedMBps = 0.0;
+      uint32_t freshForMs = 0;
+  };
+
   struct RealtimeMetrics {
       double currentSpeedMBps = 0.0;
       bool speedAvailable = false;
+      uint32_t speedFreshForMs = 0;
+      std::vector<RealtimeRateComponent> rateComponents;
       uint64_t filesTransferred = 0;
     uint64_t totalBytes = 0;
     uint64_t sessionDurationSeconds = 0;

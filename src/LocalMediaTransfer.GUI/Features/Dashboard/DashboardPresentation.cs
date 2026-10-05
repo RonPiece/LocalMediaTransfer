@@ -18,12 +18,12 @@ namespace LocalMediaTransfer.GUI.Features.Dashboard
 
         public static string FormatBytes(long bytes)
         {
-            if (bytes >= 1024L * 1024 * 1024)
+            if (bytes >= 1_000_000_000L)
             {
-                return $"{bytes / (1024.0 * 1024 * 1024):F2} GB";
+                return $"{bytes / 1_000_000_000.0:F2} GB";
             }
 
-            return $"{bytes / (1024.0 * 1024):F1} MB";
+            return $"{bytes / 1_000_000.0:F1} MB";
         }
 
         public static IReadOnlyList<TransferHistoryItem> ToTransferItems(

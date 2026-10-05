@@ -47,9 +47,14 @@ namespace LocalMediaTransfer.GUI.Services
                         {
                             SpeedMBps = PipeValueValidator.NonNegativeFinite(
                                 data.GetProperty("speedMBps").GetDouble(),
-                                1_000_000,
+                                4_000_000,
                                 "speedMBps"),
                             SpeedAvailable = !data.TryGetProperty("speedAvailable", out JsonElement available) || available.GetBoolean(),
+                            SpeedFreshForMs = data.TryGetProperty("speedFreshForMs", out JsonElement freshness)
+                                ? PipeValueValidator.NonNegativeInt(freshness.GetInt32(), 30000, "speedFreshForMs")
+                                : 2000,
+                            RateComponents = data.TryGetProperty("rateComponents", out JsonElement components)
+                                ? ParseRateComponents(components) : null,
                             FilesTransferred = PipeValueValidator.NonNegativeInt(
                                 data.GetProperty("filesTransferred").GetInt32(),
                                 10_000_000,
@@ -144,6 +149,21 @@ namespace LocalMediaTransfer.GUI.Services
             {
                 return PipeParseResult.Ignored($"PipeClient failed to process message: {ex.Message}");
             }
+        }
+
+        private static IReadOnlyList<SpeedComponentData> ParseRateComponents(JsonElement data)
+        {
+            var result = new List<SpeedComponentData>();
+            foreach (JsonElement component in data.EnumerateArray())
+            {
+                if (result.Count >= 32) throw new JsonException("Too many live speed components.");
+                result.Add(new SpeedComponentData(
+                    PipeValueValidator.NonNegativeFinite(
+                        component.GetProperty("speedMBps").GetDouble(), 1_000_000, "speedMBps"),
+                    PipeValueValidator.NonNegativeInt(
+                        component.GetProperty("freshForMs").GetInt32(), 30000, "freshForMs")));
+            }
+            return result;
         }
 
         private static IReadOnlyList<TransferHistoryData> ParseTransferHistory(JsonElement data)

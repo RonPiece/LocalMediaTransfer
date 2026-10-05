@@ -1,4 +1,9 @@
-import { groupFailureResults } from './transferPresentation';
+import { formatBytes, groupFailureResults } from './transferPresentation';
+
+it('formats transfer sizes with decimal MB and GB', () => {
+  expect(formatBytes(1_000_000)).toBe('1.0 MB');
+  expect(formatBytes(1_000_000_000)).toBe('1.0 GB');
+});
 
 describe('groupFailureResults', () => {
   it('groups repeated failures by actionable reason and keeps bounded examples', () => {

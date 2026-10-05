@@ -10,6 +10,7 @@
 #include <vector>
 #include <mutex>
 #include <deque>
+#include <unordered_map>
 
 #include "common/Types.hpp"
 
@@ -36,8 +37,8 @@ public:
     void recordBytes(uint64_t bytes);
 
     /**
-     * Record the browser's upload-progress speed so the web UI and desktop GUI
-     * display the same live measurement.
+     * Record the active client's reported live rate. Native clients report
+     * acknowledged media bytes; browsers report XHR sent bytes.
      */
     bool recordClientSpeed(double bytesPerSecond, const std::string& sessionId = {});
     
@@ -61,9 +62,7 @@ private:
     mutable std::mutex m_mutex;
     
     // Session state
-    bool m_sessionActive = false;
     bool m_hasTransferStarted = false;
-    std::string m_sessionId;
     std::string m_clientIp;
     std::chrono::steady_clock::time_point m_sessionStart;
     std::chrono::steady_clock::time_point m_sessionEnd;
@@ -73,11 +72,16 @@ private:
     uint64_t m_totalBytes = 0;
     uint64_t m_filesTransferred = 0;
     
-    // Live speed has one source: session-scoped client acknowledgements.
-    double m_clientSpeedMBps = 0.0;
+    struct ClientRate {
+        double speedMBps = 0.0;
+        bool hasSample = false;
+        std::chrono::steady_clock::time_point startedAt;
+        std::chrono::steady_clock::time_point receivedAt;
+    };
+
+    // Each active sender owns its own latest sample and freshness lease.
+    std::unordered_map<std::string, ClientRate> m_activeSessions;
     double m_peakSpeedMBps = 0.0;
-    bool m_hasClientSpeed = false;
-    std::chrono::steady_clock::time_point m_lastClientSpeedUpdate;
     
     // History for graph (every second, last 5 minutes)
     std::deque<std::pair<int64_t, double>> m_speedHistory;

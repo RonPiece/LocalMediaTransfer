@@ -31,7 +31,7 @@ window.Utils = {
     // Format bytes with units
     formatBytes(bytes) {
         if (bytes === 0) return '0 B';
-        const k = 1024, dm = 2;
+        const k = 1000, dm = 2;
         const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
         const i = Math.floor(Math.log(bytes) / Math.log(k));
         return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
@@ -40,7 +40,7 @@ window.Utils = {
     // Format speed with units
     formatSpeed(bytesPerSec) {
         if (!bytesPerSec || bytesPerSec <= 0) return '0 B/s';
-        const k = 1024, dm = 2;
+        const k = 1000, dm = 2;
         const sizes = ['B/s', 'KB/s', 'MB/s', 'GB/s'];
         const i = Math.floor(Math.log(bytesPerSec) / Math.log(k));
         return parseFloat((bytesPerSec / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];

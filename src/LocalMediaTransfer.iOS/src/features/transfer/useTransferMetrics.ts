@@ -1,5 +1,6 @@
 import React from 'react';
 import { GlobalProgress, UploadSummary } from '@/services/upload/types';
+import { isRateFresh } from '@/services/upload/rateFreshness';
 import { formatTransferEta, TransferEtaEstimator } from './TransferEtaEstimator';
 
 /** Owns coalesced metrics and ETA; progress events never trigger a render directly. */
@@ -29,7 +30,8 @@ export function useTransferMetrics() {
       if (!isActive()) return;
       const progress = latest.current;
       setState(previous => ({
-        currentMediaMBps: progress ? progress.currentMediaMBps || 0 : previous.currentMediaMBps,
+        currentMediaMBps: progress && isRateFresh(progress.rateSampledAt,
+          progress.currentMediaMBps, Date.now()) ? progress.currentMediaMBps : 0,
         averageMediaMBps: progress ? progress.averageMediaMBps || 0 : previous.averageMediaMBps,
         peakMediaMBps: progress ? progress.peakMediaMBps || 0 : previous.peakMediaMBps,
         elapsedSeconds: Math.max(0, Math.floor((Date.now() - (startedAt.current ?? Date.now())) / 1000)),

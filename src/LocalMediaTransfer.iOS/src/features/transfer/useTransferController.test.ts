@@ -79,6 +79,9 @@ describe('useTransferController', () => {
     act(() => jest.advanceTimersByTime(900));
     expect(result.current.currentMediaMBps).toBe(50);
     expect(result.current.averageMediaMBps).toBe(25);
+    act(() => jest.advanceTimersByTime(5000));
+    expect(result.current.currentMediaMBps).toBe(0);
+    expect(result.current.averageMediaMBps).toBe(25);
     unmount();
   });
 

@@ -21,6 +21,8 @@ namespace LocalMediaTransfer.GUI.Services
             _pendingCommands = new();
         private bool _disposed;
         private long _browserLinkConsumptionVersion;
+        private readonly object _metricsGate = new();
+        private MetricsSnapshot? _latestMetrics;
 
         public PipeClient(
             string pipeName = PipeName,
@@ -48,6 +50,7 @@ namespace LocalMediaTransfer.GUI.Services
             {
                 if (!connected)
                 {
+                    lock (_metricsGate) _latestMetrics = null;
                     FailPendingCommands("The authenticated server connection was lost.");
                 }
                 ConnectionChanged?.Invoke(connected);
@@ -55,7 +58,7 @@ namespace LocalMediaTransfer.GUI.Services
             _connectionLoop.DiagnosticLog += message => DiagnosticLog?.Invoke(message);
         }
 
-        public event Action<MetricsData>? MetricsReceived;
+        public event Action<MetricsSnapshot>? MetricsReceived;
         public event Action<LogData>? LogReceived;
         public event Action<IReadOnlyList<TransferHistoryData>>? TransferHistoryReceived;
         public event Action<PairingRequestData>? PairingRequested;
@@ -69,6 +72,10 @@ namespace LocalMediaTransfer.GUI.Services
         public bool IsConnected => _connectionLoop.IsConnected;
         public long BrowserLinkConsumptionVersion =>
             Interlocked.Read(ref _browserLinkConsumptionVersion);
+        public MetricsSnapshot? LatestMetrics
+        {
+            get { lock (_metricsGate) return _latestMetrics; }
+        }
 
         public void Start()
         {
@@ -199,7 +206,10 @@ namespace LocalMediaTransfer.GUI.Services
             switch (message.Kind)
             {
                 case PipeMessageKind.Metrics:
-                    MetricsReceived?.Invoke((MetricsData)message.Payload!);
+                    var snapshot = new MetricsSnapshot(
+                        (MetricsData)message.Payload!, DateTimeOffset.UtcNow);
+                    lock (_metricsGate) _latestMetrics = snapshot;
+                    MetricsReceived?.Invoke(snapshot);
                     break;
                 case PipeMessageKind.Log:
                     LogReceived?.Invoke((LogData)message.Payload!);

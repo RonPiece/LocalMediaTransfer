@@ -1,9 +1,7 @@
 const BYTES_PER_MB = 1_000_000;
 const ETA_HALF_LIFE_MS = 5000;
 const ETA_WARMUP_MS = 5000;
-const MAX_NATIVE_PROGRESS_BYTES = 8 * 1024 * 1024;
-const MIN_STALE_MS = 5000;
-const MAX_STALE_MS = 30000;
+import { rateStaleAfterMs } from '@/services/upload/rateFreshness';
 
 export type EtaObservation = {
   acknowledgedMediaBytes: number;
@@ -17,7 +15,7 @@ export class TransferEtaEstimator {
   private lastSampleAt: number | null = null;
   private smoothedSeconds: number | null = null;
   private warmedUp = false;
-  private staleAfterMs = MIN_STALE_MS;
+  private staleAfterMs = 5000;
   private remainingBytes = 0;
 
   observe({
@@ -31,11 +29,7 @@ export class TransferEtaEstimator {
     if (this.lastSampleAt !== null && sampledAt <= this.lastSampleAt) return;
 
     const rawSeconds = this.remainingBytes / BYTES_PER_MB / currentMediaMBps;
-    const currentBytesPerSecond = currentMediaMBps * BYTES_PER_MB;
-    this.staleAfterMs = Math.max(
-      MIN_STALE_MS,
-      Math.min(MAX_STALE_MS, 2 * MAX_NATIVE_PROGRESS_BYTES / currentBytesPerSecond * 1000),
-    );
+    this.staleAfterMs = rateStaleAfterMs(currentMediaMBps);
 
     if (this.firstSampleAt === null || this.lastSampleAt === null || this.smoothedSeconds === null) {
       this.firstSampleAt = sampledAt;

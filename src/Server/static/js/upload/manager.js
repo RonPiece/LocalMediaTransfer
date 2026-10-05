@@ -241,11 +241,15 @@ window.UploadManager = {
     },
 
     getCurrentSpeedForDisplay() {
-        const hasRecentProgress = Date.now() - this.lastProgressTs <= 2000;
+        const idleMs = Date.now() - this.lastProgressTs;
+        const hasRecentProgress = idleMs <= 2000;
         if (!hasRecentProgress && this.activeSpeedSum > 0) {
             this.activeSpeedSum = 0;
             this.speedEpoch += 1;
         }
+        // The display EMA decays during a short pause, then becomes an exact
+        // zero so telemetry cannot keep reporting a tiny phantom rate.
+        if (idleMs >= 5000) this.displaySpeedEMA = 0;
         return hasRecentProgress ? this.activeSpeedSum : 0;
     },
 

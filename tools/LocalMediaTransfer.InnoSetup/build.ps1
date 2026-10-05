@@ -16,9 +16,6 @@
 .PARAMETER SkipBuild
     Reuse existing Release build output and only restage/compile the installer.
 
-.PARAMETER Version
-    Override the version used by the installer filename and metadata.
-
 .PARAMETER KeepStaging
     Keep the staging folder after a successful build for inspection.
 
@@ -28,7 +25,6 @@
 
 param(
     [switch]$SkipBuild,
-    [string]$Version,
     [switch]$KeepStaging,
     [switch]$StageOnly,
     [switch]$ReleaseArtifacts
@@ -58,6 +54,23 @@ function Assert-File {
 
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
         throw "$Description not found: $Path"
+    }
+}
+
+function Assert-ExecutableVersion {
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][string]$Description,
+        [Parameter(Mandatory)][string]$ExpectedVersion
+    )
+
+    Assert-File -Path $Path -Description $Description
+    $versionInfo = (Get-Item -LiteralPath $Path).VersionInfo
+    $actual = [Version]::new($versionInfo.FileMajorPart,
+        $versionInfo.FileMinorPart, $versionInfo.FileBuildPart,
+        $versionInfo.FilePrivatePart)
+    if ($actual -ne [Version]("$ExpectedVersion.0")) {
+        throw "$Description version $actual does not match VERSION $ExpectedVersion. Rebuild before packaging."
     }
 }
 
@@ -117,13 +130,12 @@ function Copy-WinUIResources {
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoRoot = (Resolve-Path (Join-Path $ScriptDir "..\..")).Path
 $VersionFile = Join-Path $RepoRoot "VERSION"
-if ([string]::IsNullOrWhiteSpace($Version)) {
-    Assert-File -Path $VersionFile -Description "Repository version file"
-    $Version = (Get-Content -LiteralPath $VersionFile -Raw).Trim()
-}
+Assert-File -Path $VersionFile -Description "Repository version file"
+$Version = (Get-Content -LiteralPath $VersionFile -Raw).Trim()
 if ($Version -notmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$') {
     throw "Version must use MAJOR.MINOR.PATCH numeric format, for example 2.0.1."
 }
+& (Join-Path $RepoRoot "scripts\set-version.ps1") -Check
 $OutputDir = Join-Path $ScriptDir "output"
 $StagingRoot = Join-Path $ScriptDir "staging"
 $AppStage = Join-Path $StagingRoot "app"
@@ -218,7 +230,7 @@ else {
 }
 
 $GuiExe = Join-Path $AppStage "LocalMediaTransfer.GUI.exe"
-Assert-File -Path $GuiExe -Description "Staged GUI executable"
+Assert-ExecutableVersion -Path $GuiExe -Description "Staged GUI executable" -ExpectedVersion $Version
 Copy-WinUIResources -SourceRoot $GuiReleaseRuntime -DestinationRoot $AppStage
 Assert-File -Path (Join-Path $AppStage "LocalMediaTransfer.GUI.pri") -Description "Staged WinUI PRI resource"
 Assert-File -Path (Join-Path $AppStage "MainWindow.xbf") -Description "Staged MainWindow XAML resource"
@@ -244,7 +256,8 @@ Copy-Item -LiteralPath $ThirdPartyNotices -Destination (Join-Path $AppStage "THI
 
 Write-Host "Copying server runtime files..."
 Copy-Item -Path (Join-Path $ServerBin "*") -Destination $ServerStage -Recurse -Force
-Assert-File -Path (Join-Path $ServerStage "LocalMediaTransferServer.exe") -Description "Staged server executable"
+Assert-ExecutableVersion -Path (Join-Path $ServerStage "LocalMediaTransferServer.exe") `
+    -Description "Staged server executable" -ExpectedVersion $Version
 Assert-File -Path (Join-Path $ServerStage "static\index.html") -Description "Staged web UI"
 Write-Host "OK: Server runtime staged" -ForegroundColor Green
 Write-Host ""
@@ -304,19 +317,9 @@ if (-not $IsccPath) {
 
 Write-Host "Using Inno Setup compiler: $IsccPath"
 
-$SetupContent = Get-Content -LiteralPath $SetupScript -Raw
-$SetupContent = $SetupContent -replace '#define MyAppVersion "[^"]*"', "#define MyAppVersion `"$Version`""
-$TempSetupScript = Join-Path $env:TEMP ("lmt_setup_{0}.iss" -f ([guid]::NewGuid().ToString("N")))
-
-try {
-    Set-Content -LiteralPath $TempSetupScript -Value $SetupContent -Encoding UTF8
-    & $IsccPath /D"StagingDir=$AppStage" /D"OutputDir=$OutputDir" $TempSetupScript
-    if ($LASTEXITCODE -ne 0) {
-        throw "Inno Setup compilation failed with exit code $LASTEXITCODE"
-    }
-}
-finally {
-    Remove-Item -LiteralPath $TempSetupScript -Force -ErrorAction SilentlyContinue
+& $IsccPath "/DMyAppVersion=$Version" "/DStagingDir=$AppStage" "/DOutputDir=$OutputDir" $SetupScript
+if ($LASTEXITCODE -ne 0) {
+    throw "Inno Setup compilation failed with exit code $LASTEXITCODE"
 }
 
 $OutputExe = Join-Path $OutputDir "LocalMediaTransfer-Setup-$Version-x64.exe"

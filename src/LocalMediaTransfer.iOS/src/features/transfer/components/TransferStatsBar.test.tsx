@@ -46,7 +46,7 @@ describe('TransferStatsBar', () => {
 
     expect(screen.getByText('188')).toBeTruthy();
     expect(screen.getByText('Transferred')).toBeTruthy();
-    expect(screen.getByText('783.3 MB')).toBeTruthy();
+    expect(screen.getByText('821.3 MB')).toBeTruthy();
     expect(screen.getByText('Speed')).toBeTruthy();
     expect(screen.getByText('MB/s')).toBeTruthy();
     expect(screen.getByText('About 40s')).toBeTruthy();

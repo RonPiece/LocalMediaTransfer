@@ -42,6 +42,7 @@ internal static class Program
         ("stopped pipe loop cannot disconnect replacement", StoppedPipeLoopCannotDisconnectReplacement),
         ("pipe reports malformed JSON", PipeReportsMalformedJson),
         ("pipe parser maps metrics message", PipeParserMapsMetricsMessage),
+        ("activity speed expires each sender independently", ActivitySpeedExpiresIndependently),
         ("pipe parser rejects malformed JSON", PipeParserRejectsMalformedJson),
         ("pipe session proof rejects tampering", PipeSessionProofRejectsTampering),
         ("acknowledged pipe commands report delivery", AcknowledgedPipeCommandsReportDelivery),
@@ -720,6 +721,9 @@ internal static class Program
             {
                 speedMBps = 12.5,
                 speedAvailable = true,
+                speedFreshForMs = 4900,
+                rateComponents = new[] { new { speedMBps = 10.0, freshForMs = 4900 },
+                    new { speedMBps = 2.5, freshForMs = 3000 } },
                 filesTransferred = 3,
                 totalBytes = 1024,
                 durationSeconds = 9,
@@ -732,8 +736,34 @@ internal static class Program
         var metrics = (MetricsData)result.Message!.Payload!;
         Assert(metrics.SpeedMBps == 12.5, "Metrics speed did not map.");
         Assert(metrics.SpeedAvailable, "Metrics availability did not map.");
+        Assert(metrics.SpeedFreshForMs == 4900 && metrics.RateComponents?.Count == 2 &&
+            metrics.RateComponents[1].SpeedMBps == 2.5,
+            "Session-scoped speed components did not map.");
         Assert(metrics.FilesTransferred == 3, "Metrics file count did not map.");
         Assert(metrics.IsActive, "Metrics active flag did not map.");
+        return Task.CompletedTask;
+    }
+
+    private static Task ActivitySpeedExpiresIndependently()
+    {
+        DateTimeOffset receivedAt = DateTimeOffset.UtcNow;
+        var metrics = new MetricsData
+        {
+            IsActive = true, SpeedAvailable = true, SpeedMBps = 12.5,
+            RateComponents = [new(10, 5000), new(2.5, 3000)]
+        };
+        Assert(metrics.FreshSpeedAt(receivedAt, receivedAt.AddMilliseconds(2999)) == 12.5,
+            "Activity lost a fresh sender rate.");
+        Assert(metrics.FreshSpeedAt(receivedAt, receivedAt.AddMilliseconds(3000)) == 10,
+            "Activity kept an expired peer rate.");
+        Assert(metrics.FreshSpeedAt(receivedAt, receivedAt.AddMilliseconds(5000)) is null,
+            "Activity kept a stale speed when all senders stopped.");
+        metrics.RateComponents = [new(0, 5000)];
+        Assert(metrics.FreshSpeedAt(receivedAt, receivedAt.AddSeconds(1)) == 0,
+            "An explicit zero sample was treated as unavailable.");
+        metrics.IsActive = false;
+        Assert(metrics.FreshSpeedAt(receivedAt, receivedAt) is null,
+            "An inactive receiver displayed a live speed.");
         return Task.CompletedTask;
     }
 
@@ -813,9 +843,11 @@ internal static class Program
         Assert(items[0].Title == "2 files", "Dashboard transfer title is wrong.");
         Assert(items[0].Outcome == "1 uploaded · 1 skipped · 0 failed", "Dashboard outcome text is wrong.");
         Assert(
-            items[0].ContentBreakdown == "1.0 MB selected media · +1.0 MB in 1 additional component · 2.0 MB total content",
+            items[0].ContentBreakdown == "1.0 MB selected media · +1.0 MB in 1 additional component · 2.1 MB total content",
             "Dashboard content breakdown is wrong.");
         Assert(items[0].UploadedSize == "1.0 MB", "Dashboard uploaded-size formatting is wrong.");
+        Assert(DashboardPresentation.FormatBytes(1_000_000_000) == "1.00 GB",
+            "Dashboard gigabyte labels must use decimal units.");
         Assert(items[0].AverageSpeed == "Average 12.3 MB/s", "Dashboard average speed formatting is wrong.");
         Assert(items[0].PeakSpeed == "Peak 18.7 MB/s", "Dashboard peak speed formatting is wrong.");
         return Task.CompletedTask;

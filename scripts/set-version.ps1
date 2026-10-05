@@ -2,22 +2,26 @@
 param(
     [Parameter(Position = 0)]
     [string]$Version,
-    [switch]$Check
+    [switch]$Check,
+    [switch]$Status
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-if ($Check -and -not [string]::IsNullOrWhiteSpace($Version)) {
-    throw "Use either -Version to update files or -Check to verify them, not both."
+if ($Check -and $Status) {
+    throw "Use either -Check or -Status."
 }
-if (-not $Check -and [string]::IsNullOrWhiteSpace($Version)) {
-    throw "Supply -Version MAJOR.MINOR.PATCH, or use -Check."
+if (($Check -or $Status) -and -not [string]::IsNullOrWhiteSpace($Version)) {
+    throw "Use -Version to update files, or -Check/-Status to inspect them."
+}
+if (-not ($Check -or $Status) -and [string]::IsNullOrWhiteSpace($Version)) {
+    throw "Supply -Version MAJOR.MINOR.PATCH, or use -Check or -Status."
 }
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $versionFile = Join-Path $repoRoot "VERSION"
-if ($Check) {
+if ($Check -or $Status) {
     if (-not (Test-Path -LiteralPath $versionFile -PathType Leaf)) {
         throw "VERSION is missing."
     }
@@ -100,11 +104,6 @@ $rules = @(
         Replacement = '"version-string": "{VERSION}"'
     },
     @{
-        Path = "tools/LocalMediaTransfer.InnoSetup/setup.iss"
-        Pattern = '#define MyAppVersion "\d+\.\d+\.\d+"'
-        Replacement = '#define MyAppVersion "{VERSION}"'
-    },
-    @{
         Path = "tools/LocalMediaTransfer.Benchmarks/Program.cs"
         Pattern = 'private const string ProductVersion = "\d+\.\d+\.\d+";'
         Replacement = 'private const string ProductVersion = "{VERSION}";'
@@ -135,12 +134,24 @@ foreach ($rule in $rules) {
 }
 
 $drift = @($planned | Where-Object { $_.Original -ne $_.Updated })
-if ($Check) {
+if ($Check -or $Status) {
     if ($drift.Count -gt 0) {
         $paths = ($drift.RelativePath | Sort-Object -Unique) -join ", "
         throw "Product version differs from VERSION ($Version): $paths"
     }
-    Write-Host "All product version fields match VERSION ($Version)." -ForegroundColor Green
+    Write-Host "All $($rules.Count) product version fields match VERSION ($Version)." -ForegroundColor Green
+    if ($Status) {
+        Write-Host "VERSION is the release number; commits after a tag remain development changes until the next release."
+        if (Get-Command git -ErrorAction SilentlyContinue) {
+            $lastTag = (& git -C $repoRoot describe --tags --abbrev=0 --match 'v[0-9]*' 2>$null | Select-Object -First 1)
+            if ($lastTag) {
+                $commitsSinceTag = (& git -C $repoRoot rev-list --count "$lastTag..HEAD" 2>$null | Select-Object -First 1)
+                if ($commitsSinceTag -match '^\d+$') {
+                    Write-Host "Latest reachable local tag: $lastTag; commits since tag: $commitsSinceTag."
+                }
+            }
+        }
+    }
     return
 }
 

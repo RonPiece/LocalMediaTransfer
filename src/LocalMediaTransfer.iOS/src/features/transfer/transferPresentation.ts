@@ -58,8 +58,8 @@ export function formatDuration(secs: number) {
 }
 
 export function formatBytes(bytes: number) {
-  const mb = bytes / 1024 / 1024;
-  if (mb >= 1024) return `${(mb / 1024).toFixed(1)} GB`;
+  const mb = bytes / 1_000_000;
+  if (mb >= 1000) return `${(mb / 1000).toFixed(1)} GB`;
   return `${mb.toFixed(1)} MB`;
 }
 
