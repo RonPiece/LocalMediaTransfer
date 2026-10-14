@@ -37,7 +37,7 @@ jobs:
       - run: npx expo prebuild --platform android --no-install
         env:
           EXPO_PUBLIC_LMT_ENVIRONMENT: test
-      - run: ./gradlew :local-media-transfer-native:testDebugUnitTest :local-media-transfer-native:assembleDebugAndroidTest :app:assembleDebug
+      - run: ./gradlew :local-media-transfer-native:testDebugUnitTest :local-media-transfer-native:assembleDebugAndroidTest :app:assembleDebug :app:processReleaseMainManifest
         working-directory: src/LocalMediaTransfer.Mobile/android
         env:
           EXPO_PUBLIC_LMT_ENVIRONMENT: test
@@ -45,9 +45,17 @@ jobs:
         run: grep -q "applicationId 'com.ronthedev.localmediatransfer.test'" android/app/build.gradle
       - name: Check merged manifest permissions
         run: |
-          manifest=$(find android/app/build/intermediates/merged_manifests -name AndroidManifest.xml | head -n 1)
-          test -n "$manifest"
-          if grep -E 'READ_EXTERNAL_STORAGE|WRITE_EXTERNAL_STORAGE|READ_MEDIA_(IMAGES|VIDEO|AUDIO|VISUAL_USER_SELECTED)|ACCESS_MEDIA_LOCATION|RECORD_AUDIO|requestLegacyExternalStorage' "$manifest"; then
-            echo 'Broad media or audio permission found in merged manifest' >&2
+          debug_manifest=$(find android/app/build/intermediates/merged_manifests/debug -name AndroidManifest.xml | head -n 1)
+          release_manifest=$(find android/app/build/intermediates/merged_manifest/release -name AndroidManifest.xml | head -n 1)
+          test -s "$debug_manifest"
+          test -s "$release_manifest"
+          for manifest in "$debug_manifest" "$release_manifest"; do
+            if grep -E 'READ_EXTERNAL_STORAGE|WRITE_EXTERNAL_STORAGE|READ_MEDIA_(IMAGES|VIDEO|AUDIO|VISUAL_USER_SELECTED)|ACCESS_MEDIA_LOCATION|RECORD_AUDIO|requestLegacyExternalStorage' "$manifest"; then
+              echo 'Disallowed media or audio permission found in merged manifest' >&2
+              exit 1
+            fi
+          done
+          if grep -q 'SYSTEM_ALERT_WINDOW' "$release_manifest"; then
+            echo 'Overlay permission found in release manifest' >&2
             exit 1
           fi

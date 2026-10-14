@@ -138,11 +138,13 @@ service instrumentation tests from the generated `android` directory:
   -PreactNativeArchitectures=x86_64
 ```
 
-The `android-compile.yml` workflow runs the Android compiler and checks the
-merged manifest for broad photo, video, storage, location, and audio
-permissions. Camera access is retained for QR scanning. The Android system
+The `android-compile.yml` workflow runs the Android compiler and checks both
+debug and release merged manifests for broad photo, video, storage, location,
+and audio permissions. It also rejects Android's overlay permission in the
+release manifest. Expo's development launcher may add that permission to a
+debug build. Camera access is retained for QR scanning. The Android system
 Photo Picker is the media access model; the app does not request whole-library
-media access. Check the merged manifest on every dependency or Expo SDK update.
+media access. Check the merged manifests on every dependency or Expo SDK update.
 
 The TEST package is `com.ronthedev.localmediatransfer.test`; production is
 `com.ronthedev.localmediatransfer`. `eas.json` has an `android-test` APK profile
