@@ -130,6 +130,14 @@ cd android
 .\gradlew.bat :app:assembleDebug
 ```
 
+With the API 37 x86_64 emulator booted, run the native picker and upload
+service instrumentation tests from the generated `android` directory:
+
+```powershell
+.\gradlew.bat :local-media-transfer-native:connectedDebugAndroidTest `
+  -PreactNativeArchitectures=x86_64
+```
+
 The `android-compile.yml` workflow runs the Android compiler and checks the
 merged manifest for broad photo, video, storage, location, and audio
 permissions. Camera access is retained for QR scanning. The Android system
@@ -140,9 +148,13 @@ The TEST package is `com.ronthedev.localmediatransfer.test`; production is
 `com.ronthedev.localmediatransfer`. `eas.json` has an `android-test` APK profile
 and a production Play App Bundle profile. Keep the production package ID,
 signing identity, and increasing version code for every Play update. EAS
-remote versioning and `autoIncrement` manage production version codes once the
-first release is configured. A signed production bundle and Play internal-test
-installation still require the Android signing credentials and Play Console.
+remote versioning and `autoIncrement` manage production version codes. The
+production submit profile targets Google's `internal` track. EAS-managed upload
+signing is configured outside Git; Play internal testing still requires a Play
+Developer account and first-release setup in Play Console. Automated EAS Submit
+also requires a Google service account with Play access. Keep the upload key
+under the same EAS project for subsequent builds. Public rollout is a separate
+decision.
 
 ## Device gate before release
 
