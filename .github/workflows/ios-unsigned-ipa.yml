@@ -1,6 +1,11 @@
 name: Build unsigned iOS IPA
 
 on:
+  push:
+    branches: ['codex/**']
+    paths:
+      - 'src/LocalMediaTransfer.Mobile/**'
+      - '.github/workflows/ios-unsigned-ipa.yml'
   pull_request:
   workflow_call:
     inputs:

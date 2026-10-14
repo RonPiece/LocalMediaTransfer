@@ -1,6 +1,11 @@
 name: Android compiler and manifest
 
 on:
+  push:
+    branches: ['codex/**']
+    paths:
+      - 'src/LocalMediaTransfer.Mobile/**'
+      - '.github/workflows/android-compile.yml'
   pull_request:
     paths:
       - 'src/LocalMediaTransfer.Mobile/**'
