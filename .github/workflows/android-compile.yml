@@ -1,0 +1,48 @@
+name: Android compiler and manifest
+
+on:
+  pull_request:
+    paths:
+      - 'src/LocalMediaTransfer.Mobile/**'
+      - '.github/workflows/android-compile.yml'
+  workflow_dispatch:
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/LocalMediaTransfer.Mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: src/LocalMediaTransfer.Mobile/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm run lint
+      - run: npm test -- --runInBand
+      - run: npx expo prebuild --platform android --no-install
+        env:
+          EXPO_PUBLIC_LMT_ENVIRONMENT: test
+      - run: ./gradlew :local-media-transfer-native:testDebugUnitTest :local-media-transfer-native:assembleDebugAndroidTest :app:assembleDebug
+        working-directory: src/LocalMediaTransfer.Mobile/android
+        env:
+          EXPO_PUBLIC_LMT_ENVIRONMENT: test
+      - name: Check TEST package identity
+        run: grep -q "applicationId 'com.ronthedev.localmediatransfer.test'" android/app/build.gradle
+      - name: Check merged manifest permissions
+        run: |
+          manifest=$(find android/app/build/intermediates/merged_manifests -name AndroidManifest.xml | head -n 1)
+          test -n "$manifest"
+          if grep -E 'READ_EXTERNAL_STORAGE|WRITE_EXTERNAL_STORAGE|READ_MEDIA_(IMAGES|VIDEO|AUDIO|VISUAL_USER_SELECTED)|ACCESS_MEDIA_LOCATION|RECORD_AUDIO|requestLegacyExternalStorage' "$manifest"; then
+            echo 'Broad media or audio permission found in merged manifest' >&2
+            exit 1
+          fi

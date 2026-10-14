@@ -5,7 +5,7 @@ description: Guidelines and historical context for the Local Media Transfer iOS 
 
 # Local Media Transfer iOS Agent Guide
 
-This file contains crucial knowledge and historical fixes for the iOS React Native frontend (`src/LocalMediaTransfer.iOS`).
+This file contains crucial knowledge and historical fixes for the iOS React Native frontend (`src/LocalMediaTransfer.Mobile`).
 
 ## 1. Expo SDK 57 Baseline
 The installed TEST development client is the physical-iPhone development path,
@@ -84,7 +84,7 @@ The standard `npx expo start` command attempts to communicate with Expo's cloud 
   generic exit code 65.
 
 ## 7. Codex Windows Sandbox Limitation
-- In this repository, `npx` / Node commands from `src\LocalMediaTransfer.iOS`
+- In this repository, `npx` / Node commands from `src\LocalMediaTransfer.Mobile`
   consistently fail inside the Codex sandbox before tests start with:
   `EPERM: operation not permitted, lstat '%USERPROFILE%'`.
 - Do not first run sandboxed `npx tsc`, `npx jest`, or Expo CLI commands just

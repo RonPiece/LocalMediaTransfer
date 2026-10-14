@@ -8,6 +8,6 @@ namespace LocalMediaTransfer.GUI.Features.Settings
 
         public const string NearbyDiscoveryTitle = "Enable nearby desktop discovery?";
         public const string NearbyDiscoveryWarning =
-            "This lets the installed iOS app find this desktop on the same Wi-Fi network. Turn it on here and on the iPhone. Discovery uses credential-free UDP on port 45892; first connection still requires scanning the Windows QR and approving the iPhone.";
+            "This lets the installed mobile app find this desktop on the same Wi-Fi network. Turn it on here and on the phone. Discovery uses credential-free UDP on port 45892; first connection still requires scanning the Windows QR and approving the phone.";
     }
 }

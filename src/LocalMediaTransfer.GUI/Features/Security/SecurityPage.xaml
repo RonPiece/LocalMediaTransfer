@@ -125,7 +125,7 @@
                     CornerRadius="8" Padding="20">
                 <StackPanel Spacing="10">
                     <TextBlock Text="HTTPS server identity" FontWeight="SemiBold" />
-                    <TextBlock Text="Native iOS and Windows apps pin this certificate fingerprint. Resetting it revokes every trusted device and requires pairing again."
+                    <TextBlock Text="Native mobile and Windows apps pin this certificate fingerprint. Resetting it revokes every trusted device and requires pairing again."
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
                     <TextBlock Text="SHA-256 fingerprint" FontSize="12" />
                     <TextBox x:Name="TlsFingerprintDisplay" Text="{Binding TlsFingerprint, Mode=OneWay}" IsReadOnly="True" FontFamily="Consolas" TextWrapping="Wrap" />
@@ -149,7 +149,7 @@
                         <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                         <StackPanel>
                             <TextBlock Text="Trusted devices" FontWeight="SemiBold" />
-                            <TextBlock Text="Approved iPhones can reconnect. Trusted Windows computers still require approval for every transfer."
+                            <TextBlock Text="Approved phones can reconnect. Trusted Windows computers still require approval for every transfer."
                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
                         </StackPanel>
                         <Button Grid.Column="1" Content="Refresh" Click="RefreshDevices_Click" />
@@ -172,7 +172,7 @@
                         </ListView.ItemTemplate>
                     </ListView>
                     <ToggleSwitch x:Name="AutoApproveKnownToggle"
-                                  Header="Automatically reconnect approved iPhones"
+                                  Header="Automatically reconnect approved phones"
                                   OffContent="Ask every time" OnContent="Reconnect automatically"
                                   Toggled="AutoApproveKnown_Toggled" />
                 </StackPanel>

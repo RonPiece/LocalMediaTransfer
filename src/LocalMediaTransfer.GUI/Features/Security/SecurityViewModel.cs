@@ -148,7 +148,7 @@ namespace LocalMediaTransfer.GUI.Features.Security
             if (!await DialogService.ConfirmAsync(
                     xamlRoot,
                     "Reset HTTPS server identity?",
-                    "Every trusted iPhone and Windows computer will be revoked. Active native transfer grants will be cancelled, and all devices must pair again.",
+                    "Every trusted phone and Windows computer will be revoked. Active native transfer grants will be cancelled, and all devices must pair again.",
                     "Reset identity",
                     "Cancel"))
             {

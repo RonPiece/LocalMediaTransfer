@@ -49,7 +49,7 @@
                                Text="Version 2.0.0"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                     <TextBlock TextWrapping="WrapWholeWords"
-                               Text="Transfer photos, videos, and other files directly between devices on your local network. Send from the iPhone app or a web browser to this Windows computer without a cloud account." />
+                               Text="Transfer photos, videos, and other files directly between devices on your local network. Send from the mobile app or a web browser to this Windows computer without a cloud account." />
                 </StackPanel>
             </Border>
 
@@ -97,7 +97,7 @@
                                       Glyph="&#xE10B;"
                                       FontSize="14"
                                       Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
-                            <TextBlock Grid.Column="1" Text="iPhone app and browser-based sending options" TextWrapping="WrapWholeWords" />
+                            <TextBlock Grid.Column="1" Text="Mobile app and browser-based sending options" TextWrapping="WrapWholeWords" />
                         </Grid>
 
                         <Grid ColumnSpacing="8">

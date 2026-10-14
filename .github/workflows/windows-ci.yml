@@ -36,10 +36,10 @@ jobs:
         with:
           node-version: "24"
           cache: npm
-          cache-dependency-path: src/LocalMediaTransfer.iOS/package-lock.json
+          cache-dependency-path: src/LocalMediaTransfer.Mobile/package-lock.json
 
       - name: Install iOS JavaScript dependencies
-        working-directory: src/LocalMediaTransfer.iOS
+        working-directory: src/LocalMediaTransfer.Mobile
         run: npm ci
 
       - name: Cache NuGet packages

@@ -24,8 +24,8 @@ foreach ($property in $limits.PSObject.Properties) {
 $outputs = @{
     'src/Server/include/common/TransferLimits.hpp' = $cpp + '}'
     'src/LocalMediaTransfer.WindowsClient/TransferLimits.cs' = $cs + '}'
-    'src/LocalMediaTransfer.iOS/src/services/upload/transferLimits.ts' = $ts + '} as const;'
-    'src/LocalMediaTransfer.iOS/modules/local-media-transfer-native/ios/TransferLimits.swift' = $swift + '}'
+    'src/LocalMediaTransfer.Mobile/src/services/upload/transferLimits.ts' = $ts + '} as const;'
+    'src/LocalMediaTransfer.Mobile/modules/local-media-transfer-native/ios/TransferLimits.swift' = $swift + '}'
     'src/Server/static/js/core/transfer-limits.js' = $js + '});'
 }
 foreach ($entry in $outputs.GetEnumerator()) {

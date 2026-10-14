@@ -56,7 +56,9 @@ namespace LocalMediaTransfer.GUI.Services
         public string AuthorizationMode { get; set; } = "direct_upload";
         public string DeviceTypeText => ClientType == "windows"
             ? "Windows computer · approval required for every transfer"
-            : "iPhone · direct upload credential";
+            : ClientType == "android"
+                ? "Android phone · direct upload credential"
+                : "iPhone · direct upload credential";
         public string LastSeenText => LastSeenUnix > 0
             ? $"Last connected {DateTimeOffset.FromUnixTimeSeconds(LastSeenUnix).ToLocalTime():g}"
             : "Not connected yet";

@@ -125,7 +125,7 @@ function Invoke-Target {
             }
         }
         "ios-tests" {
-            $iosDirectory = Join-Path $repoRoot "src\LocalMediaTransfer.iOS"
+            $iosDirectory = Join-Path $repoRoot "src\LocalMediaTransfer.Mobile"
             Push-Location $iosDirectory
             try {
                 # Use the version map shipped with the locked Expo package. The

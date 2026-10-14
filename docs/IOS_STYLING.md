@@ -2,7 +2,7 @@
 
 ## Responsibility map
 
-- `src/LocalMediaTransfer.iOS/src/theme/tokens.json`: paired Light/Dark semantic
+- `src/LocalMediaTransfer.Mobile/src/theme/tokens.json`: paired Light/Dark semantic
   colors. Existing Light values are retained, except that redundant connection
   colors have been removed in favor of `success` and feature-selected tones.
 - `src/theme/index.ts`: effective appearance, active palette, reduced motion and
@@ -207,7 +207,7 @@ scroll underneath it; changing that would require a separate layout decision.
 
 ## Verification and device acceptance
 
-From `src/LocalMediaTransfer.iOS`:
+From `src/LocalMediaTransfer.Mobile`:
 
 ```powershell
 npx tsc --noEmit

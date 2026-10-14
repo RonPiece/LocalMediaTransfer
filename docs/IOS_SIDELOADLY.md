@@ -80,7 +80,7 @@ For Fast Refresh while retaining the custom Swift module:
    `LocalMediaTransfer-test-development-unsigned-ipa` artifact.
 4. Sign and install `LocalMediaTransfer-test-development-unsigned.ipa` with
    Sideloadly using the same free-signing steps above.
-5. On Windows, open PowerShell in `src\LocalMediaTransfer.iOS`. On a fresh
+5. On Windows, open PowerShell in `src\LocalMediaTransfer.Mobile`. On a fresh
    checkout, or after changing `package.json` or `package-lock.json`, install
    the locked JavaScript and TypeScript dependencies once:
 
@@ -134,7 +134,7 @@ and that a VPN is not replacing the advertised local address.
 
 ### Expo Go compatibility mode
 
-Run the Expo development server from `src\LocalMediaTransfer.iOS` with:
+Run the Expo development server from `src\LocalMediaTransfer.Mobile` with:
 
 ```powershell
 npm run start:go

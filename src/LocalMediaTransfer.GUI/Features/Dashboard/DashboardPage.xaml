@@ -91,11 +91,11 @@
                     <StackPanel Spacing="12">
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <SymbolIcon Symbol="CellPhone" />
-                            <TextBlock Text="Connect an iPhone"
+                            <TextBlock Text="Connect a phone"
                                        FontWeight="SemiBold"
                                        VerticalAlignment="Center" />
                         </StackPanel>
-                        <TextBlock Text="Open Local Media Transfer on the iPhone and scan this pairing code."
+                        <TextBlock Text="Open Local Media Transfer on your phone and scan this pairing code."
                                    TextWrapping="Wrap"
                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                         <Image x:Name="QrCodeImage"
@@ -104,8 +104,8 @@
                                MinWidth="150"
                                MinHeight="150"
                                HorizontalAlignment="Center"
-                               AutomationProperties.Name="iPhone pairing QR code" />
-                        <TextBlock Text="This code is for the installed iPhone app. Browser users need the separate one-time link."
+                               AutomationProperties.Name="Phone pairing QR code" />
+                        <TextBlock Text="This code is for the installed mobile app. Browser users need the separate one-time link."
                                    FontSize="12"
                                    TextWrapping="Wrap"
                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}" />

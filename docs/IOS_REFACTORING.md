@@ -35,7 +35,7 @@ casts. Windows JavaScript tests do not certify native/device behavior.
 
 ## Implemented boundaries
 
-Paths below are relative to `src/LocalMediaTransfer.iOS/src`.
+Paths below are relative to `src/LocalMediaTransfer.Mobile/src`.
 
 | Responsibility | Owner |
 |---|---|

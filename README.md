@@ -103,8 +103,17 @@ contains a GitHub Actions workflow that builds an unsigned IPA on macOS for
 pull requests, release verification, or a manual run;
 Sideloadly on Windows can then sign and install that IPA with a free Apple ID.
 
-- [iOS developer guide](src/LocalMediaTransfer.iOS/README.md)
+- [iOS developer guide](src/LocalMediaTransfer.Mobile/README.md)
 - [Unsigned IPA + Sideloadly guide](docs/IOS_SIDELOADLY.md)
+
+### Android development status
+
+The same Expo TypeScript app now includes an Android system picker and review
+screen, a Kotlin native bridge, receiver pairing support, and an Android build
+gate. A physical Android secure transfer, merged-manifest check, and signed
+Play internal-test bundle are still required before calling Android released.
+The project directory remains named `.iOS` until the first verified secure
+Android transfer. See the [Android implementation and release gates](docs/ANDROID_MOBILE.md).
 
 ### Expo Go and browser fallback
 
@@ -151,7 +160,7 @@ frontend, and integration tests depend on the same protocol and security model.
 
 Start with the component guide for the area you are changing:
 
-- [iOS app](src/LocalMediaTransfer.iOS/README.md)
+- [iOS app](src/LocalMediaTransfer.Mobile/README.md)
 - [Windows GUI](src/LocalMediaTransfer.GUI/README.md)
 - [C++ server](src/Server/README.md)
 - [Upload protocol](docs/UPLOAD_PROTOCOL.md)

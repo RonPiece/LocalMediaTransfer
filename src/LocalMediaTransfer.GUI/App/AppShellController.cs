@@ -182,11 +182,11 @@ namespace LocalMediaTransfer.GUI.AppServices
 
         private void OnPairingRequested(PairingRequestData request)
         {
-            QueueApproval("ios:" + request.DeviceId, async xamlRoot =>
+            QueueApproval("mobile:" + request.DeviceId, async xamlRoot =>
             {
                 bool approved = await DialogService.ConfirmAsync(
                     xamlRoot,
-                    "Allow this iPhone?",
+                    "Allow this phone?",
                     $"{request.DeviceName}\n{request.IpAddress}\n\nOnly approve a device you recognize on your private network.",
                     "Allow",
                     "Deny",
@@ -195,7 +195,7 @@ namespace LocalMediaTransfer.GUI.AppServices
                     ? await PipeClient.ApproveDeviceAcknowledgedAsync(request.DeviceId)
                     : await PipeClient.DenyDeviceAcknowledgedAsync(request.DeviceId);
                 AddNetworkLog(result.Success
-                    ? $"iPhone {(approved ? "approved" : "denied")}: {request.DeviceName} ({request.IpAddress})"
+                    ? $"Phone {(approved ? "approved" : "denied")}: {request.DeviceName} ({request.IpAddress})"
                     : "Device decision was not applied: " + result.Error);
             }, () => PipeClient.DenyDeviceAcknowledgedAsync(request.DeviceId));
         }

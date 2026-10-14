@@ -117,6 +117,9 @@ internal static class TestHarness
             string managedOrphan = Path.Combine(
                 uploadDirectory,
                 ".ios-1785139292612-159.tmp");
+            string androidManagedOrphan = Path.Combine(
+                uploadDirectory,
+                ".android-1785139292612-159.tmp");
             string unrelatedTemporaryFile = Path.Combine(
                 uploadDirectory,
                 ".user-notes.tmp");
@@ -127,6 +130,7 @@ internal static class TestHarness
                 legacyMetadataDirectory,
                 "migration-marker.txt");
             await File.WriteAllBytesAsync(managedOrphan, [1, 2, 3, 4]);
+            await File.WriteAllBytesAsync(androidManagedOrphan, [1, 2, 3, 4]);
             await File.WriteAllBytesAsync(unrelatedTemporaryFile, [5, 6, 7, 8]);
             Directory.CreateDirectory(legacyMetadataDirectory);
             await File.WriteAllTextAsync(metadataMigrationMarker, "legacy metadata");
@@ -137,6 +141,8 @@ internal static class TestHarness
                 throw new InvalidOperationException(
                     "Server startup did not remove a managed orphaned iOS upload file.");
             }
+            if (File.Exists(androidManagedOrphan))
+                throw new InvalidOperationException("Server startup did not remove a managed orphaned Android upload file.");
             if (!File.Exists(unrelatedTemporaryFile))
             {
                 throw new InvalidOperationException(
@@ -1781,6 +1787,28 @@ internal static class TestHarness
             throw new InvalidOperationException("Token verification omitted the test environment.");
         await VerifyUploadOwnershipAsync(context, credential);
 
+        const string androidId = "harness-android-device";
+        string androidCredential = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
+        using HttpResponseMessage invalidMobileType = await http.PostAsJsonAsync("/pair/request", new
+        {
+            deviceId = "harness-invalid-mobile", deviceName = "Invalid client",
+            credential = androidCredential, clientType = "untrusted-type"
+        }, JsonOptions);
+        if (invalidMobileType.StatusCode != HttpStatusCode.Forbidden)
+            throw new InvalidOperationException("Unknown mobile pairing type was accepted.");
+        using HttpResponseMessage androidPending = await http.PostAsJsonAsync("/pair/request", new
+        {
+            deviceId = androidId, deviceName = "Harness Android", credential = androidCredential,
+            clientType = "android"
+        }, JsonOptions);
+        androidPending.EnsureSuccessStatusCode();
+        await pipe.SendAcknowledgedCommandAsync("approve_device", androidId);
+        using var androidVerify = new HttpRequestMessage(HttpMethod.Post, "/verify_token");
+        androidVerify.Headers.Add("X-Upload-Token", androidCredential);
+        using HttpResponseMessage androidVerified = await http.SendAsync(androidVerify);
+        androidVerified.EnsureSuccessStatusCode();
+        await VerifyAndroidUploadOwnershipAsync(context, androidCredential);
+
         const string deniedId = "harness-denied-device";
         string deniedCredential = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
         using var denialRequest = await http.PostAsJsonAsync("/pair/request", new
@@ -1847,6 +1875,28 @@ internal static class TestHarness
         if (transferId != null) request.Headers.Add("X-Transfer-Id", transferId);
         if (base64) request.Headers.Add("X-Content-Transfer-Encoding", "base64");
         return await http.SendAsync(request);
+    }
+
+    private static async Task VerifyAndroidUploadOwnershipAsync(HarnessContext context, string approvedCredential)
+    {
+        using var http = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{context.Port}") };
+        const string own = "android-1785139293001", other = "android-1785139293002";
+        using var ownStart = await OwnershipChunkAsync(http, approvedCredential, own + "-0", "android-owned.bin", 0, "a");
+        using var otherStart = await OwnershipChunkAsync(http, context.Token, other + "-0", "android-other.bin", 0, "b");
+        ownStart.EnsureSuccessStatusCode(); otherStart.EnsureSuccessStatusCode();
+        using var cross = new HttpRequestMessage(HttpMethod.Post, "/upload_session/cancel")
+        { Content = JsonContent.Create(new { sessionId = other }) };
+        cross.Headers.Add("X-Upload-Token", approvedCredential);
+        using var rejected = await http.SendAsync(cross);
+        if (rejected.StatusCode != HttpStatusCode.Forbidden)
+            throw new InvalidOperationException("Android cross-owner cancellation was not rejected.");
+        using var self = new HttpRequestMessage(HttpMethod.Post, "/upload_session/cancel")
+        { Content = JsonContent.Create(new { sessionId = own }) };
+        self.Headers.Add("X-Upload-Token", approvedCredential);
+        using var cancelled = await http.SendAsync(self);
+        cancelled.EnsureSuccessStatusCode();
+        using var retry = await OwnershipChunkAsync(http, approvedCredential, own + "-0", "android-owned.bin", 1, "a");
+        if (retry.IsSuccessStatusCode) throw new InvalidOperationException("Cancelled Android session still accepted data.");
     }
 
     private static async Task VerifyUploadOwnershipAsync(HarnessContext context, string approvedCredential)

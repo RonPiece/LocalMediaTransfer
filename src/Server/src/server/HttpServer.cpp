@@ -531,10 +531,12 @@ void HttpServer::setupRoutes(CrowApp& app) {
         try {
             const auto body = json::parse(req.body);
             const auto id = body.value("deviceId", "");
-            const auto name = body.value("deviceName", "iPhone");
+            const auto clientType = body.value("clientType", "ios");
+            const auto name = body.value("deviceName", clientType == "android" ? "Android device" : "iPhone");
             const auto credential = body.value("credential", "");
             const auto status = m_pairingStore
-                ? m_pairingStore->request(id, name, credential, req.remote_ip_address, m_autoApproveKnown.load())
+                ? m_pairingStore->request(id, name, credential, req.remote_ip_address,
+                    m_autoApproveKnown.load(), clientType)
                 : PairingStore::Status::Denied;
             if (status == PairingStore::Status::Pending && m_pipeServer) {
                 m_pipeServer->sendPairingRequest(json{{"deviceId", id}, {"deviceName", name},
@@ -1532,7 +1534,7 @@ void HttpServer::setupRoutes(CrowApp& app) {
             const std::string sessionId =
                 payload.value("sessionId", std::string{});
             static const std::regex sessionPattern(
-                R"(^(ios-[0-9]{10,20}|win-[a-f0-9]{32})$)");
+                R"(^(ios-[0-9]{10,20}|android-[0-9]{10,20}|win-[a-f0-9]{32})$)");
             if (!std::regex_match(sessionId, sessionPattern)) {
                 res.code = 400;
                 res.body = json{{"error", "Invalid upload session"}}.dump();

@@ -48,7 +48,7 @@ namespace LocalMediaTransfer.GUI.Features.Dashboard
                 mainWindow.PendingApprovalsChanged += OnPendingApprovalsChanged;
                 OnPendingApprovalsChanged(mainWindow.PendingApprovalCount);
                 
-                // The iPhone QR is always available. Browser credentials are
+                // The mobile pairing QR is always available. Browser credentials are
                 // created only by the user's explicit flyout action.
                 _ = RefreshIosPairingAsync(mainWindow);
                 if (ViewModel.IsBrowserLinkFresh)

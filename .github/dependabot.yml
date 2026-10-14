@@ -2,7 +2,7 @@ version: 2
 
 updates:
   - package-ecosystem: npm
-    directory: /src/LocalMediaTransfer.iOS
+    directory: /src/LocalMediaTransfer.Mobile
     schedule:
       interval: monthly
     open-pull-requests-limit: 5

@@ -1,0 +1,21 @@
+apply plugin: 'com.android.library'
+apply plugin: 'expo-module-gradle-plugin'
+
+group = 'expo.modules.localmediatransfer'
+version = '2.0.0'
+
+android {
+  namespace 'expo.modules.localmediatransfer'
+  defaultConfig {
+    minSdkVersion 24
+    versionCode 1
+    versionName '2.0.0'
+    testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+  }
+}
+
+dependencies {
+  testImplementation 'junit:junit:4.13.2'
+  androidTestImplementation 'androidx.test:runner:1.6.2'
+  androidTestImplementation 'androidx.test.ext:junit:1.2.1'
+}

@@ -27,6 +27,16 @@ vcpkg_installed/
 dist/
 build/
 
+# Persistent Android CMake/Ninja staging for Windows local builds
+/.android-cxx/
+.gradle/
+
+# Legacy generated native project left in place during the mobile rename.
+/src/LocalMediaTransfer.iOS/.expo/
+/src/LocalMediaTransfer.iOS/android/
+/src/LocalMediaTransfer.iOS/ios/
+/src/LocalMediaTransfer.iOS/node_modules/
+
 # Ignore log files
 error_log.txt
 output_log.txt

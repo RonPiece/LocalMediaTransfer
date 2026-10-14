@@ -64,39 +64,39 @@ $rules = @(
         Replacement = 'Text="Version {VERSION}"'
     },
     @{
-        Path = "src/LocalMediaTransfer.iOS/app.json"
+        Path = "src/LocalMediaTransfer.Mobile/app.json"
         Pattern = '(?m)^    "version": "\d+\.\d+\.\d+",(?=\r?$)'
         Replacement = '    "version": "{VERSION}",'
     },
     @{
-        Path = "src/LocalMediaTransfer.iOS/package.json"
+        Path = "src/LocalMediaTransfer.Mobile/package.json"
         Pattern = '(?m)^  "version": "\d+\.\d+\.\d+",(?=\r?$)'
         Replacement = '  "version": "{VERSION}",'
     },
     @{
-        Path = "src/LocalMediaTransfer.iOS/package-lock.json"
+        Path = "src/LocalMediaTransfer.Mobile/package-lock.json"
         Pattern = '\A(\{\r?\n  "name": "localmediatransfer\.ios",\r?\n  "version": ")\d+\.\d+\.\d+("\,)'
         Replacement = '${1}{VERSION}${2}'
     },
     @{
-        Path = "src/LocalMediaTransfer.iOS/package-lock.json"
+        Path = "src/LocalMediaTransfer.Mobile/package-lock.json"
         Pattern = '("packages": \{\r?\n    "": \{\r?\n      "name": "localmediatransfer\.ios",\r?\n      "version": ")\d+\.\d+\.\d+("\,)'
         Replacement = '${1}{VERSION}${2}'
     },
     @{
-        Path = "src/LocalMediaTransfer.iOS/modules/local-media-transfer-native/package.json"
+        Path = "src/LocalMediaTransfer.Mobile/modules/local-media-transfer-native/package.json"
         Pattern = '(?m)^  "version": "\d+\.\d+\.\d+",(?=\r?$)'
         Replacement = '  "version": "{VERSION}",'
     },
     @{
-        Path = "src/LocalMediaTransfer.iOS/modules/local-media-transfer-native/ios/LocalMediaTransferNative.podspec"
+        Path = "src/LocalMediaTransfer.Mobile/modules/local-media-transfer-native/ios/LocalMediaTransferNative.podspec"
         Pattern = "s\.version\s+=\s+'\d+\.\d+\.\d+'"
         Replacement = "s.version        = '{VERSION}'"
     },
     @{
-        Path = "src/LocalMediaTransfer.iOS/src/version.ts"
-        Pattern = "IOS_APP_VERSION = '\d+\.\d+\.\d+'"
-        Replacement = "IOS_APP_VERSION = '{VERSION}'"
+        Path = "src/LocalMediaTransfer.Mobile/src/version.ts"
+        Pattern = "MOBILE_APP_VERSION = '\d+\.\d+\.\d+'"
+        Replacement = "MOBILE_APP_VERSION = '{VERSION}'"
     },
     @{
         Path = "vcpkg.json"

@@ -100,7 +100,7 @@ bool isManagedTempFile(const fs::path& path) {
     // contract. A generic ".<safe text>.tmp" rule could delete an unrelated
     // user file placed in the selected destination.
     static const std::regex managedTempPattern(
-        R"(^\.(lmt-upload-[a-f0-9]{64}|ios-[0-9]{10,20}-[0-9]+|win-[a-f0-9]{32}-[A-Za-z0-9._-]+)\.tmp$)");
+        R"(^\.(lmt-upload-[a-f0-9]{64}|ios-[0-9]{10,20}-[0-9]+|android-[0-9]{10,20}-[0-9]+|win-[a-f0-9]{32}-[A-Za-z0-9._-]+)\.tmp$)");
     return std::regex_match(name, managedTempPattern);
 }
 

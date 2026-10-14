@@ -38,7 +38,7 @@ Push-Location $repoRoot
 try {
     & powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\bootstrap-dependencies.ps1 -PreferVisualStudioTools -RestoreTimeoutSeconds 2400
     if ($LASTEXITCODE -ne 0) { throw 'Native dependency restore failed.' }
-    Push-Location .\src\LocalMediaTransfer.iOS
+    Push-Location .\src\LocalMediaTransfer.Mobile
     try {
         & npm.cmd ci --no-audit --no-fund
         if ($LASTEXITCODE -ne 0) { throw 'Locked npm dependency restore failed.' }

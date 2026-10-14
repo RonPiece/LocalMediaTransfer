@@ -51,14 +51,14 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: src/LocalMediaTransfer.iOS/package-lock.json
+          cache-dependency-path: src/LocalMediaTransfer.Mobile/package-lock.json
 
       - name: Select SDK 57-compatible Xcode
         shell: bash
         run: sudo xcode-select -s /Applications/Xcode_26.4.app/Contents/Developer
 
       - name: Install JavaScript dependencies
-        working-directory: src/LocalMediaTransfer.iOS
+        working-directory: src/LocalMediaTransfer.Mobile
         run: npm ci
 
       - name: Record native toolchain and validate environment
@@ -78,23 +78,23 @@ jobs:
           pod --version > native-build-evidence/cocoapods.txt
 
       - name: Run Jest tests
-        working-directory: src/LocalMediaTransfer.iOS
+        working-directory: src/LocalMediaTransfer.Mobile
         run: npm test -- --runInBand
 
       - name: Check TypeScript
-        working-directory: src/LocalMediaTransfer.iOS
+        working-directory: src/LocalMediaTransfer.Mobile
         run: npx tsc --noEmit
 
       - name: Run ESLint
-        working-directory: src/LocalMediaTransfer.iOS
+        working-directory: src/LocalMediaTransfer.Mobile
         run: npm run lint
 
       - name: Generate native iOS project
-        working-directory: src/LocalMediaTransfer.iOS
+        working-directory: src/LocalMediaTransfer.Mobile
         run: npx expo prebuild --platform ios --clean --no-install
 
       - name: Install CocoaPods dependencies
-        working-directory: src/LocalMediaTransfer.iOS/ios
+        working-directory: src/LocalMediaTransfer.Mobile/ios
         run: |
           pod install --repo-update
           grep -q "LocalMediaTransferNative" Podfile.lock
@@ -111,7 +111,7 @@ jobs:
           cp Podfile.lock ../../../native-build-evidence/Podfile.lock
 
       - name: Build unsigned device application
-        working-directory: src/LocalMediaTransfer.iOS
+        working-directory: src/LocalMediaTransfer.Mobile
         shell: bash
         run: |
           set -euo pipefail
@@ -146,7 +146,7 @@ jobs:
             clean build
 
       - name: Package unsigned IPA for Sideloadly
-        working-directory: src/LocalMediaTransfer.iOS
+        working-directory: src/LocalMediaTransfer.Mobile
         shell: bash
         run: |
           set -euo pipefail
@@ -203,7 +203,7 @@ jobs:
         with:
           name: ${{ env.LMT_IPA_ARTIFACT_BASENAME }}-ipa
           path: |
-            src/LocalMediaTransfer.iOS/${{ env.LMT_IPA_ARTIFACT_BASENAME }}.ipa
+            src/LocalMediaTransfer.Mobile/${{ env.LMT_IPA_ARTIFACT_BASENAME }}.ipa
             native-build-evidence/**
           if-no-files-found: error
           retention-days: 14

@@ -93,7 +93,7 @@ namespace LocalMediaTransfer.GUI.Services
                                 128,
                                 "deviceId"),
                             DeviceName = PipeValueValidator.DisplayText(
-                                data.GetProperty("deviceName").GetString() ?? "iPhone",
+                                data.GetProperty("deviceName").GetString() ?? "Phone",
                                 100),
                             IpAddress = PipeValueValidator.DisplayText(
                                 data.GetProperty("ip").GetString() ?? "",
@@ -262,7 +262,7 @@ namespace LocalMediaTransfer.GUI.Services
                 devices.Add(new TrustedDeviceData
                 {
                     DeviceId = PipeValueValidator.Identifier(item.GetProperty("id").GetString() ?? "", 128, "id"),
-                    DeviceName = PipeValueValidator.DisplayText(item.GetProperty("name").GetString() ?? "iPhone", 100),
+                    DeviceName = PipeValueValidator.DisplayText(item.GetProperty("name").GetString() ?? "Phone", 100),
                     LastIp = PipeValueValidator.DisplayText(item.GetProperty("lastIp").GetString() ?? "", 64),
                     LastSeenUnix = PipeValueValidator.OptionalUnixSeconds(item.GetProperty("lastSeenUnix").GetInt64(), "lastSeenUnix")
                     ,ClientType = item.TryGetProperty("clientType", out JsonElement clientType)

@@ -1,0 +1,14 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "baseUrl": ".",
+    "ignoreDeprecations": "6.0",
+    "types": ["jest", "node"],
+    "moduleSuffixes": [".ios", ".android", ""],
+    "paths": {
+      "@/*": ["src/*"]
+    }
+  },
+  "include": ["nativewind-env.d.ts", "**/*.ts", "**/*.tsx"]
+}

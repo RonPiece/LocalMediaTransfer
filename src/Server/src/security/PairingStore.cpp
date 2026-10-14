@@ -59,15 +59,16 @@ void PairingStore::pruneLocked() const {
 
 PairingStore::Status PairingStore::request(
     const std::string& id, const std::string& name, const std::string& credential,
-    const std::string& ip, bool autoApproveKnown) {
-    if (id.empty() || credential.size() < 32 || id.size() > 128 || name.size() > 128) {
+    const std::string& ip, bool autoApproveKnown, const std::string& clientType) {
+    if (id.empty() || credential.size() < 32 || id.size() > 128 || name.size() > 128 ||
+        (clientType != "ios" && clientType != "android")) {
         return Status::Denied;
     }
     std::lock_guard lock(m_mutex);
     pruneLocked();
     const auto hash = hashCredential(credential);
     auto trusted = std::find_if(m_trusted.begin(), m_trusted.end(), [&](const auto& item) {
-        return item.id == id && item.credentialHash == hash;
+        return item.id == id && item.credentialHash == hash && item.clientType == clientType;
     });
     if (trusted != m_trusted.end()) {
         trusted->name = name;
@@ -91,7 +92,7 @@ PairingStore::Status PairingStore::request(
         if (m_pending.size() >= MaxPendingRequests) return Status::AtCapacity;
         m_pending.push_back({id, name, hash, ip,
             std::chrono::steady_clock::now() + std::chrono::minutes(2), false,
-            "ios", "direct_upload"});
+            clientType, "direct_upload"});
         return Status::Pending;
     }
     if (pending->credentialHash != hash) {
@@ -100,8 +101,10 @@ PairingStore::Status PairingStore::request(
         pending->lastIp = ip;
         pending->expiresAt = std::chrono::steady_clock::now() + std::chrono::minutes(2);
         pending->denied = false;
+        pending->clientType = clientType;
         return Status::Pending;
     }
+    if (pending->clientType != clientType) return Status::Denied;
     return pending->denied ? Status::Denied : Status::Pending;
 }
 

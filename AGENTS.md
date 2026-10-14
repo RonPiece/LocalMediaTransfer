@@ -10,8 +10,8 @@ dirty worktree and keep edits limited to the requested behavior.
 - `src/Server`: C++ Crow HTTP server, file writing, SQLite duplicate metadata,
   named-pipe telemetry, and opt-in benchmark storage.
 - `src/LocalMediaTransfer.GUI`: C# WinUI 3 unpackaged desktop application.
-- `src/LocalMediaTransfer.iOS`: Expo SDK 57 React Native application with a
-  custom Swift discovery and raw-upload module.
+- `src/LocalMediaTransfer.Mobile`: Expo SDK 57 React Native application with
+  shared TypeScript, Swift iOS and Kotlin Android modules.
 - `src/Server/static`: browser upload frontend.
 - `tests/LocalMediaTransfer.TestHarness`: canonical isolated server integration
   suite.
@@ -66,7 +66,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File `
   NuGet restore may occur. Sandbox networking blocks NuGet repository-signature
   access; do not spend a first attempt reproducing that known environment error.
 - In this Codex workspace, Windows Node/`npx` commands under
-  `src\LocalMediaTransfer.iOS` consistently fail inside the sandbox before
+  `src\LocalMediaTransfer.Mobile` consistently fail inside the sandbox before
   project code runs with `EPERM: operation not permitted, lstat '%USERPROFILE%'`.
   Do not waste a sandbox attempt for `npx tsc`, `npx jest`, or Expo CLI checks.
   Either run them directly with `require_escalated` and a narrow prefix rule, or

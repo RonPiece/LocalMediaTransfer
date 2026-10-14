@@ -25,7 +25,7 @@ public:
     void load();
     Status request(const std::string& id, const std::string& name,
                    const std::string& credential, const std::string& ip,
-                   bool autoApproveKnown);
+                   bool autoApproveKnown, const std::string& clientType = "ios");
     Status status(const std::string& id, const std::string& credential) const;
     bool validateCredential(const std::string& credential) const;
     std::optional<TrustedDevice> findDeviceByCredential(
