@@ -37,7 +37,7 @@ jobs:
       - run: npx expo prebuild --platform android --no-install
         env:
           EXPO_PUBLIC_LMT_ENVIRONMENT: test
-      - run: ./gradlew :local-media-transfer-native:testDebugUnitTest :local-media-transfer-native:assembleDebugAndroidTest :app:assembleDebug :app:processReleaseMainManifest
+      - run: ./gradlew :local-media-transfer-native:testDebugUnitTest :local-media-transfer-native:assembleDebugAndroidTest :app:assembleDebug :app:processReleaseMainManifest -PreactNativeArchitectures=x86_64 --stacktrace
         working-directory: src/LocalMediaTransfer.Mobile/android
         env:
           EXPO_PUBLIC_LMT_ENVIRONMENT: test

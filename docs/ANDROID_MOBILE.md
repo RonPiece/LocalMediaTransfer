@@ -138,7 +138,8 @@ service instrumentation tests from the generated `android` directory:
   -PreactNativeArchitectures=x86_64
 ```
 
-The `android-compile.yml` workflow runs the Android compiler and checks both
+The `android-compile.yml` workflow compiles the x86_64 emulator architecture
+and checks both
 debug and release merged manifests for broad photo, video, storage, location,
 and audio permissions. It also rejects Android's overlay permission in the
 release manifest. Expo's development launcher may add that permission to a
