@@ -26,10 +26,10 @@ license, copyright, and NOTICE text for their exact dependencies; see
 - LiveCharts2, MIT
 - QRCoder, MIT
 
-## iPhone application
+## Mobile application
 
 The Expo/React Native dependency closure is pinned by
-`src/LocalMediaTransfer.iOS/package-lock.json`; native CocoaPods dependencies
+`src/LocalMediaTransfer.Mobile/package-lock.json`; native CocoaPods dependencies
 are resolved by the unsigned-IPA workflow. Release notices must be generated
 from the installed npm packages and CocoaPods acknowledgements, not inferred
 from the lockfile's optional `license` fields alone.

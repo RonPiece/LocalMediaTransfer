@@ -125,8 +125,8 @@ Frontend tests:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\test_frontend.ps1
 ```
 
-iOS Jest, TypeScript, and lint checks (run from
-`src\LocalMediaTransfer.iOS`):
+Mobile Jest, TypeScript, and lint checks (run from
+`src\LocalMediaTransfer.Mobile`):
 
 ```powershell
 npm test -- --runInBand
