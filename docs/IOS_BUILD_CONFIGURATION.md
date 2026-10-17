@@ -7,11 +7,12 @@ identity is checked against Metro before trust, discovery, or transfer starts.
 ## Two separate choices
 
 **Application environment answers: which Windows server and saved state should
-this app use?** The workflow offers `test` and `production`. There is currently
+this app use?** The build supports `test` and `production`. There is currently
 no application environment named `development`.
 
-**Build profile answers: how does the iPhone run the app's code?** The workflow
-offers `development` and `release`.
+**Build profile answers: how does the iPhone run the app's code?** The build
+supports `development` and `release`. The manual GitHub form combines both
+choices into one build target so unsupported combinations cannot be selected.
 
 | Setting | Meaning |
 |---|---|
@@ -55,8 +56,10 @@ See [Application Environments](ENVIRONMENTS.md) for storage and Windows commands
 | TEST | Release | `com.ronthedev.localmediatransfer.test` | Embedded TEST bundle | TEST |
 | Production | Release | `com.ronthedev.localmediatransfer` | Embedded production bundle | Production |
 
-The macOS unsigned-IPA workflow forces a development build to TEST. Its
-production release keeps the existing bundle ID. The Expo slug
+The manual macOS unsigned-IPA workflow offers `production-release`,
+`test-release`, and `test-development`. A reusable workflow caller that
+requests production with a development profile fails validation. Production
+release keeps the existing bundle ID. The Expo slug
 `ronthedev-local-media-transfer-iphone-2026`, EAS project ID, and TEST
 `exp+ronthedev-local-media-transfer-iphone-2026-test` development-client
 scheme are retained as compatibility identifiers after the source-folder

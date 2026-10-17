@@ -5,8 +5,7 @@ uses a macOS runner to compile an unsigned IPA. Sideloadly signs that IPA with
 the user's Apple ID and installs it on the iPhone.
 
 Read [iOS environments, build profiles, and Metro](IOS_BUILD_CONFIGURATION.md)
-for the current selection rules, the Metro configuration gap, and the planned
-independent environment/profile behavior.
+for the current build targets and Metro behavior.
 
 ## 1. Build the unsigned IPA
 
@@ -15,10 +14,10 @@ independent environment/profile behavior.
 3. Select **Actions** > **Build unsigned iOS IPA** > **Run workflow**.
 4. Select the branch containing the commit you intend to install. A workflow
    can build only committed, pushed GitHub content; local changes are invisible.
-5. For a standalone app, select the `release` build profile and the `production`
-   environment (or `test` for the separate TEST app), then wait for the build
-   job to finish successfully. For Metro/Fast Refresh, follow the development
-   client steps below; the current workflow forces that profile to TEST.
+5. For a standalone production app, select `production-release` (or
+   `test-release` for the separate TEST app), then wait for the build job to
+   finish successfully. For Metro/Fast Refresh, select `test-development` and
+   follow the development-client steps below.
 6. Open the completed workflow run and download the
    **LocalMediaTransfer-production-unsigned-ipa** artifact for production.
 7. Extract the downloaded ZIP. It contains
@@ -74,8 +73,8 @@ bundle does not require a new identifier.
 For Fast Refresh while retaining the custom Swift module:
 
 1. Commit and push the intended branch.
-2. Run **Actions** > **Build unsigned iOS IPA** > **Run workflow**, select the
-   `development` build profile, and select the TEST application environment.
+2. Run **Actions** > **Build unsigned iOS IPA** > **Run workflow** and select
+   the `test-development` build target.
 3. Download and extract the
    `LocalMediaTransfer-test-development-unsigned-ipa` artifact.
 4. Sign and install `LocalMediaTransfer-test-development-unsigned.ipa` with

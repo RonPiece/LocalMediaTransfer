@@ -10,6 +10,10 @@ const workflowSource = readFileSync(
   resolve(projectRoot, '../../.github/workflows/ios-unsigned-ipa.yml'),
   'utf8',
 );
+const manualInputs = workflowSource.slice(
+  workflowSource.indexOf('  workflow_dispatch:'),
+  workflowSource.indexOf('\npermissions:'),
+);
 const packageSource = readFileSync(resolve(projectRoot, 'package.json'), 'utf8');
 const nativePodspecSource = readFileSync(
   resolve(projectRoot, 'modules/local-media-transfer-native/ios/LocalMediaTransferNative.podspec'),
@@ -46,17 +50,20 @@ describe('iOS build environment contract', () => {
     );
     expect(appConfigSource).not.toContain('LMT_IOS_ENVIRONMENT');
     expect(workflowSource).toContain(
-      "EXPO_PUBLIC_LMT_ENVIRONMENT: ${{ (inputs.build_profile == 'development' && 'test') || inputs.environment || 'production' }}",
+      "EXPO_PUBLIC_LMT_ENVIRONMENT: ${{ (github.event_name == 'workflow_dispatch' && (inputs.build_target == 'test-release' || inputs.build_target == 'test-development') && 'test') || inputs.environment || 'production' }}",
     );
     expect(workflowSource).not.toMatch(/^\s+LMT_IOS_ENVIRONMENT:/m);
     expect(workflowSource).toContain("Print :LMTEnvironment");
   });
 
-  it('defaults the manual IPA workflow to production while retaining TEST', () => {
-    expect(workflowSource).toMatch(
-      /environment:\s+description: iOS application environment\s+required: true\s+default: production/,
+  it('offers only supported combinations in the manual IPA form', () => {
+    expect(manualInputs).toMatch(
+      /build_target:\s+description: iOS build target \(development supports TEST only\)\s+required: true\s+default: production-release/,
     );
-    expect(workflowSource).toMatch(/options:\s+- test\s+- production/);
+    expect(manualInputs).toMatch(
+      /options:\s+- production-release\s+- test-release\s+- test-development/,
+    );
+    expect(manualInputs).not.toMatch(/^\s{6}(environment|build_profile):/m);
   });
 
   it('keeps the development client isolated to the TEST application', () => {
@@ -67,7 +74,7 @@ describe('iOS build environment contract', () => {
       'scheme: isTest ? `exp+${slug}` : config.scheme',
     );
     expect(workflowSource).toContain(
-      "inputs.build_profile == 'development' && 'test'",
+      "inputs.build_target == 'test-development' && 'development'",
     );
     expect(workflowSource).toContain('configuration="Debug"');
     expect(workflowSource).toContain('expo-dev-client');

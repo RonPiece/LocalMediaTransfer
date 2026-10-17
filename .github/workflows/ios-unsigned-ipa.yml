@@ -17,22 +17,15 @@ on:
         default: release
   workflow_dispatch:
     inputs:
-      environment:
-        description: iOS application environment
+      build_target:
+        description: iOS build target (development supports TEST only)
         required: true
-        default: production
+        default: production-release
         type: choice
         options:
-          - test
-          - production
-      build_profile:
-        description: iOS IPA build profile
-        required: true
-        default: release
-        type: choice
-        options:
-          - release
-          - development
+          - production-release
+          - test-release
+          - test-development
 
 permissions:
   contents: read
@@ -42,8 +35,8 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 45
     env:
-      EXPO_PUBLIC_LMT_ENVIRONMENT: ${{ (inputs.build_profile == 'development' && 'test') || inputs.environment || 'production' }}
-      LMT_IOS_BUILD_PROFILE: ${{ inputs.build_profile || 'release' }}
+      EXPO_PUBLIC_LMT_ENVIRONMENT: ${{ (github.event_name == 'workflow_dispatch' && (inputs.build_target == 'test-release' || inputs.build_target == 'test-development') && 'test') || inputs.environment || 'production' }}
+      LMT_IOS_BUILD_PROFILE: ${{ (github.event_name == 'workflow_dispatch' && inputs.build_target == 'test-development' && 'development') || inputs.build_profile || 'release' }}
 
     steps:
       - name: Check out repository
@@ -72,8 +65,9 @@ jobs:
           set -euo pipefail
           [[ "$EXPO_PUBLIC_LMT_ENVIRONMENT" == production || "$EXPO_PUBLIC_LMT_ENVIRONMENT" == test ]]
           [[ "$LMT_IOS_BUILD_PROFILE" == release || "$LMT_IOS_BUILD_PROFILE" == development ]]
-          if [[ "$LMT_IOS_BUILD_PROFILE" == development ]]; then
-            [[ "$EXPO_PUBLIC_LMT_ENVIRONMENT" == test ]]
+          if [[ "$LMT_IOS_BUILD_PROFILE" == development && "$EXPO_PUBLIC_LMT_ENVIRONMENT" != test ]]; then
+            echo "::error::Development builds support the TEST app only. Select test-development."
+            exit 1
           fi
           mkdir -p native-build-evidence
           git rev-parse HEAD > native-build-evidence/commit.txt
