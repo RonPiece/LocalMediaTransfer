@@ -129,6 +129,12 @@ public final class LocalMediaTransferNativeModule: Module {
     Events("onUploadProgress", "onThermalStateChanged", "onPreparationProgress")
 
     Function("getInstalledEnvironment") { () throws -> String in
+      // Signing tools may rewrite CFBundleIdentifier. Keep the build environment
+      // in Info.plist so the installed app can still identify its own profile.
+      if let environment = Bundle.main.object(forInfoDictionaryKey: "LMTEnvironment") as? String,
+         environment == "test" || environment == "production" {
+        return environment
+      }
       switch Bundle.main.bundleIdentifier {
       case "com.ronthedev.localmediatransfer.test": return "test"
       case "com.ronthedev.localmediatransfer": return "production"

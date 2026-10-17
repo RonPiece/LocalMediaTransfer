@@ -62,7 +62,9 @@ production release keeps the existing bundle ID. The Expo slug
 scheme are retained as compatibility identifiers after the source-folder
 rename to `src/LocalMediaTransfer.Mobile`.
 
-The Swift `getInstalledEnvironment()` method reads the installed bundle ID.
+The Swift `getInstalledEnvironment()` method reads `LMTEnvironment` embedded in
+the app's Info.plist. This survives a sideloading tool rewriting the bundle ID;
+older builds fall back to the bundle ID when the Info.plist value is absent.
 The app compares that result with `EXPO_PUBLIC_LMT_ENVIRONMENT` before mounting
 connection controllers or loading saved trust. A mismatch shows a blocking
 screen. Expo Go remains a TEST compatibility client and has no native module.

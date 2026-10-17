@@ -195,8 +195,10 @@ jobs:
           fi
           actual_bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Info.plist")"
           actual_display_name="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$app/Info.plist")"
+          actual_environment="$(/usr/libexec/PlistBuddy -c 'Print :LMTEnvironment' "$app/Info.plist")"
           [[ "$actual_bundle_id" == "$expected_bundle_id" ]]
           [[ "$actual_display_name" == "$expected_display_name" ]]
+          [[ "$actual_environment" == "$EXPO_PUBLIC_LMT_ENVIRONMENT" ]]
           rm -rf Payload LocalMediaTransfer-*-unsigned.ipa
           mkdir Payload
           cp -R "$app" Payload/

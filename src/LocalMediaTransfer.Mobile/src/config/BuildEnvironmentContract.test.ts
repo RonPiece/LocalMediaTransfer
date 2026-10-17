@@ -17,6 +17,29 @@ const nativePodspecSource = readFileSync(
 );
 
 describe('iOS build environment contract', () => {
+  it('embeds the selected environment in iOS Info.plist', () => {
+    // The config factory runs during Expo prebuild for both release profiles.
+    const buildConfig = require('../../app.config.js') as ({ config }: { config: Record<string, unknown> }) => {
+      ios: { infoPlist: Record<string, unknown> };
+    };
+    const previous = process.env.EXPO_PUBLIC_LMT_ENVIRONMENT;
+    try {
+      for (const environment of ['production', 'test']) {
+        process.env.EXPO_PUBLIC_LMT_ENVIRONMENT = environment;
+        const result = buildConfig({
+          config: { slug: 'local-media-transfer', ios: { infoPlist: { ExistingKey: 'keep' } } },
+        });
+        expect(result.ios.infoPlist).toEqual({
+          ExistingKey: 'keep',
+          LMTEnvironment: environment,
+        });
+      }
+    } finally {
+      if (previous === undefined) delete process.env.EXPO_PUBLIC_LMT_ENVIRONMENT;
+      else process.env.EXPO_PUBLIC_LMT_ENVIRONMENT = previous;
+    }
+  });
+
   it('uses the same public environment value for app config and bundled code', () => {
     expect(appConfigSource).toContain(
       'process.env.EXPO_PUBLIC_LMT_ENVIRONMENT',
@@ -26,6 +49,7 @@ describe('iOS build environment contract', () => {
       "EXPO_PUBLIC_LMT_ENVIRONMENT: ${{ (inputs.build_profile == 'development' && 'test') || inputs.environment || 'production' }}",
     );
     expect(workflowSource).not.toMatch(/^\s+LMT_IOS_ENVIRONMENT:/m);
+    expect(workflowSource).toContain("Print :LMTEnvironment");
   });
 
   it('defaults the manual IPA workflow to production while retaining TEST', () => {

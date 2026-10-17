@@ -26,11 +26,11 @@ export default function AppShell() {
   const requestedEnvironment = mobileClientEnvironment(nativeCapabilities.available);
   const installedEnvironment = nativeCapabilities.getInstalledEnvironment();
   if (installedEnvironment !== requestedEnvironment) {
-    return <View accessibilityRole="alert" style={{ flex: 1, justifyContent: 'center', padding: 24 }}>
-      <Text style={{ fontSize: 20, fontWeight: '600' }}>App environment mismatch</Text>
-      <Text style={{ marginTop: 12 }}>
-        This installed app is {installedEnvironment ?? 'unrecognized'}, but Metro is requesting {requestedEnvironment}.
-        Start the matching Metro environment or install the matching app build.
+    return <View accessibilityRole="alert" style={{ flex: 1, justifyContent: 'center', padding: 24, backgroundColor: '#FFF7F6' }}>
+      <Text style={{ color: '#9B2119', fontSize: 20, fontWeight: '600' }}>App environment mismatch</Text>
+      <Text style={{ color: '#3B2725', marginTop: 12 }}>
+        This installed app is {installedEnvironment ?? 'unrecognized'}, but its JavaScript requests {requestedEnvironment}.
+        Install the matching app build.
       </Text>
     </View>;
   }

@@ -45,6 +45,13 @@ function sourceSection(source: string, start: string, end: string): string {
 }
 
 describe('native Swift source contracts', () => {
+  it('reads the installed environment from Info.plist before the bundle ID fallback', () => {
+    const embeddedEnvironment = moduleSource.indexOf('object(forInfoDictionaryKey: "LMTEnvironment")');
+    const bundleIdentifierFallback = moduleSource.indexOf('switch Bundle.main.bundleIdentifier');
+    expect(embeddedEnvironment).toBeGreaterThanOrEqual(0);
+    expect(bundleIdentifierFallback).toBeGreaterThan(embeddedEnvironment);
+  });
+
   it('reserves resource chunks before writing and cancels PhotoKit work', () => {
     const writer = sourceSection(exporterSource, 'private final class PhotoResourceWriter',
       'final class PhotoAssetExporter');

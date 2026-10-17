@@ -19,6 +19,10 @@ module.exports = ({ config }) => {
       bundleIdentifier: isTest
         ? 'com.ronthedev.localmediatransfer.test'
         : 'com.ronthedev.localmediatransfer',
+      infoPlist: {
+        ...config.ios?.infoPlist,
+        LMTEnvironment: environment,
+      },
     },
     android: {
       ...config.android,

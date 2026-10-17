@@ -123,10 +123,23 @@ describe('App Routing Logic', () => {
   it('blocks a mismatched installed app before reading saved trust or connecting', async () => {
     (nativeCapabilities.getInstalledEnvironment as jest.Mock).mockReturnValue('test');
     const { getByText, queryByText } = await renderApp();
-    expect(getByText('App environment mismatch')).toBeTruthy();
+    expect(getByText('App environment mismatch').props.style).toEqual(
+      expect.objectContaining({ color: '#9B2119' }),
+    );
     expect(queryByText('Pair with a receiver on your local network')).toBeNull();
     expect(SecureStore.getItemAsync).not.toHaveBeenCalled();
     expect(api.pingServer).not.toHaveBeenCalled();
+  });
+
+  it('shows an unrecognized installed environment with readable error text', async () => {
+    (nativeCapabilities.getInstalledEnvironment as jest.Mock).mockReturnValue(null);
+    const { getByText } = await renderApp();
+    expect(getByText('App environment mismatch').props.style).toEqual(
+      expect.objectContaining({ color: '#9B2119' }),
+    );
+    expect(getByText(/This installed app is unrecognized/).props.style).toEqual(
+      expect.objectContaining({ color: '#3B2725' }),
+    );
   });
 
   it('verifies the server and transitions to Home', async () => {
