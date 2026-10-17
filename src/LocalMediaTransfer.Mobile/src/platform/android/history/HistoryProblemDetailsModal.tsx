@@ -4,6 +4,7 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import AppHeader from '@/components/AppHeader';
 import type { TransferHistoryFile } from '@/api/types';
+import { useReduceMotionEnabled } from '@/theme';
 
 type Props = {
   files: TransferHistoryFile[] | null;
@@ -14,9 +15,10 @@ type Props = {
 
 /** Android history has receiver results but no PhotoKit original lookup. */
 export function HistoryProblemDetailsModal({ files, totalProblems, onClose }: Props) {
+  const reduceMotion = useReduceMotionEnabled();
   if (!files) return null;
   return (
-    <Modal visible animationType="slide" onRequestClose={onClose}>
+    <Modal visible animationType={reduceMotion ? 'none' : 'slide'} onRequestClose={onClose}>
       <SafeAreaProvider>
         <SafeAreaView className="flex-1 bg-background dark:bg-background-dark">
           <AppHeader title="Problem Files" onClose={onClose} closeStyle="back" />

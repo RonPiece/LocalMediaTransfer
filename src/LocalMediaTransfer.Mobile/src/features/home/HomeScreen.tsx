@@ -10,7 +10,7 @@ import { TransferHistoryItem } from '@/api/types';
 import { PrimaryButton, StatusBadge } from '@/components/ui';
 import { ConnectionDetailsModal } from '@/features/dashboard/components/ConnectionDetailsModal';
 import { ConnectionStatusCard } from '@/features/dashboard/components/ConnectionStatusCard';
-import { formatHistoryDate, historyStatus } from '@/features/dashboard/hooks/useDashboardHistory';
+import { formatHistoryDate, historyStatus } from '@/features/history/historyPresentation';
 import { SessionDetails } from '@/features/history/HistoryScreen';
 import { expectedServerEnvironment } from '@/services/NativeCapabilities';
 import { interactionAppearance, useThemePalette } from '@/theme';
@@ -59,6 +59,8 @@ export default function HomeScreen({
   connectionHealthStatus,
   history,
   historyLoading,
+  historyError,
+  onRetryHistory,
   onOpenPicker,
   onOpenConnect,
   onOpenHistory,
@@ -69,6 +71,8 @@ export default function HomeScreen({
   connectionHealthStatus: ConnectionHealthStatus;
   history: TransferHistoryItem[];
   historyLoading: boolean;
+  historyError: string | null;
+  onRetryHistory: () => void;
   onOpenPicker: () => void;
   onOpenConnect: () => void;
   onOpenHistory: () => void;
@@ -139,10 +143,25 @@ export default function HomeScreen({
             </TouchableOpacity>
           </View>
           <View className="rounded-[20px] bg-surface dark:bg-surface-dark border border-border dark:border-border-dark overflow-hidden">
+            {isConnected && historyError && history.length > 0 && (
+              <View className="px-4 py-3 bg-warning-soft dark:bg-warning-soft-dark flex-row items-center justify-between">
+                <Text accessibilityRole="alert" className="flex-1 text-[13px] text-on-surface dark:text-on-surface-dark">Recent activity may be out of date.</Text>
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Retry loading receiver history" onPress={onRetryHistory} className="min-h-[44px] justify-center pl-3">
+                  <Text className="text-primary dark:text-primary-dark font-semibold">Retry</Text>
+                </TouchableOpacity>
+              </View>
+            )}
             {!isConnected ? (
               <Text className="px-4 py-5 text-[13px] text-on-surface-variant dark:text-on-surface-variant-dark text-center">Connect to view receiver history.</Text>
             ) : historyLoading && history.length === 0 ? (
               <Text className="px-4 py-5 text-[13px] text-on-surface-variant dark:text-on-surface-variant-dark text-center">Loading recent activity…</Text>
+            ) : historyError && history.length === 0 ? (
+              <View className="px-4 py-3 items-center">
+                <Text accessibilityRole="alert" className="text-[13px] text-on-surface-variant dark:text-on-surface-variant-dark text-center">Could not load receiver history.</Text>
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Retry loading receiver history" onPress={onRetryHistory} className="min-h-[44px] px-4 items-center justify-center">
+                  <Text className="text-primary dark:text-primary-dark font-semibold">Retry</Text>
+                </TouchableOpacity>
+              </View>
             ) : history.length === 0 ? (
               <Text className="px-4 py-5 text-[13px] text-on-surface-variant dark:text-on-surface-variant-dark text-center">Completed transfers will appear here.</Text>
             ) : history.slice(0, 2).map(item => (

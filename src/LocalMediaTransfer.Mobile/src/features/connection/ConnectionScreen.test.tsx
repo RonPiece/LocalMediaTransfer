@@ -324,6 +324,24 @@ describe('ConnectionScreen QR Logic', () => {
     expect(mockOnConnect).toHaveBeenCalledWith('http://192.168.1.100:8080', '', undefined);
   });
 
+  it('keeps manual field labels visible and prevents malformed addresses or fingerprints', () => {
+    const onConnect = jest.fn();
+    const screen = render(<ConnectionScreen onConnect={onConnect} nativeHttpsAvailable />);
+    fireEvent.press(screen.getByText('Enter Address Manually'));
+    expect(screen.getByText('Receiver address')).toBeTruthy();
+    expect(screen.getByText('Certificate fingerprint')).toBeTruthy();
+    expect(screen.getByText('Session token')).toBeTruthy();
+    fireEvent.changeText(screen.getByLabelText('Receiver address'), 'https://receiver.local:8443/path?token=secret');
+    expect(screen.getByText('Enter a valid receiver address without a path or query.')).toBeTruthy();
+    fireEvent.press(screen.getByText('Connect Manually'));
+    expect(onConnect).not.toHaveBeenCalled();
+    fireEvent.changeText(screen.getByLabelText('Receiver address'), 'receiver.local');
+    fireEvent.changeText(screen.getByLabelText('Certificate fingerprint'), 'short');
+    expect(screen.getByText('Enter the complete 64-character SHA-256 fingerprint.')).toBeTruthy();
+    fireEvent.press(screen.getByText('Connect Manually'));
+    expect(onConnect).not.toHaveBeenCalled();
+  });
+
   it('shows a recoverable message when camera permission cannot be requested', async () => {
     (useCameraPermissions as jest.Mock).mockReturnValue([
       { granted: false },
@@ -340,28 +358,36 @@ describe('ConnectionScreen QR Logic', () => {
     ));
   });
 
-  it('keeps a bare manual IP on pinned HTTPS in the installed app', () => {
+  it('requires secure pairing fields for a bare manual IP in the installed app', () => {
     const mockOnConnect = jest.fn();
-    const { getByPlaceholderText, getByText } = render(
+    const { getByPlaceholderText, getByText, getByLabelText } = render(
       <ConnectionScreen onConnect={mockOnConnect} nativeHttpsAvailable />,
     );
 
     fireEvent.press(getByText('Enter Address Manually'));
     fireEvent.changeText(getByPlaceholderText('192.168.1.x'), '192.168.1.100');
     fireEvent.press(getByText('Connect Manually'));
-
-    expect(mockOnConnect).toHaveBeenCalledWith('https://192.168.1.100:8443', '', undefined);
+    expect(mockOnConnect).not.toHaveBeenCalled();
+    fireEvent.changeText(getByLabelText('Certificate fingerprint'), 'ab'.repeat(32));
+    fireEvent.changeText(getByLabelText('Session token'), '  ');
+    expect(getByText('Enter the session token shown in Windows.')).toBeTruthy();
+    fireEvent.changeText(getByLabelText('Session token'), 'test-token');
+    fireEvent.press(getByText('Connect Manually'));
+    expect(mockOnConnect).toHaveBeenCalledWith('https://192.168.1.100:8443', 'test-token',
+      expect.objectContaining({ certificateFingerprint: 'ab'.repeat(32), token: 'test-token' }));
   });
 
   it('handles a rejected manual connection without an unhandled promise', async () => {
     const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
     const mockOnConnect = jest.fn().mockRejectedValue(new Error('connection setup failed'));
-    const { getByPlaceholderText, getByText } = render(
+    const { getByPlaceholderText, getByText, getByLabelText } = render(
       <ConnectionScreen onConnect={mockOnConnect} nativeHttpsAvailable />,
     );
 
     fireEvent.press(getByText('Enter Address Manually'));
     fireEvent.changeText(getByPlaceholderText('192.168.1.x'), '192.168.1.100');
+    fireEvent.changeText(getByPlaceholderText('SHA-256 fingerprint from Windows'), 'ab'.repeat(32));
+    fireEvent.changeText(getByLabelText('Session token'), 'test-token');
     fireEvent.press(getByText('Connect Manually'));
 
     await waitFor(() => expect(alertSpy).toHaveBeenCalledWith(

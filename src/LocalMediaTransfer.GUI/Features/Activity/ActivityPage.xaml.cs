@@ -40,6 +40,8 @@ namespace LocalMediaTransfer.GUI.Features.Activity
             ];
             SpeedChart.Series = series;
             RecentTransfersList.ItemsSource = ViewModel.RecentTransfers;
+            ViewModel.RecentTransfers.CollectionChanged += (_, _) => UpdateHistoryEmptyState();
+            UpdateHistoryEmptyState();
         }
 
         protected override void OnNavigatedTo(NavigationEventArgs e)
@@ -141,7 +143,7 @@ namespace LocalMediaTransfer.GUI.Features.Activity
             }
             finally
             {
-                ClearHistoryButton.IsEnabled = true;
+                ClearHistoryButton.IsEnabled = ViewModel.RecentTransfers.Count > 0;
             }
         }
 
@@ -169,13 +171,23 @@ namespace LocalMediaTransfer.GUI.Features.Activity
                 : HorizontalAlignment.Stretch;
 
             bool wideTable = ResponsiveLayoutDecisions.UseDesktopTransferTable(e.NewSize.Width);
-            RecentTransfersHeader.Visibility = wideTable ? Visibility.Visible : Visibility.Collapsed;
+            RecentTransfersHeader.Visibility = wideTable && ViewModel.RecentTransfers.Count > 0
+                ? Visibility.Visible : Visibility.Collapsed;
             if (_isWideTransferTable != wideTable)
             {
                 RecentTransfersList.ItemTemplate = (DataTemplate)Resources[
                     wideTable ? "WideTransferItemTemplate" : "NarrowTransferItemTemplate"];
                 _isWideTransferTable = wideTable;
             }
+        }
+
+        private void UpdateHistoryEmptyState()
+        {
+            bool hasTransfers = ViewModel.RecentTransfers.Count > 0;
+            RecentTransfersEmptyText.Visibility = hasTransfers ? Visibility.Collapsed : Visibility.Visible;
+            ClearHistoryButton.IsEnabled = hasTransfers;
+            RecentTransfersHeader.Visibility = hasTransfers && _isWideTransferTable == true
+                ? Visibility.Visible : Visibility.Collapsed;
         }
 
         private static void Place(FrameworkElement element, int row, int column)

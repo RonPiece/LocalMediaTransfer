@@ -1,6 +1,7 @@
 import React from 'react';
 import { fireEvent, render } from '@testing-library/react-native';
 import { StyleSheet, View } from 'react-native';
+import * as ReactNative from 'react-native';
 import { BlurView } from 'expo-blur';
 import * as theme from '@/theme';
 import tokens from '@/theme/tokens.json';
@@ -51,5 +52,12 @@ describe('BottomTabBar', () => {
     expect(lockedHome.props.accessibilityState).toEqual({ selected: false, disabled: true });
     fireEvent.press(lockedHome);
     expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('grows the labeled tab bar for enlarged system text', () => {
+    jest.spyOn(ReactNative, 'useWindowDimensions').mockReturnValue({ width: 320, height: 568, scale: 2, fontScale: 2 });
+    const screen = render(<BottomTabBar activeTab="home" onSelect={jest.fn()} locked />);
+    expect(screen.getByLabelText('Settings. Transfer in progress')).toBeTruthy();
+    expect(screen.UNSAFE_getAllByType(View).some(view => StyleSheet.flatten(view.props.style)?.minHeight === 84)).toBe(true);
   });
 });

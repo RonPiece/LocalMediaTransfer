@@ -81,7 +81,7 @@ export function NearbyDesktopSection({
           <View className="p-4">
             <View className="flex-row items-center mb-3">
               <Ionicons name="warning-outline" size={22} color={palette.error} />
-              <Text className="text-on-surface-variant dark:text-on-surface-variant-dark ml-2.5 flex-1 text-[15px] leading-5">
+              <Text accessibilityRole="alert" className="text-on-surface-variant dark:text-on-surface-variant-dark ml-2.5 flex-1 text-[15px] leading-5">
                 {connectionText.discoveryFailed}
               </Text>
             </View>
@@ -107,6 +107,9 @@ export function NearbyDesktopSection({
             <React.Fragment key={server.serverId}>
               {index > 0 && <View className="h-[0.5px] bg-separator dark:bg-separator-dark ml-14" />}
               <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel={`Connect to ${server.name}`}
+                accessibilityState={{ disabled: isConnecting || isConnected, busy: isConnecting }}
                 onPress={async () => {
                   if (isConnecting) return;
                   await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);

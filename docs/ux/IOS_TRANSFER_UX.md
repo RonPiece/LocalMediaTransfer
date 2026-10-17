@@ -27,14 +27,17 @@ in [Shared Transfer Behavior](SHARED_TRANSFER_BEHAVIOR.md).
   must remain readable in both palettes.
 - Main-screen changes use a brief fade and five-point lift. Button presses use
   immediate opacity feedback, with light haptics on the key Connect actions.
-  When the operating system's Reduce Motion setting is enabled, screen changes
-  become fade-only and capsule press scaling is removed.
+  When the operating system's Reduce Motion setting is enabled, screen and
+  completion transitions become immediate and capsule press scaling is removed.
 
 ## Connection
 
 - Show disconnected, connecting, connected, approval-pending, and
   authentication-expired states distinctly.
 - QR scan is the primary first-pairing action. Manual address entry remains
+  available.
+- Manual HTTPS pairing enables Connect only after a complete SHA-256
+  fingerprint and session token are entered. Expo Go's manual HTTP path stays
   available.
 - Connect presents QR, pairing approval, nearby receivers, manual address, the
   one saved trusted receiver, and Secure & Private information in that order.
@@ -84,7 +87,8 @@ The iPhone owns:
 `Prepare first` is the default for selections of at most 250 items. Larger
 installed-app selections automatically use bounded `Transfer while preparing`
 to avoid retaining an unbounded amount of temporary PhotoKit output. The
-transfer screen discloses this safety adjustment. The setting explains the
+transfer screen discloses this storage-saving adjustment with optional details.
+The setting explains the
 tradeoff:
 
 - Off: preparation completes before upload, providing stable totals and ETA.

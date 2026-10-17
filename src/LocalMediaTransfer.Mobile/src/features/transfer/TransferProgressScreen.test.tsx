@@ -6,6 +6,9 @@ import { render, fireEvent, waitFor } from '@testing-library/react-native';
 import TransferProgressScreen, { transferProgressLayout } from './TransferProgressScreen';
 import { uploadManager } from '@/services/UploadManager';
 import { TransferProgressRing } from './components/TransferProgressRing';
+import { useReduceMotionEnabled } from '@/theme';
+
+jest.mock('@/theme', () => ({ ...jest.requireActual('@/theme'), useReduceMotionEnabled: jest.fn(() => false) }));
 
 jest.mock('@expo/vector-icons', () => {
   const React = require('react');
@@ -25,7 +28,7 @@ jest.mock('@/services/UploadManager', () => ({
 }));
 
 describe('TransferProgressScreen', () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => { jest.clearAllMocks(); jest.mocked(useReduceMotionEnabled).mockReturnValue(false); });
 
   const mockAssets: any[] = [
     { id: '1', filename: 'photo1.jpg', uri: 'file://photo1.jpg', type: 'photo', size: 1000 },
@@ -90,6 +93,19 @@ describe('TransferProgressScreen', () => {
     expect(uploadManager.cancel).toHaveBeenCalled();
     expect(mockOnCancel).toHaveBeenCalled();
     await waitFor(() => expect(getByText('Done')).toBeTruthy());
+  });
+
+  it('shows completion immediately with reduced motion and announces it once', async () => {
+    jest.mocked(useReduceMotionEnabled).mockReturnValue(true);
+    const announcement = jest.spyOn(ReactNative.AccessibilityInfo, 'announceForAccessibility').mockImplementation(() => undefined);
+    (uploadManager.uploadFilesConcurrent as jest.Mock).mockImplementation(() => new Promise(() => {}));
+    const screen = render(<TransferProgressScreen assets={mockAssets} onCancel={jest.fn()} onComplete={jest.fn()} />);
+    fireEvent.press(screen.getByLabelText('Cancel Transfer'));
+    const completed = await screen.findByTestId('transfer-completion-content');
+    expect(completed.props.style.opacity).toBe(1);
+    expect(announcement).toHaveBeenCalledTimes(1);
+    screen.unmount();
+    announcement.mockRestore();
   });
 
   it('marks unfinished files failed when the upload manager reports an asynchronous fatal error', async () => {

@@ -87,7 +87,7 @@ export type AppNavigatorProps = {
 
 export function pageTransitionMotion(reduceMotionEnabled: boolean) {
   return {
-    duration: reduceMotionEnabled ? 120 : 180,
+    duration: reduceMotionEnabled ? 0 : 180,
     translateY: reduceMotionEnabled ? 0 : 5,
   };
 }
@@ -171,6 +171,8 @@ export default function AppNavigator({ navigation, connection, preferences, disc
                   connectionHealthStatus={connection.connectionHealthStatus}
                   history={history.items}
                   historyLoading={history.loading}
+                  historyError={history.error}
+                  onRetryHistory={() => void history.onRefresh()}
                   onOpenPicker={navigation.onOpenPicker}
                   onOpenConnect={() => navigation.onSelectTab('connect')}
                   onOpenHistory={() => navigation.onSelectTab('history')}

@@ -2,7 +2,7 @@ import React from 'react';
 import { Modal, Pressable, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-import { actionAppearance, toneAppearance, useThemePalette } from '@/theme';
+import { actionAppearance, toneAppearance, useReduceMotionEnabled, useThemePalette } from '@/theme';
 
 export const LARGE_TRANSFER_ITEM_THRESHOLD = 2000;
 export const largeTransferGuidance =
@@ -21,6 +21,7 @@ export const FloatingTransferBar = React.memo(function FloatingTransferBar({
 }: FloatingTransferBarProps) {
   const [informationOpen, setInformationOpen] = React.useState(false);
   const palette = useThemePalette();
+  const reduceMotion = useReduceMotionEnabled();
   const action = actionAppearance(palette, 'primary', { disabled });
   const warning = toneAppearance(palette, 'warning');
   if (selectedCount === 0) return null;
@@ -42,6 +43,7 @@ export const FloatingTransferBar = React.memo(function FloatingTransferBar({
         )}
         <View className="w-full max-w-md flex-row pointer-events-auto">
           <TouchableOpacity
+            accessibilityRole="button"
             disabled={disabled}
             onPress={onTransfer}
             className="flex-1 rounded-2xl h-14 flex-row items-center justify-center px-5 shadow-lg shadow-black/40"
@@ -51,7 +53,7 @@ export const FloatingTransferBar = React.memo(function FloatingTransferBar({
           >
             <Ionicons name="arrow-forward-outline" size={20} color={action.foreground} />
             <Text className="text-lg font-semibold ml-2" style={{ color: action.foreground }}>
-              {disabled ? 'Preparing…' : `Transfer ${selectedCount.toLocaleString()} Files`}
+              {disabled ? 'Preparing…' : `Transfer ${selectedCount.toLocaleString()} ${selectedCount === 1 ? 'item' : 'items'}`}
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -67,7 +69,7 @@ export const FloatingTransferBar = React.memo(function FloatingTransferBar({
 
       <Modal
         transparent
-        animationType="fade"
+        animationType={reduceMotion ? 'none' : 'fade'}
         visible={informationOpen}
         onRequestClose={() => setInformationOpen(false)}
       >

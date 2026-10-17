@@ -1,5 +1,5 @@
 import React from 'react';
-import { ActivityIndicator, Text, View } from 'react-native';
+import { ActivityIndicator, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { useThemePalette } from '@/theme';
@@ -15,6 +15,8 @@ type ConcurrentTransferProgressProps = {
   phase?: 'preparing' | 'checking' | 'waiting' | 'uploading';
   duplicateStage?: DuplicateCheckStage;
   includeAdditionalMediaComponents?: boolean;
+  automaticallyStreamsLargeSelection?: boolean;
+  queueCatchUpVisible?: boolean;
   compact?: boolean;
 };
 
@@ -34,9 +36,12 @@ export function ConcurrentTransferProgress({
   phase = 'preparing',
   duplicateStage = 'finding-matches',
   includeAdditionalMediaComponents = false,
+  automaticallyStreamsLargeSelection = false,
+  queueCatchUpVisible = false,
   compact = false,
 }: ConcurrentTransferProgressProps) {
   const palette = useThemePalette();
+  const [detailsExpanded, setDetailsExpanded] = React.useState(false);
   const analyzedAssets = totalAssets > 0
     ? Math.max(0, Math.min(preparedAssets, totalAssets))
     : Math.max(0, preparedAssets);
@@ -67,7 +72,7 @@ export function ConcurrentTransferProgress({
         <View className="w-10 h-10 rounded-full bg-success-soft dark:bg-success-soft-dark items-center justify-center">
           <Ionicons name="images-outline" size={20} color={palette.success} />
         </View>
-        <View className="flex-1 ml-3 min-w-0">
+        <View className="flex-1 ml-3 min-w-0" style={{ minHeight: 76 }}>
           <View className="flex-row items-center justify-between">
             <Text className="text-on-surface dark:text-on-surface-dark text-[15px] font-semibold">Preparing media</Text>
             <Text
@@ -78,9 +83,9 @@ export function ConcurrentTransferProgress({
             </Text>
           </View>
           <Text
-            className="text-on-surface-variant dark:text-on-surface-variant-dark text-[12px] mt-0.5"
+            className="text-on-surface-variant dark:text-on-surface-variant-dark text-[13px] mt-0.5"
             style={{ fontVariant: ['tabular-nums'] }}
-            numberOfLines={1}
+            numberOfLines={2}
           >
             {preparationStatus}
           </Text>
@@ -103,16 +108,43 @@ export function ConcurrentTransferProgress({
         <View className="w-10 h-10 rounded-full bg-primary-soft dark:bg-primary-soft-dark items-center justify-center">
           <Ionicons name="cloud-upload-outline" size={20} color={palette.primary} />
         </View>
-        <View className="flex-1 ml-3 min-w-0">
+        <View className="flex-1 ml-3 min-w-0" style={{ minHeight: 112 }}>
           <Text className="text-on-surface dark:text-on-surface-dark text-[15px] font-semibold">Transferring files</Text>
           <Text
-            className="text-primary dark:text-primary-dark text-[12px] font-semibold mt-0.5"
+            className="text-primary dark:text-primary-dark text-[13px] font-semibold mt-0.5"
             style={{ fontVariant: ['tabular-nums'] }}
           >
             {completedTransferText}
           </Text>
+          <View style={{ minHeight: 22 }} className="justify-center">
+            {queueCatchUpVisible && (
+              <Text className="text-on-surface-variant dark:text-on-surface-variant-dark text-[12px]">
+                Transfer is catching up with prepared files.
+              </Text>
+            )}
+          </View>
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel={automaticallyStreamsLargeSelection ? 'Why transfer started while preparing media' : 'Show transfer details'}
+            accessibilityState={{ expanded: detailsExpanded }}
+            onPress={() => setDetailsExpanded(value => !value)}
+            className="self-start min-h-[44px] justify-center"
+          >
+            <Text className="text-primary dark:text-primary-dark text-[12px] font-semibold">
+              {automaticallyStreamsLargeSelection
+                ? `Storage-saving mode · ${detailsExpanded ? 'Hide details' : 'Why?'}`
+                : `Transfer details · ${detailsExpanded ? 'Hide' : 'Show'}`}
+            </Text>
+          </TouchableOpacity>
+          {detailsExpanded && (
+            <Text className="text-on-surface-variant dark:text-on-surface-variant-dark text-[13px] leading-5 mb-2">
+              {automaticallyStreamsLargeSelection
+                ? 'This large selection transfers prepared files while later items are analyzed to protect phone storage.'
+                : 'Possible matches are checked before upload. Windows makes the final duplicate decision.'}
+            </Text>
+          )}
           {includeAdditionalMediaComponents && (
-            <Text className="text-on-surface-variant dark:text-on-surface-variant-dark text-[10px] leading-[14px] mt-1">
+            <Text className="text-on-surface-variant dark:text-on-surface-variant-dark text-[12px] leading-[17px] mt-1">
               Extra files may be added as additional media components are discovered.
             </Text>
           )}

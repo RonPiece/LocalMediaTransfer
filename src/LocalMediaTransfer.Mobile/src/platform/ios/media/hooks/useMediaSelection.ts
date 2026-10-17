@@ -236,9 +236,13 @@ export function useMediaSelection() {
   const pageCursorRef = React.useRef<string | undefined>(undefined);
   const hasNextPageRef = React.useRef(false);
   const loadingMoreRef = React.useRef(false);
+  const loadMoreErrorRef = React.useRef(false);
   const loadedMediaIdsRef = React.useRef(new Set<string>());
   const [hasNextPage, setHasNextPage] = React.useState(false);
   const [loadingMore, setLoadingMore] = React.useState(false);
+  const [mediaError, setMediaError] = React.useState<string | null>(null);
+  const [loadMoreError, setLoadMoreError] = React.useState(false);
+  const [reloadCount, retryMedia] = React.useReducer(count => count + 1, 0);
 
   const applySelection = React.useCallback((next: Set<string>) => {
     setSelectedCount(selectionStore.replace(next));
@@ -302,9 +306,12 @@ export function useMediaSelection() {
       pageCursorRef.current = undefined;
       hasNextPageRef.current = false;
       loadingMoreRef.current = false;
+      loadMoreErrorRef.current = false;
       loadedMediaIdsRef.current = new Set<string>();
       setHasNextPage(false);
       setLoadingMore(false);
+      setMediaError(null);
+      setLoadMoreError(false);
       try {
         const page = await mediaScanner.getMediaPage(MEDIA_PAGE_SIZE, selectedAlbum);
         if (!active || operation !== selectionOperationRef.current) return;
@@ -319,7 +326,7 @@ export function useMediaSelection() {
           selectionStore.clear();
           setSelectedCount(0);
           setMedia([]);
-          Alert.alert('Media unavailable', 'Could not load photos and videos. Check Photos permission and try again.');
+          setMediaError('Could not load photos and videos. Check Photos permission and try again.');
         }
       } finally {
         if (active && operation === selectionOperationRef.current) setLoading(false);
@@ -327,13 +334,14 @@ export function useMediaSelection() {
     };
     void fetchMedia();
     return () => { active = false; };
-  }, [selectedAlbum, selectionStore]);
+  }, [reloadCount, selectedAlbum, selectionStore]);
 
   const loadMoreMedia = React.useCallback(async () => {
-    if (loading || loadingMoreRef.current || !hasNextPageRef.current) return;
+    if (loading || loadingMoreRef.current || loadMoreErrorRef.current || !hasNextPageRef.current) return;
     const operation = selectionOperationRef.current;
     loadingMoreRef.current = true;
     setLoadingMore(true);
+    setLoadMoreError(false);
     try {
       const page = await mediaScanner.getMediaPage(
         MEDIA_PAGE_SIZE,
@@ -355,6 +363,8 @@ export function useMediaSelection() {
     } catch {
       if (operation === selectionOperationRef.current) {
         console.error('Failed to load more media.');
+        loadMoreErrorRef.current = true;
+        setLoadMoreError(true);
       }
     } finally {
       if (operation === selectionOperationRef.current) {
@@ -363,6 +373,12 @@ export function useMediaSelection() {
       }
     }
   }, [loading, selectedAlbum]);
+
+  const retryLoadMore = React.useCallback(() => {
+    loadMoreErrorRef.current = false;
+    setLoadMoreError(false);
+    void loadMoreMedia();
+  }, [loadMoreMedia]);
 
   const toggleSelection = React.useCallback((id: string) => {
     setSelectedCount(selectionStore.toggle(id));
@@ -562,21 +578,25 @@ export function useMediaSelection() {
     setLoading(true);
     try {
       const allMedia = media.slice();
+      const loadedIds = new Set(loadedMediaIdsRef.current);
       let after = pageCursorRef.current;
       let hasMore = hasNextPageRef.current;
       while (hasMore) {
         const page = await mediaScanner.getMediaPage(MEDIA_PAGE_SIZE, selectedAlbum, after);
         if (operation !== selectionOperationRef.current) return;
         for (const asset of page.assets) {
-          if (loadedMediaIdsRef.current.has(asset.id)) continue;
-          loadedMediaIdsRef.current.add(asset.id);
+          if (loadedIds.has(asset.id)) continue;
+          loadedIds.add(asset.id);
           allMedia.push(asset);
         }
         after = page.endCursor;
         hasMore = page.hasNextPage;
       }
       pageCursorRef.current = after;
+      loadedMediaIdsRef.current = loadedIds;
       hasNextPageRef.current = false;
+      loadMoreErrorRef.current = false;
+      setLoadMoreError(false);
       setHasNextPage(false);
       setMedia(allMedia);
       applySelection(new Set(allMedia.map(asset => asset.id)));
@@ -609,6 +629,10 @@ export function useMediaSelection() {
     media,
     hasNextPage,
     loadingMore,
+    mediaError,
+    loadMoreError,
+    retryMedia,
+    retryLoadMore,
     selectionStore,
     selectedCount,
     suppressNextPress,

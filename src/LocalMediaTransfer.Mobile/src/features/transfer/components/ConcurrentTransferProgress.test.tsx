@@ -1,5 +1,5 @@
 import React from 'react';
-import { render } from '@testing-library/react-native';
+import { fireEvent, render } from '@testing-library/react-native';
 
 import { ConcurrentTransferProgress } from './ConcurrentTransferProgress';
 
@@ -39,5 +39,16 @@ describe('ConcurrentTransferProgress', () => {
     expect(screen.getByText('100%')).toBeTruthy();
     expect(screen.getByText('10 of 10 media items analyzed')).toBeTruthy();
     expect(screen.getByText('Transfer active')).toBeTruthy();
+  });
+
+  it('discloses automatic streaming and keeps a quiet catch-up status in the transfer row', () => {
+    const screen = render(<ConcurrentTransferProgress preparedAssets={20} totalAssets={300}
+      processedFiles={2} hasUploadStarted automaticallyStreamsLargeSelection queueCatchUpVisible />);
+    expect(screen.getByText('Transfer is catching up with prepared files.')).toBeTruthy();
+    const details = screen.getByLabelText('Why transfer started while preparing media');
+    expect(details.props.accessibilityState.expanded).toBe(false);
+    fireEvent.press(details);
+    expect(screen.getByText(/protect phone storage/)).toBeTruthy();
+    expect(screen.getByLabelText('Why transfer started while preparing media').props.accessibilityState.expanded).toBe(true);
   });
 });

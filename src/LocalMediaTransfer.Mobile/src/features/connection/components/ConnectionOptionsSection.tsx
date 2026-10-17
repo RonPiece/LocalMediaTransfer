@@ -20,6 +20,9 @@ export function ConnectionOptionsSection({
   manualEntryOpen,
   isConnecting,
   canConnectManually,
+  addressError,
+  fingerprintError,
+  tokenError,
   nativeHttpsAvailable,
   allowInsecureHttp,
   onIpChange,
@@ -36,6 +39,9 @@ export function ConnectionOptionsSection({
   manualEntryOpen: boolean;
   isConnecting: boolean;
   canConnectManually: boolean;
+  addressError: string | null;
+  fingerprintError: string | null;
+  tokenError: string | null;
   nativeHttpsAvailable: boolean;
   allowInsecureHttp: boolean;
   onIpChange: (value: string) => void;
@@ -77,8 +83,11 @@ export function ConnectionOptionsSection({
                 value={ip}
                 onChangeText={onIpChange}
                 placeholder={connectionText.manualIpPlaceholder}
+                label="Receiver address"
+                hint="Use the address shown in the Windows app."
                 keyboardType="url"
               />
+              {addressError && <Text accessibilityRole="alert" className="text-error dark:text-error-dark text-[12px] px-4 pb-2">{addressError}</Text>}
               {nativeHttpsAvailable && (
                 <>
                   <Divider />
@@ -86,8 +95,11 @@ export function ConnectionOptionsSection({
                     value={fingerprint}
                     onChangeText={onFingerprintChange}
                     placeholder={connectionText.manualFingerprintPlaceholder}
+                    label="Certificate fingerprint"
+                    hint="Required for secure pairing. Copy the SHA-256 fingerprint shown in Windows."
                     textSizeClass="text-[14px]"
                   />
+                  {fingerprintError && <Text accessibilityRole="alert" className="text-error dark:text-error-dark text-[12px] px-4 pb-2">{fingerprintError}</Text>}
                 </>
               )}
               <Divider />
@@ -95,9 +107,12 @@ export function ConnectionOptionsSection({
                 value={manualToken}
                 onChangeText={onManualTokenChange}
                 placeholder={connectionText.manualTokenPlaceholder}
+                label="Session token"
+                hint="Required for secure pairing. Copy the token shown in Windows."
                 secureTextEntry
                 textSizeClass="text-[14px]"
               />
+              {tokenError && <Text accessibilityRole="alert" className="text-error dark:text-error-dark text-[12px] px-4 pb-2">{tokenError}</Text>}
             </View>
             <PrimaryButton
               title={isConnecting ? connectionText.connecting : connectionText.connect}

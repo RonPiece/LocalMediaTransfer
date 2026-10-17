@@ -3,8 +3,8 @@
 ## Responsibility map
 
 - `src/LocalMediaTransfer.Mobile/src/theme/tokens.json`: paired Light/Dark semantic
-  colors. Existing Light values are retained, except that redundant connection
-  colors have been removed in favor of `success` and feature-selected tones.
+  colors for the current mobile palette. Connection status uses semantic tones
+  rather than dedicated connected/disconnected color tokens.
 - `src/theme/index.ts`: effective appearance, active palette, reduced motion and
   Reduce Transparency subscriptions. `src/theme/ThemeProvider.tsx` owns the saved
   System/Light/Dark preference, synchronizes React Native Appearance and
@@ -115,8 +115,8 @@ explicit style colors, so the three status/address/action regions remain distinc
 accent outline and at least 44-point height; details uses a 48-point full-width
 primary fill. Clipboard behavior still copies only the public address.
 
-`DiagnosticExportButton` is shared by Settings and the legacy dashboard settings
-modal. Report dates/status text and export-all labels sit in ordinary Views;
+`DiagnosticExportButton` is used in Settings. Report dates/status text and
+export-all labels sit in ordinary Views;
 only the 44-by-44 share icon button triggers export. Export-all is unavailable
 until reports have loaded and at least one is present. The loading/error/retry
 behavior and export handlers are unchanged.

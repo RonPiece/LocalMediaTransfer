@@ -54,6 +54,22 @@ const items = [
 ];
 
 describe('HistoryScreen', () => {
+  it('separates loading, fetch failure, true empty history, and filtered empty results', () => {
+    const props = { isConnected: true, items: [], loading: true, error: null, onRefresh: jest.fn(), onClear: jest.fn(), onConnect: jest.fn() };
+    const screen = render(<HistoryScreen {...props} />);
+    expect(screen.getByText('Loading history…')).toBeTruthy();
+    expect(screen.queryByText('No matching transfers')).toBeNull();
+    screen.rerender(<HistoryScreen {...props} loading={false} error="Receiver unavailable." />);
+    expect(screen.getByText(/Receiver unavailable/)).toBeTruthy();
+    expect(screen.queryByText('No receiver history')).toBeNull();
+    fireEvent.press(screen.getByText(/Receiver unavailable/));
+    expect(props.onRefresh).toHaveBeenCalled();
+    screen.rerender(<HistoryScreen {...props} loading={false} error={null} />);
+    expect(screen.getByText('No receiver history')).toBeTruthy();
+    screen.rerender(<HistoryScreen {...props} items={[items[0]]} loading={false} error={null} />);
+    fireEvent.press(screen.getByRole('button', { name: 'Failed' }));
+    expect(screen.getByText('No matching transfers')).toBeTruthy();
+  });
   it('explains receiver-hosted history while disconnected', () => {
     const onConnect = jest.fn();
     const screen = render(

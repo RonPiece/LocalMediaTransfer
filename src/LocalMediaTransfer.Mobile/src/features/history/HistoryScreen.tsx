@@ -1,6 +1,6 @@
 import { DuplicateSkipMarker } from '@/features/history/DuplicateSkipMarker';
 import React from 'react';
-import { Modal, RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { FlatList, Modal, RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
@@ -9,8 +9,8 @@ import { TransferHistoryItem } from '@/api/types';
 import { EmptyState, PrimaryButton, ScreenHeader, SegmentedControl, StatusBadge } from '@/components/ui';
 import AppHeader from '@/components/AppHeader';
 import { HistoryProblemDetailsModal } from '../../platform/history';
-import { formatHistoryDate, historyItemKey, historyStatus } from '@/features/dashboard/hooks/useDashboardHistory';
-import { interactionAppearance, useThemePalette } from '@/theme';
+import { formatHistoryDate, historyItemKey, historyStatus } from './historyPresentation';
+import { interactionAppearance, useReduceMotionEnabled, useThemePalette } from '@/theme';
 import { formatDuration } from '@/features/transfer/transferPresentation';
 
 type HistoryFilter = 'all' | 'completed' | 'skipped' | 'failed';
@@ -50,6 +50,7 @@ function HistoryStat({ icon, label, value, tone = 'info' }: { icon: React.Compon
 
 export function SessionDetails({ item, onClose }: { item: TransferHistoryItem | null; onClose: () => void }) {
   const [problemFilesOpen, setProblemFilesOpen] = React.useState(false);
+  const reduceMotion = useReduceMotionEnabled();
   if (!item) return null;
   const problemFiles = item.files?.filter(file => file.outcome !== 'uploaded') ?? [];
   const totalProblems = (item.skippedFiles ?? 0) + (item.failedFiles ?? 0);
@@ -80,7 +81,7 @@ export function SessionDetails({ item, onClose }: { item: TransferHistoryItem | 
   );
   if ((item.retries ?? 0) > 0) details.push(['Retries', (item.retries ?? 0).toLocaleString()]);
   return (
-    <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+    <Modal visible animationType={reduceMotion ? 'none' : 'slide'} presentationStyle="pageSheet" onRequestClose={onClose}>
       <SafeAreaProvider>
         <View className="flex-1 bg-background dark:bg-background-dark">
           <SafeAreaView edges={['top']} className="bg-surface dark:bg-surface-dark">
@@ -135,22 +136,61 @@ export default function HistoryScreen({
   const skippedFiles = items.reduce((sum, item) => sum + (item.skippedFiles ?? 0), 0);
   const uploadedBytes = items.reduce((sum, item) => sum + (item.uploadedBytes ?? 0), 0);
 
+  const renderHistoryItem = ({ item }: { item: TransferHistoryItem }) => {
+    const status = historyStatus(item);
+    const tone = status === 'Completed' ? 'success' : status === 'Skipped duplicates' || status === 'Canceled' ? 'warning' : 'error';
+    const fileCount = item.expandedFiles ?? item.selectedFiles ?? ((item.uploadedFiles ?? 0) + (item.skippedFiles ?? 0) + (item.failedFiles ?? 0));
+    return (
+      <TouchableOpacity
+        accessibilityRole="button"
+        accessibilityLabel={`Open ${status.toLowerCase()} transfer from ${formatHistoryDate(item.completedAt)}`}
+        onPress={() => setSelected({ item, scope: api.url })}
+        className="rounded-[20px] bg-surface dark:bg-surface-dark border border-border dark:border-border-dark p-4 mb-3 flex-row items-center"
+      >
+        <View className="w-12 h-12 rounded-2xl bg-primary-soft dark:bg-primary-soft-dark items-center justify-center">
+          <Ionicons name="phone-portrait-outline" size={25} color={palette.primary} />
+        </View>
+        <View className="flex-1 ml-3 min-w-0">
+          <View className="flex-row items-center justify-between">
+            <Text className="text-[16px] font-bold text-on-surface dark:text-on-surface-dark">Phone upload</Text>
+            <StatusBadge label={status === 'Completed with errors' ? 'Mixed' : status} tone={tone} compact={status === 'Skipped duplicates'} />
+          </View>
+          <Text className="text-[12px] text-on-surface-variant dark:text-on-surface-variant-dark mt-1">{formatHistoryDate(item.completedAt)}</Text>
+          <Text className="text-[12px] text-on-surface-variant dark:text-on-surface-variant-dark mt-1">{fileCount.toLocaleString()} files · {formatHistoryBytes(item.uploadedBytes)} uploaded</Text>
+          <DuplicateSkipMarker uploaded={item.uploadedFiles} skipped={item.skippedFiles} />
+        </View>
+        <Ionicons name="chevron-forward" size={18} color={palette.onSurfaceVariant} />
+      </TouchableOpacity>
+    );
+  };
+
+  const emptyState = !isConnected ? (
+    <EmptyState icon="desktop-outline" title="Connect to view history"
+      message="Transfer history is stored by the receiver and is available after a secure connection."
+      action={<PrimaryButton title="Open Connect" icon="link-outline" onPress={onConnect} />} />
+  ) : loading ? (
+    <Text className="text-on-surface-variant dark:text-on-surface-variant-dark text-center py-8">Loading history…</Text>
+  ) : error ? null : items.length === 0 ? (
+    <EmptyState icon="time-outline" title="No receiver history" message="Completed transfers will appear here." />
+  ) : (
+    <EmptyState icon="filter-outline" title="No matching transfers" message="Try another history filter." />
+  );
+
   return (
     <View className="flex-1 bg-background dark:bg-background-dark">
       <SafeAreaView edges={['top']} className="flex-1">
         <ScreenHeader title="History" subtitle="Recent history on this receiver" />
-        <ScrollView
+        <FlatList
+          data={isConnected ? filtered : []}
+          keyExtractor={historyItemKey}
+          renderItem={renderHistoryItem}
+          initialNumToRender={12}
+          maxToRenderPerBatch={12}
+          windowSize={7}
           refreshControl={isConnected ? <RefreshControl refreshing={loading} onRefresh={onRefresh} tintColor={palette.primary} /> : undefined}
           contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 28 }}
-        >
-          {!isConnected ? (
-            <EmptyState
-              icon="desktop-outline"
-              title="Connect to view history"
-              message="Transfer history is stored by the receiver and is available after a secure connection."
-              action={<PrimaryButton title="Open Connect" icon="link-outline" onPress={onConnect} />}
-            />
-          ) : (
+          ListEmptyComponent={emptyState}
+          ListHeaderComponent={isConnected ? (
             <>
               <View className="flex-row flex-wrap -m-3 mb-3">
                 <HistoryStat icon="document-text-outline" label="Recent sessions" value={items.length.toLocaleString()} />
@@ -173,45 +213,13 @@ export default function HistoryScreen({
               </View>
 
               {error && (
-                <TouchableOpacity onPress={onRefresh} className="rounded-xl bg-error-soft dark:bg-error-soft-dark px-4 py-3 mb-3">
-                  <Text className="text-error dark:text-error-dark text-[13px]">{error} Tap to try again.</Text>
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Retry loading receiver history" onPress={onRefresh} className="rounded-xl bg-error-soft dark:bg-error-soft-dark px-4 py-3 mb-3 min-h-[48px] justify-center">
+                  <Text accessibilityRole="alert" className="text-error dark:text-error-dark text-[13px]">{error} Tap to try again.</Text>
                 </TouchableOpacity>
               )}
-              {!loading && items.length === 0 ? (
-                <EmptyState icon="time-outline" title="No receiver history" message="Completed transfers will appear here." />
-              ) : filtered.length === 0 ? (
-                <EmptyState icon="filter-outline" title="No matching transfers" message="Try another history filter." />
-              ) : filtered.map(item => {
-                const status = historyStatus(item);
-                const tone = status === 'Completed' ? 'success' : status === 'Skipped duplicates' || status === 'Canceled' ? 'warning' : 'error';
-                const fileCount = item.expandedFiles ?? item.selectedFiles ?? ((item.uploadedFiles ?? 0) + (item.skippedFiles ?? 0) + (item.failedFiles ?? 0));
-                return (
-                  <TouchableOpacity
-                    key={historyItemKey(item)}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Open ${status.toLowerCase()} transfer from ${formatHistoryDate(item.completedAt)}`}
-                    onPress={() => setSelected({ item, scope: api.url })}
-                    className="rounded-[20px] bg-surface dark:bg-surface-dark border border-border dark:border-border-dark p-4 mb-3 flex-row items-center"
-                  >
-                    <View className="w-12 h-12 rounded-2xl bg-primary-soft dark:bg-primary-soft-dark items-center justify-center">
-                      <Ionicons name="phone-portrait-outline" size={25} color={palette.primary} />
-                    </View>
-                    <View className="flex-1 ml-3 min-w-0">
-                      <View className="flex-row items-center justify-between">
-                        <Text className="text-[16px] font-bold text-on-surface dark:text-on-surface-dark">Phone upload</Text>
-                        <StatusBadge label={status === 'Completed with errors' ? 'Mixed' : status} tone={tone} compact={status === 'Skipped duplicates'} />
-                      </View>
-                      <Text className="text-[12px] text-on-surface-variant dark:text-on-surface-variant-dark mt-1">{formatHistoryDate(item.completedAt)}</Text>
-                      <Text className="text-[12px] text-on-surface-variant dark:text-on-surface-variant-dark mt-1">{fileCount.toLocaleString()} files · {formatHistoryBytes(item.uploadedBytes)} uploaded</Text>
-                      <DuplicateSkipMarker uploaded={item.uploadedFiles} skipped={item.skippedFiles} />
-                    </View>
-                    <Ionicons name="chevron-forward" size={18} color={palette.onSurfaceVariant} />
-                  </TouchableOpacity>
-                );
-              })}
             </>
-          )}
-        </ScrollView>
+          ) : null}
+        />
       </SafeAreaView>
       <SessionDetails key={`${selected?.scope}:${selected?.item.sessionId}`} item={isConnected && selected?.scope === api.url ? selected.item : null} onClose={() => setSelected(null)} />
     </View>

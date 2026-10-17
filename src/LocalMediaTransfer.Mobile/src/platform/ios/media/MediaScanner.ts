@@ -36,7 +36,7 @@ export class MediaScanner {
 
   public async getMediaPage(limit: number = 100, albumId?: string, after?: string): Promise<MediaPage> {
     if (!(await this.ensurePermission())) {
-      return { assets: [], hasNextPage: false };
+      throw new Error('Photos access is required to load media.');
     }
 
     const result = await MediaLibrary.getAssetsAsync({

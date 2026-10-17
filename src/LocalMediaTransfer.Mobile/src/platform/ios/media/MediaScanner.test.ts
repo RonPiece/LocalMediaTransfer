@@ -25,3 +25,8 @@ it('does not enumerate assets when permission is denied', async () => {
   expect(await new MediaScanner().getAllMedia()).toEqual([]);
   expect(MediaLibrary.getAssetsAsync).not.toHaveBeenCalled();
 });
+it('reports permission denial to a paged picker instead of presenting an empty album', async () => {
+  jest.mocked(MediaLibrary.requestPermissionsAsync).mockResolvedValue({ status: 'denied' } as never);
+  await expect(new MediaScanner().getMediaPage()).rejects.toThrow('Photos access is required');
+  expect(MediaLibrary.getAssetsAsync).not.toHaveBeenCalled();
+});

@@ -43,24 +43,24 @@ export function TransferStatsBar({
   const hasTransferredColumn = transferredBytes !== undefined;
   const statHorizontalPadding = hasTransferredColumn ? 'px-2' : 'px-3';
   const valueTextSize = hasTransferredColumn ? 'text-[16px]' : 'text-[18px]';
-  const labelTextSize = hasTransferredColumn ? 'text-[9px]' : 'text-[10px]';
+  const labelTextSize = 'text-[12px]';
 
   const filesStat = (
-    <View className={`flex-1 min-w-0 items-start ${statHorizontalPadding}`}>
+    <View className={`${compact ? 'w-1/2' : 'flex-1'} min-w-0 items-start ${statHorizontalPadding}`}>
       <Text className={`text-on-surface-variant dark:text-on-surface-variant-dark ${labelTextSize} font-bold uppercase tracking-wider`}>{remainingLabel}</Text>
       <Text className={`text-on-surface dark:text-on-surface-dark ${valueTextSize} font-semibold mt-1`} style={{ fontVariant: ['tabular-nums'] }}>{itemsRemaining.toLocaleString()}</Text>
     </View>
   );
   const speedStat = (
-    <View className={`flex-1 min-w-0 items-start ${statHorizontalPadding} border-l border-separator dark:border-separator-dark`}>
+    <View className={`${compact ? 'w-1/2' : 'flex-1'} min-w-0 items-start ${statHorizontalPadding} ${compact ? '' : 'border-l border-separator dark:border-separator-dark'}`}>
       <Text className={`text-on-surface-variant dark:text-on-surface-variant-dark ${labelTextSize} font-bold uppercase tracking-wider`}>{transferText.currentSpeed}</Text>
       <Text className={`text-on-surface dark:text-on-surface-dark ${valueTextSize} font-semibold mt-1`} style={{ fontVariant: ['tabular-nums'] }}>
-        {currentMediaMBps.toFixed(1)} <Text className={hasTransferredColumn ? 'text-[10px]' : 'text-[11px]'}>MB/s</Text>
+        {currentMediaMBps.toFixed(1)} <Text className="text-[12px]">MB/s</Text>
       </Text>
     </View>
   );
   const transferredStat = transferredBytes === undefined ? null : (
-    <View className={`flex-1 min-w-0 items-start ${statHorizontalPadding} border-l border-separator dark:border-separator-dark`}>
+    <View className={`${compact ? 'w-1/2' : 'flex-1'} min-w-0 items-start ${statHorizontalPadding} ${compact ? '' : 'border-l border-separator dark:border-separator-dark'}`}>
       <Text className={`text-on-surface-variant dark:text-on-surface-variant-dark ${labelTextSize} font-bold uppercase tracking-wider`}>Transferred</Text>
       <Text
         className={`text-on-surface dark:text-on-surface-dark ${valueTextSize} font-semibold mt-1`}
@@ -78,12 +78,12 @@ export function TransferStatsBar({
       testID={compact ? 'transfer-eta-compact' : 'transfer-eta-wide'}
       className={compact ? 'min-w-0 items-start px-3 pt-3 mt-3 border-t border-border dark:border-border-dark' : 'flex-1 min-w-0 items-start px-3 border-l border-separator dark:border-separator-dark'}
     >
-      <Text className="text-on-surface-variant dark:text-on-surface-variant-dark text-[10px] font-bold uppercase tracking-wider">{timeLabel}</Text>
+      <Text className="text-on-surface-variant dark:text-on-surface-variant-dark text-[12px] font-bold uppercase tracking-wider">{timeLabel}</Text>
       <Text className="text-[14px] leading-5 font-semibold mt-1 text-primary dark:text-primary-dark">
         {timeText}
       </Text>
       {timeHint && (
-        <Text className="text-on-surface-variant dark:text-on-surface-variant-dark text-[11px] leading-4 mt-1">{timeHint}</Text>
+        <Text className="text-on-surface-variant dark:text-on-surface-variant-dark text-[12px] leading-4 mt-1">{timeHint}</Text>
       )}
     </View>
   );
@@ -91,7 +91,7 @@ export function TransferStatsBar({
   return (
     <View testID="transfer-stats-card" className="bg-surface dark:bg-surface-dark rounded-[18px] px-2 py-4 mb-4 border border-border dark:border-border-dark">
       <View testID="transfer-stats-content" onLayout={measureContent}>
-        <View className="flex-row">
+        <View className={compact ? 'flex-row flex-wrap' : 'flex-row'}>
           {filesStat}
           {transferredStat}
           {speedStat}

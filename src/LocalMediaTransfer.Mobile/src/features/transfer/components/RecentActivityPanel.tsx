@@ -1,15 +1,19 @@
 import React from 'react';
-import { FlatList, ListRenderItemInfo, Modal, Text, TouchableOpacity, View } from 'react-native';
+import { FlatList, ListRenderItemInfo, Modal, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
-import { useThemePalette } from '@/theme';
+import { useReduceMotionEnabled, useThemePalette } from '@/theme';
 import { FileState } from '../transferPresentation';
 import { TransferFileItem } from './TransferFileItem';
 
 const previewContentStyle = { paddingHorizontal: 16 };
 const expandedContentStyle = { paddingHorizontal: 20, paddingBottom: 24 };
 const renderItem = ({ item }: ListRenderItemInfo<FileState>) => <TransferFileItem item={item} />;
+
+export function recentActivityPreviewCount(compact: boolean, fontScale: number): number {
+  return compact || fontScale >= 1.5 ? 1 : 2;
+}
 
 export const RecentActivityPanel = React.memo(function RecentActivityPanel({
   items,
@@ -20,12 +24,16 @@ export const RecentActivityPanel = React.memo(function RecentActivityPanel({
 }) {
   const [expanded, setExpanded] = React.useState(false);
   const palette = useThemePalette();
+  const reduceMotion = useReduceMotionEnabled();
+  const { fontScale } = useWindowDimensions();
+  const largeText = fontScale >= 1.5;
   const label = `Recent activity, ${items.length.toLocaleString()} recent items`;
 
   return (
     <>
       <View
-        className={`flex-1 bg-surface dark:bg-surface-dark rounded-2xl border border-border dark:border-border-dark overflow-hidden ${compact ? 'min-h-[72px] max-h-[104px]' : 'min-h-[96px] max-h-[138px]'}`}
+        className="flex-1 bg-surface dark:bg-surface-dark rounded-2xl border border-border dark:border-border-dark overflow-hidden"
+        style={{ minHeight: compact ? 72 : 96, maxHeight: largeText ? 190 : compact ? 104 : 138 }}
       >
         <TouchableOpacity
           accessibilityRole="button"
@@ -47,7 +55,7 @@ export const RecentActivityPanel = React.memo(function RecentActivityPanel({
             )}
           </View>
           <View className="flex-row items-center">
-            <Text className="text-primary dark:text-primary-dark text-[12px] font-semibold mr-1">Expand</Text>
+            <Text className="text-primary dark:text-primary-dark text-[13px] font-semibold mr-1">Expand</Text>
             <Ionicons name="chevron-up" size={17} color={palette.primary} />
           </View>
         </TouchableOpacity>
@@ -57,7 +65,7 @@ export const RecentActivityPanel = React.memo(function RecentActivityPanel({
           </View>
         ) : (
           <FlatList
-            data={items.slice(0, compact ? 1 : 2)}
+            data={items.slice(0, recentActivityPreviewCount(compact, fontScale))}
             keyExtractor={item => item.id}
             renderItem={renderItem}
             scrollEnabled={false}
@@ -68,7 +76,7 @@ export const RecentActivityPanel = React.memo(function RecentActivityPanel({
 
       <Modal
         visible={expanded}
-        animationType="slide"
+        animationType={reduceMotion ? 'none' : 'slide'}
         presentationStyle="pageSheet"
         onRequestClose={() => setExpanded(false)}
       >

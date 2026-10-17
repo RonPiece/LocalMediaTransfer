@@ -8,7 +8,7 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import AppHeader from '@/components/AppHeader';
 import { api } from '@/api/ApiClient';
-import { addressPanelAppearance, useThemePalette } from '@/theme';
+import { addressPanelAppearance, useReduceMotionEnabled, useThemePalette } from '@/theme';
 import { dashboardText } from '../content/dashboardText';
 
 export function ConnectionDetailsModal({
@@ -19,6 +19,7 @@ export function ConnectionDetailsModal({
   onClose: () => void;
 }) {
   const palette = useThemePalette();
+  const reduceMotion = useReduceMotionEnabled();
   const copyAddress = async () => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
     try {
@@ -32,7 +33,7 @@ export function ConnectionDetailsModal({
 
   if (!visible) return null;
   return (
-    <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
+    <Modal visible animationType={reduceMotion ? 'none' : 'slide'} presentationStyle="fullScreen" onRequestClose={onClose}>
       <SafeAreaProvider>
         <View className="flex-1 bg-background dark:bg-background-dark">
           <SafeAreaView edges={['top']} className="bg-surface dark:bg-surface-dark">

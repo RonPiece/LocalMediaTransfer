@@ -4,6 +4,7 @@ import {
   LayoutChangeEvent,
   ListRenderItemInfo,
   Text,
+  TouchableOpacity,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -44,6 +45,10 @@ export default function MediaPickerScreen({ onTransfer, onDisconnect }: MediaPic
     media,
     hasNextPage,
     loadingMore,
+    mediaError,
+    loadMoreError,
+    retryMedia,
+    retryLoadMore,
     selectionStore,
     selectedCount,
     suppressNextPress,
@@ -106,7 +111,7 @@ export default function MediaPickerScreen({ onTransfer, onDisconnect }: MediaPic
   }, [itemOuterSize]);
 
   const startTransfer = React.useCallback(async () => {
-    if (transferResolvingRef.current) return;
+    if (transferResolvingRef.current || loading || loadingMore) return;
     transferResolvingRef.current = true;
     setTransferResolving(true);
     try {
@@ -125,7 +130,7 @@ export default function MediaPickerScreen({ onTransfer, onDisconnect }: MediaPic
       transferResolvingRef.current = false;
       if (mountedRef.current) setTransferResolving(false);
     }
-  }, [onTransfer, selectedAssets]);
+  }, [loading, loadingMore, onTransfer, selectedAssets]);
 
   return (
     <View className="flex-1 bg-background dark:bg-background-dark">
@@ -162,6 +167,17 @@ export default function MediaPickerScreen({ onTransfer, onDisconnect }: MediaPic
           {loading && (
             <Text className="text-on-surface-variant dark:text-on-surface-variant-dark text-center py-2">Loading media…</Text>
           )}
+          {!loading && mediaError && (
+            <View className="items-center px-6 py-10">
+              <Text className="text-error dark:text-error-dark text-center mb-3">{mediaError}</Text>
+              <TouchableOpacity accessibilityRole="button" onPress={retryMedia} className="min-h-12 justify-center px-5 rounded-xl bg-primary-soft dark:bg-primary-soft-dark">
+                <Text className="text-primary dark:text-primary-dark font-semibold">Try loading media again</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+          {!loading && !mediaError && media.length === 0 && (
+            <Text className="text-on-surface-variant dark:text-on-surface-variant-dark text-center px-6 py-10">No photos or videos in this album.</Text>
+          )}
           <GestureDetector gesture={nativeScrollGesture}>
             <Animated.FlatList
               ref={gridListRef}
@@ -180,6 +196,10 @@ export default function MediaPickerScreen({ onTransfer, onDisconnect }: MediaPic
               {...MEDIA_GRID_VIRTUALIZATION}
               ListFooterComponent={loadingMore ? (
                 <Text className="text-on-surface-variant dark:text-on-surface-variant-dark text-center py-4">Loading more…</Text>
+              ) : loadMoreError ? (
+                <TouchableOpacity accessibilityRole="button" onPress={retryLoadMore} className="min-h-12 items-center justify-center px-4">
+                  <Text className="text-error dark:text-error-dark text-center">Could not load more media. Tap to retry.</Text>
+                </TouchableOpacity>
               ) : null}
             />
           </GestureDetector>
@@ -188,7 +208,7 @@ export default function MediaPickerScreen({ onTransfer, onDisconnect }: MediaPic
 
       <FloatingTransferBar
         selectedCount={selectedCount}
-        disabled={transferResolving}
+        disabled={transferResolving || loading || loadingMore || !!mediaError}
         onTransfer={startTransfer}
       />
     </View>

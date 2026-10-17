@@ -21,10 +21,12 @@ describe.each(['light', 'dark'] as const)('%s thumbnail selection', mode => {
   const onToggle = jest.fn();
   const screen = render(<MediaGridItem item={item} itemSize={120} itemMargin={1} selectionStore={store} suppressNextPress={{ current: false }} onToggleSelection={onToggle} />);
   expect(screen.getByRole('button').props.accessibilityState.selected).toBe(false);
+  expect(screen.getByRole('button').props.accessibilityLabel).toBe('fixture, not selected');
   expect(screen.queryByTestId('media-selection-overlay')).toBeNull();
   expect(screen.getByTestId('media-selection-badge')).toHaveStyle({ width: 26, height: 26, borderColor: palette.white, backgroundColor: 'rgba(0,0,0,0.45)' });
   act(() => { selected = true; notify(); });
   expect(screen.getByRole('button').props.accessibilityState.selected).toBe(true);
+  expect(screen.getByRole('button').props.accessibilityLabel).toBe('fixture, selected');
   expect(screen.getByTestId('media-selection-overlay')).toHaveStyle({ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, borderWidth: 3, borderColor: palette.primary, backgroundColor: 'rgba(0,0,0,0.35)' });
   expect(screen.getByTestId('media-selection-badge')).toHaveStyle({ position: 'absolute', top: 8, right: 8, backgroundColor: palette.primaryFill, borderColor: palette.white });
   fireEvent.press(screen.getByRole('button'));

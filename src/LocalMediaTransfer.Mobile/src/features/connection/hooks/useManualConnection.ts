@@ -3,12 +3,29 @@ import { Alert, LayoutAnimation } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { PairingPayload, normalizeFingerprint } from '@/security/ConnectionSecurity';
 import { expectedServerEnvironment } from '@/services/NativeCapabilities';
+import { useReduceMotionEnabled } from '@/theme';
 
 type ConnectManually = (
   ipOrUrl: string,
   token: string,
   pairing?: PairingPayload,
 ) => Promise<boolean | void> | boolean | void;
+
+export function manualAddressUrl(input: string, nativeHttpsAvailable: boolean): string | null {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+  try {
+    const value = trimmed.includes('://')
+      ? trimmed
+      : `${nativeHttpsAvailable ? 'https' : 'http'}://${trimmed}${/:[0-9]+$/.test(trimmed) ? '' : `:${nativeHttpsAvailable ? 8443 : 8080}`}`;
+    const parsed = new URL(value);
+    if (!parsed.hostname || !['http:', 'https:'].includes(parsed.protocol) ||
+        parsed.username || parsed.password || parsed.search || parsed.hash || parsed.pathname !== '/') return null;
+    return parsed.origin;
+  } catch {
+    return null;
+  }
+}
 
 export function useManualConnection({
   onConnect,
@@ -21,7 +38,21 @@ export function useManualConnection({
   const [fingerprint, setFingerprint] = React.useState('');
   const [manualToken, setManualToken] = React.useState('');
   const [manualEntryOpen, setManualEntryOpen] = React.useState(false);
+  const reduceMotion = useReduceMotionEnabled();
   const onConnectRef = React.useRef(onConnect);
+  const address = manualAddressUrl(ip, nativeHttpsAvailable);
+  const securePairingRequired = nativeHttpsAvailable && address?.startsWith('https://') === true;
+  const fingerprintValid = /^[0-9a-f]{64}$/.test(normalizeFingerprint(fingerprint));
+  const [fingerprintTouched, setFingerprintTouched] = React.useState(false);
+  const [tokenTouched, setTokenTouched] = React.useState(false);
+  const changeFingerprint = React.useCallback((value: string) => {
+    setFingerprintTouched(true);
+    setFingerprint(value);
+  }, []);
+  const changeManualToken = React.useCallback((value: string) => {
+    setTokenTouched(true);
+    setManualToken(value);
+  }, []);
 
   React.useEffect(() => {
     onConnectRef.current = onConnect;
@@ -29,19 +60,15 @@ export function useManualConnection({
 
   const toggleManualEntry = React.useCallback(() => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    if (!reduceMotion) LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setManualEntryOpen(value => !value);
-  }, []);
+  }, [reduceMotion]);
 
   const connectManually = React.useCallback(() => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined);
     const normalized = normalizeFingerprint(fingerprint);
-    const input = ip.trim();
-    const secureUrl = input.startsWith('http')
-      ? input
-      : nativeHttpsAvailable
-        ? `https://${input}:8443`
-        : `http://${input}:8080`;
+    const secureUrl = manualAddressUrl(ip, nativeHttpsAvailable);
+    if (!secureUrl || (securePairingRequired && (!fingerprintValid || !manualToken.trim()))) return;
     if (!nativeHttpsAvailable && secureUrl.startsWith('https://')) {
       Alert.alert(
         'Expo Go requires HTTP',
@@ -76,18 +103,23 @@ export function useManualConnection({
         'The connection attempt could not be completed. Check that Windows is running and try again.',
       );
     }
-  }, [fingerprint, ip, manualToken, nativeHttpsAvailable]);
+  }, [fingerprint, fingerprintValid, ip, manualToken, nativeHttpsAvailable, securePairingRequired]);
 
   return {
     ip,
     setIp,
     fingerprint,
-    setFingerprint,
+    setFingerprint: changeFingerprint,
     manualToken,
-    setManualToken,
+    setManualToken: changeManualToken,
     manualEntryOpen,
     toggleManualEntry,
     connectManually,
-    canConnectManually: ip.trim().length > 0,
+    canConnectManually: !!address && (!securePairingRequired || (fingerprintValid && !!manualToken.trim())),
+    addressError: ip.trim() && !address ? 'Enter a valid receiver address without a path or query.' : null,
+    fingerprintError: securePairingRequired && (fingerprintTouched || fingerprint.trim()) && !fingerprintValid
+      ? 'Enter the complete 64-character SHA-256 fingerprint.' : null,
+    tokenError: securePairingRequired && tokenTouched && !manualToken.trim()
+      ? 'Enter the session token shown in Windows.' : null,
   };
 }

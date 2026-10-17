@@ -9,7 +9,7 @@ import { api } from '@/api/ApiClient';
 import { loadProblemPreviews, ProblemPreview, subscribeProblemPreviews } from '@/services/history/ProblemPreviewStore';
 import AppHeader from '@/components/AppHeader';
 import { TransferHistoryFile } from '@/api/types';
-import { useThemePalette } from '@/theme';
+import { useReduceMotionEnabled, useThemePalette } from '@/theme';
 
 function formatBytes(value = 0): string {
   if (value < 1_000) return `${value} B`;
@@ -67,6 +67,7 @@ function ProblemFilesModal({
   onClose,
 }: ProblemModalProps) {
   const palette = useThemePalette();
+  const reduceMotion = useReduceMotionEnabled();
   const [previews, setPreviews] = React.useState<Map<string, LoadedPreview>>(new Map());
   const [selected, setSelected] = React.useState<LoadedPreview | null>(null);
   const [original, setOriginal] = React.useState<{ uri?: string; error?: string }>({});
@@ -104,7 +105,7 @@ function ProblemFilesModal({
   if (!files) return null;
   const omitted = Math.max(0, totalProblems - files.length);
   return (
-    <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+    <Modal visible animationType={reduceMotion ? 'none' : 'slide'} presentationStyle="pageSheet" onRequestClose={onClose}>
       <SafeAreaProvider>
         <View className="flex-1 bg-background dark:bg-background-dark">
           <SafeAreaView edges={['top']} className="bg-surface dark:bg-surface-dark">
@@ -128,7 +129,7 @@ function ProblemFilesModal({
               </View>
             ) : null}</View>}
           />
-          <Modal visible={!!selected} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setSelected(null)}>
+          <Modal visible={!!selected} animationType={reduceMotion ? 'none' : 'slide'} presentationStyle="pageSheet" onRequestClose={() => setSelected(null)}>
             <View className="flex-1 bg-background dark:bg-background-dark">
               <SafeAreaView edges={['top']} className="bg-surface dark:bg-surface-dark">
                 <AppHeader title="Original Photo" onClose={() => setSelected(null)} closeStyle="back" />

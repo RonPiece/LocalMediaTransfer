@@ -82,6 +82,11 @@
     box-sizing: border-box;
 }
 
+:where(button, a, summary):focus-visible {
+    outline: 3px solid #064e3b;
+    outline-offset: 3px;
+}
+
 body {
     background: var(--gradient-background);
     min-height: 100vh;
@@ -105,15 +110,11 @@ body {
     background: var(--white);
     border-radius: var(--radius-2xl);
     box-shadow: var(--shadow-xl);
-    transition: all var(--transition-normal);
     border: 1px solid var(--gray-100);
     overflow: hidden;
     backdrop-filter: blur(10px);
     max-width: 800px;
     margin: 0 auto;
-    /* GPU Acceleration */
-    will-change: transform, box-shadow;
-    transform: translateZ(0);
 }
 
 .header-section {
@@ -145,7 +146,6 @@ body {
 .header-icon {
     font-size: 4rem;
     margin-bottom: 1rem;
-    animation: float 3s ease-in-out infinite;
     filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.2));
 }
 
@@ -154,7 +154,6 @@ body {
     height: 4.25rem;
     margin-bottom: 1rem;
     object-fit: contain;
-    animation: float 3s ease-in-out infinite;
     filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.2));
 }
 
@@ -198,14 +197,11 @@ body {
     border-radius: var(--radius-xl);
     padding: 3rem 2rem;
     text-align: center;
-    transition: all var(--transition-normal);
+    transition: border-color var(--transition-fast), background-color var(--transition-fast);
     background: var(--gray-50);
     position: relative;
     overflow: hidden;
     cursor: default;
-    /* GPU Acceleration */
-    will-change: transform, background-color, border-color;
-    transform: translateZ(0);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -241,8 +237,7 @@ body {
 .upload-zone.dragover {
     border-color: var(--primary-green);
     background: var(--overlay-green-hover);
-    transform: scale(1.05);
-    box-shadow: var(--shadow-green);
+    box-shadow: inset 0 0 0 2px var(--primary-green);
 }
 
 .language-switcher {
@@ -476,7 +471,7 @@ body {
     font-size: 0.875rem;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    transition: all var(--transition-normal);
+    transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast), box-shadow var(--transition-fast);
     border: none;
     position: relative;
     overflow: hidden;
@@ -486,9 +481,6 @@ body {
     justify-content: center;
     gap: 0.5rem;
     text-decoration: none;
-    /* GPU Acceleration */
-    will-change: transform, box-shadow;
-    transform: translateZ(0);
 }
 
 .btn-modern::before {
@@ -534,12 +526,9 @@ body {
     padding: 2rem 1.5rem;
     text-align: center;
     box-shadow: var(--shadow-md);
-    transition: all var(--transition-normal);
     border: 1px solid var(--gray-100);
     position: relative;
     overflow: hidden;
-    will-change: transform, box-shadow;
-    transform: translateZ(0);
 }
 
 .stats-card::before {
@@ -773,17 +762,6 @@ body {
     position: relative;
 }
 
-#aggregateProgressBar::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    bottom: 0;
-    right: 0;
-    background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.3) 50%, transparent 100%);
-    animation: shimmer 2s infinite;
-}
-
 #progress {
     background: var(--gray-50);
     border: 1px solid var(--gray-200);
@@ -986,11 +964,6 @@ body {
 }
 
 /* Animations */
-@keyframes float {
-    0%, 100% { transform: translateY(0px); }
-    50% { transform: translateY(-10px); }
-}
-
 @keyframes fadeIn {
     from { opacity: 0; transform: translateY(20px); }
     to { opacity: 1; transform: translateY(0); }
@@ -1025,11 +998,6 @@ body {
     40%, 43% { transform: translateY(-10px); }
     70% { transform: translateY(-5px); }
     90% { transform: translateY(-2px); }
-}
-
-@keyframes phoneScrollIn {
-    from { opacity: 0.35; transform: translateY(18px) scale(0.985); }
-    to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 .fade-in { animation: fadeIn var(--transition-slow) ease-out; }
@@ -1245,15 +1213,9 @@ body {
    This prevents sticky buttons on iOS Safari!
    ======================================== */
 @media (hover: hover) and (pointer: fine) {
-    .main-card:hover {
-        box-shadow: var(--shadow-green);
-        transform: translateY(-4px);
-    }
-
     .upload-zone:hover {
         border-color: var(--primary-green);
         background: var(--overlay-green);
-        transform: scale(1.02);
     }
 
     .upload-zone:hover::before {
@@ -1262,7 +1224,6 @@ body {
 
     .upload-zone:hover .upload-icon {
         color: var(--primary-green);
-        transform: scale(1.1);
     }
 
     .btn-modern:hover::before {
@@ -1270,13 +1231,11 @@ body {
     }
 
     .btn-primary-modern:hover {
-        transform: translateY(-2px);
         box-shadow: var(--shadow-green);
         background: var(--gradient-success);
     }
 
     .btn-secondary-modern:hover {
-        transform: translateY(-2px);
         box-shadow: var(--shadow-md);
         border-color: var(--primary-green);
         color: var(--primary-green);
@@ -1285,13 +1244,7 @@ body {
     .btn-outline-modern:hover {
         background: var(--primary-green);
         color: var(--white);
-        transform: translateY(-2px);
         box-shadow: var(--shadow-green);
-    }
-
-    .stats-card:hover {
-        transform: translateY(-4px);
-        box-shadow: var(--shadow-lg);
     }
 
     .file-item:hover {
@@ -1299,7 +1252,6 @@ body {
     }
 
     .speed-display:hover {
-        transform: translateY(-2px);
         box-shadow: var(--shadow-md);
         border-color: var(--primary-green);
     }
@@ -1335,15 +1287,6 @@ body {
         transform: scale(0.98);
     }
 
-    @supports (animation-timeline: view()) {
-        .tips-item,
-        .tip-card,
-        .file-group {
-            animation: phoneScrollIn 0.55s ease both;
-            animation-timeline: view();
-            animation-range: entry 0% cover 24%;
-        }
-    }
 }
 
 /* ========================================

@@ -25,7 +25,7 @@ describe('FloatingTransferBar large-transfer guidance', () => {
       <FloatingTransferBar selectedCount={2000} onTransfer={jest.fn()} />,
     );
     expect(view.getByText(largeTransferGuidance)).toBeTruthy();
-    expect(view.getByText('Transfer 2,000 Files')).toBeTruthy();
+    expect(view.getByText('Transfer 2,000 items')).toBeTruthy();
     expect(largeTransferGuidance).not.toMatch(/slow down|pause/i);
   });
 });

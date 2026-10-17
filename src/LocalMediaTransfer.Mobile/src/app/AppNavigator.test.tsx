@@ -110,7 +110,7 @@ describe('AppNavigator transfer tab protection', () => {
 
   it('uses a brief lift normally and fade-only motion when Reduce Motion is enabled', () => {
     expect(pageTransitionMotion(false)).toEqual({ duration: 180, translateY: 5 });
-    expect(pageTransitionMotion(true)).toEqual({ duration: 120, translateY: 0 });
+    expect(pageTransitionMotion(true)).toEqual({ duration: 0, translateY: 0 });
   });
 
   it('unlocks tabs at terminal completion and treats a tab choice as leaving the summary', () => {

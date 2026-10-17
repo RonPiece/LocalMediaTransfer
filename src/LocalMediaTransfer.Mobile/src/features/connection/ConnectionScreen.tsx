@@ -148,6 +148,9 @@ export default function ConnectionScreen({
               manualEntryOpen={manualConnection.manualEntryOpen}
               isConnecting={isConnecting || isConnected}
               canConnectManually={manualConnection.canConnectManually}
+              addressError={manualConnection.addressError}
+              fingerprintError={manualConnection.fingerprintError}
+              tokenError={manualConnection.tokenError}
               nativeHttpsAvailable={nativeHttpsAvailable}
               allowInsecureHttp={allowInsecureHttp}
               onIpChange={manualConnection.setIp}

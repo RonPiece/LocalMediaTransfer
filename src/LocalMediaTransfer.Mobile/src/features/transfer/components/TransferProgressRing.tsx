@@ -1,5 +1,5 @@
 import React from 'react';
-import { Text, View } from 'react-native';
+import { Text, useWindowDimensions, View } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 
 import { useThemePalette } from '@/theme';
@@ -26,6 +26,8 @@ export function TransferProgressRing({
   compactHeight = false,
 }: TransferProgressRingProps) {
   const palette = useThemePalette();
+  const { fontScale } = useWindowDimensions();
+  const largeText = fontScale >= 1.5;
   const strokeWidth = 10;
   const radius = (size - strokeWidth) / 2;
   const circumference = radius * 2 * Math.PI;
@@ -76,13 +78,11 @@ export function TransferProgressRing({
           className="absolute items-center justify-center"
           style={{ width: Math.max(0, size - strokeWidth * 5) }}
         >
-          <Text className="text-on-surface-variant dark:text-on-surface-variant-dark text-[11px] font-semibold mb-1" numberOfLines={1}>
-            {phaseLabel}
-          </Text>
+          {!largeText && <Text className="text-on-surface-variant dark:text-on-surface-variant-dark text-[13px] font-semibold mb-1 text-center">{phaseLabel}</Text>}
           <Text className="text-on-surface dark:text-on-surface-dark text-4xl font-bold tracking-tighter">
             {isFinished ? '100' : Math.floor(progressPercent)}%
           </Text>
-          <Text
+          {!largeText && <Text
             testID="transfer-progress-count"
             className="text-on-surface-variant dark:text-on-surface-variant-dark font-mono mt-1 text-center"
             style={{
@@ -90,18 +90,24 @@ export function TransferProgressRing({
               lineHeight: countFontSize + 3,
               fontVariant: ['tabular-nums'],
             }}
-            numberOfLines={1}
+            numberOfLines={2}
           >
             {countText}
-          </Text>
-          <Text
+          </Text>}
+          {!largeText && <Text
             testID="transfer-progress-unit"
-            className="text-on-surface-variant dark:text-on-surface-variant-dark text-[11px] font-semibold leading-4 text-center"
+            className="text-on-surface-variant dark:text-on-surface-variant-dark text-[12px] font-semibold text-center"
           >
             {unit}
-          </Text>
+          </Text>}
         </View>
       </View>
+      {largeText && <View className="items-center mt-2 px-4">
+        <Text className="text-on-surface-variant dark:text-on-surface-variant-dark text-[14px] font-semibold text-center">{phaseLabel}</Text>
+        <Text testID="transfer-progress-count" className="text-on-surface dark:text-on-surface-dark font-semibold text-center"
+          style={{ fontSize: countFontSize, lineHeight: countFontSize + 3, fontVariant: ['tabular-nums'] }}>{countText}</Text>
+        <Text testID="transfer-progress-unit" className="text-on-surface-variant dark:text-on-surface-variant-dark text-[12px] font-semibold text-center">{unit}</Text>
+      </View>}
     </View>
   );
 }

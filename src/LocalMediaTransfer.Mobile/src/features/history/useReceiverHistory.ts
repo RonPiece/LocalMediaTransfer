@@ -4,7 +4,7 @@ import { Alert } from 'react-native';
 import { clearProblemPreviews } from '@/services/history/ProblemPreviewStore';
 import { api } from '@/api/ApiClient';
 import { TransferHistoryItem } from '@/api/types';
-import { normalizeHistoryItems } from '@/features/dashboard/hooks/useDashboardHistory';
+import { normalizeHistoryItems } from './historyPresentation';
 
 export function useReceiverHistory({ isConnected }: { isConnected: boolean }) {
   const [items, setItems] = React.useState<TransferHistoryItem[]>([]);

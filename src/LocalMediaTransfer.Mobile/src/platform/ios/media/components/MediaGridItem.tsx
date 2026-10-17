@@ -55,7 +55,8 @@ export const MediaGridItem = React.memo(function MediaGridItem({
   return (
     <TouchableOpacity
       accessibilityRole="button"
-      accessibilityLabel={`Select ${item.type}`}
+      accessibilityLabel={`${item.filename || (item.type === 'video' ? 'Video' : 'Photo')}${formattedDuration ? `, ${formattedDuration}` : ''}, ${selected ? 'selected' : 'not selected'}`}
+      accessibilityHint="Double tap to change selection."
       accessibilityState={{ selected }}
       activeOpacity={interactionAppearance('action').activeOpacity}
       onPress={toggleSelection}

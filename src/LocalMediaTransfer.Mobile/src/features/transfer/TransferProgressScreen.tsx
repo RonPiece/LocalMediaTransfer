@@ -1,12 +1,12 @@
 import React from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import { AccessibilityInfo, Animated, Easing, ScrollView, StyleSheet, Text, TouchableOpacity, useAnimatedValue, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useKeepAwake } from 'expo-keep-awake';
 
 import AppHeader from '@/components/AppHeader';
 import { SelectedMedia } from '@/services/media/SelectedMedia';
-import { actionAppearance, useThemePalette } from '@/theme';
+import { actionAppearance, useReduceMotionEnabled, useThemePalette } from '@/theme';
 import { RecentActivityPanel } from './components/RecentActivityPanel';
 import { ConcurrentTransferProgress } from './components/ConcurrentTransferProgress';
 import { TransferProgressRing } from './components/TransferProgressRing';
@@ -50,6 +50,9 @@ export default function TransferProgressScreen({
   onTerminalStateChange,
 }: TransferProgressScreenProps) {
   const palette = useThemePalette();
+  const reduceMotion = useReduceMotionEnabled();
+  const completionEntrance = useAnimatedValue(0);
+  const announcedCompletion = React.useRef(false);
   const {
     currentProgress,
     currentMediaMBps,
@@ -60,9 +63,11 @@ export default function TransferProgressScreen({
     isFinished,
     phase,
     hasUploadStarted,
+    queueCatchUpVisible,
     preparedFiles,
     preparationComplete,
     activePreparationMode,
+    automaticallyStreamsLargeSelection,
     totalTransferFiles,
     duplicateCheck,
     summary,
@@ -129,6 +134,34 @@ export default function TransferProgressScreen({
     onTerminalStateChange?.(isFinished);
   }, [isFinished, onTerminalStateChange]);
 
+  React.useEffect(() => {
+    if (!isFinished) return;
+    if (!announcedCompletion.current) {
+      announcedCompletion.current = true;
+      AccessibilityInfo.announceForAccessibility?.(summary.failed > 0
+        ? `Transfer complete with ${summary.failed} failed files.`
+        : 'Transfer complete.');
+    }
+  }, [isFinished, summary.failed]);
+
+  React.useEffect(() => {
+    if (!isFinished) return;
+    completionEntrance.stopAnimation();
+    if (reduceMotion) {
+      completionEntrance.setValue(1);
+      return;
+    }
+    completionEntrance.setValue(0);
+    const animation = Animated.timing(completionEntrance, {
+      toValue: 1,
+      duration: 180,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [completionEntrance, isFinished, reduceMotion]);
+
   return (
     <View className="flex-1 bg-background dark:bg-background-dark">
       {!isFinished && <ActiveTransferKeepAwake />}
@@ -151,6 +184,8 @@ export default function TransferProgressScreen({
             phase={phase}
             duplicateStage={duplicateCheck.stage}
             includeAdditionalMediaComponents={includeAdditionalMediaComponents}
+            automaticallyStreamsLargeSelection={automaticallyStreamsLargeSelection}
+            queueCatchUpVisible={queueCatchUpVisible}
             compact={compactHeight}
           />
         )}
@@ -194,29 +229,34 @@ export default function TransferProgressScreen({
         )}
 
         {isFinished && (
-          <TransferSummaryCard
-            successCount={successCount}
-            skipCount={skipCount}
-            errorCount={errorCount}
-            processedCount={processedCount}
-            selectedBytes={selectedBytes}
-            selectedMediaBytes={completionSummary?.selectedMediaBytes ?? selectedBytes}
-            additionalComponentsBytes={completionSummary?.additionalComponentsBytes ?? 0}
-            additionalComponentsFiles={completionSummary?.additionalComponentsFiles ?? 0}
-            byteTotalComplete={completionSummary?.byteTotalComplete !== false}
-            transferredBytes={transferredBytes}
-            avoidedBytes={completionSummary?.avoidedBytes ?? 0}
-            finalizationDuplicateBytes={completionSummary?.finalizationDuplicateBytes ?? 0}
-            elapsedSeconds={elapsedSeconds}
-            preparationSeconds={completionSummary?.preparationDurationMs === undefined
-              ? undefined
-              : Math.round(completionSummary.preparationDurationMs / 1000)}
-            averageMediaMBps={averageMediaMBps}
-            peakMediaMBps={peakMediaMBps}
-            resultCount={resultList.length}
-            onShowAll={showAllResultsModal}
-            onShowErrors={showErrorResultsModal}
-          />
+          <Animated.View testID="transfer-completion-content" style={{
+            opacity: completionEntrance,
+            transform: [{ translateY: reduceMotion ? 0 : completionEntrance.interpolate({ inputRange: [0, 1], outputRange: [4, 0] }) }],
+          }}>
+            <TransferSummaryCard
+              successCount={successCount}
+              skipCount={skipCount}
+              errorCount={errorCount}
+              processedCount={processedCount}
+              selectedBytes={selectedBytes}
+              selectedMediaBytes={completionSummary?.selectedMediaBytes ?? selectedBytes}
+              additionalComponentsBytes={completionSummary?.additionalComponentsBytes ?? 0}
+              additionalComponentsFiles={completionSummary?.additionalComponentsFiles ?? 0}
+              byteTotalComplete={completionSummary?.byteTotalComplete !== false}
+              transferredBytes={transferredBytes}
+              avoidedBytes={completionSummary?.avoidedBytes ?? 0}
+              finalizationDuplicateBytes={completionSummary?.finalizationDuplicateBytes ?? 0}
+              elapsedSeconds={elapsedSeconds}
+              preparationSeconds={completionSummary?.preparationDurationMs === undefined
+                ? undefined
+                : Math.round(completionSummary.preparationDurationMs / 1000)}
+              averageMediaMBps={averageMediaMBps}
+              peakMediaMBps={peakMediaMBps}
+              resultCount={resultList.length}
+              onShowAll={showAllResultsModal}
+              onShowErrors={showErrorResultsModal}
+            />
+          </Animated.View>
         )}
 
         {!isFinished && (
@@ -226,6 +266,8 @@ export default function TransferProgressScreen({
         {!isFinished && (
           <View className={compactHeight ? 'mt-2' : 'mt-4'}>
           <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel={transferText.cancelTransfer}
             onPress={cancelTransfer}
             activeOpacity={actionAppearance(palette, 'destructive').activeOpacity}
             className="w-full h-14 rounded-xl items-center justify-center flex-row bg-error-soft dark:bg-error-soft-dark border border-border dark:border-border-dark"

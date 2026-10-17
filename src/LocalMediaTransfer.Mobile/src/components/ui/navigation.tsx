@@ -1,5 +1,5 @@
 import React from 'react';
-import { Platform, Text, TouchableOpacity, View } from 'react-native';
+import { Platform, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -32,6 +32,7 @@ export function BottomTabBar({
   locked?: boolean;
 }) {
   const palette = useThemePalette();
+  const { fontScale } = useWindowDimensions();
   const mode = useThemeMode();
   const reduceTransparency = useReduceTransparencyEnabled();
   const material = navigationAppearance(palette, mode, reduceTransparency);
@@ -40,15 +41,15 @@ export function BottomTabBar({
       {locked && (
         <View
           accessibilityRole="alert"
-          className="h-7 flex-row items-center justify-center bg-primary-soft dark:bg-primary-soft-dark border-b border-separator dark:border-separator-dark px-3"
+          className="min-h-[32px] flex-row items-center justify-center bg-primary-soft dark:bg-primary-soft-dark border-b border-separator dark:border-separator-dark px-3 py-1"
         >
           <Ionicons name="lock-closed" size={12} color={palette.primary} />
-          <Text className="text-[10px] font-semibold text-primary dark:text-primary-dark ml-1.5">
+          <Text className="text-[12px] font-semibold text-primary dark:text-primary-dark ml-1.5 text-center flex-shrink">
             Transfer in progress · other tabs are temporarily unavailable
           </Text>
         </View>
       )}
-      <View className="h-[58px] flex-row px-1">
+      <View className="flex-row px-1" style={{ minHeight: fontScale >= 1.5 ? 84 : 64 }}>
         {tabs.map(tab => {
           const selected = tab.id === activeTab;
           const disabled = locked && !selected;
@@ -62,7 +63,7 @@ export function BottomTabBar({
               disabled={disabled}
               onPress={() => onSelect(tab.id)}
               activeOpacity={appearance.activeOpacity}
-              className="flex-1 items-center justify-center"
+              className="flex-1 min-h-[48px] items-center justify-center px-0.5"
               style={{ opacity: appearance.opacity }}
             >
               <Ionicons
@@ -71,8 +72,8 @@ export function BottomTabBar({
                 color={appearance.foreground}
               />
               <Text
-                className={`text-[10px] mt-0.5 ${selected ? 'font-semibold' : ''}`}
-                style={{ color: appearance.foreground }}
+                className={`text-[12px] mt-0.5 text-center ${selected ? 'font-semibold' : ''}`}
+                style={{ color: appearance.foreground, flexShrink: 1 }}
               >
                 {tab.label}
               </Text>

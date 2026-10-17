@@ -6,6 +6,7 @@ module.exports = [
       'coverage/**',
       'dist/**',
       'build/**',
+      'modules/**/build/**',
       'ios/**',
       'android/**',
       'node_modules/**',

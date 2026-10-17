@@ -5,7 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { initialWindowMetrics } from 'react-native-safe-area-context';
 import { connectionText } from '../content/connectionText';
-import { theme } from '@/theme';
+import { theme, useReduceMotionEnabled } from '@/theme';
 
 export function qrScannerControlsTop(
   initialTopInset = initialWindowMetrics?.insets.top ?? 0,
@@ -65,8 +65,9 @@ export function QrScannerOverlay({
   onClose: () => void;
   onBarcodeScanned: ({ data }: { data: string }) => void;
 }) {
+  const reduceMotion = useReduceMotionEnabled();
   return (
-    <Modal visible animationType="fade" presentationStyle="fullScreen" statusBarTranslucent onRequestClose={onClose}>
+    <Modal visible animationType={reduceMotion ? 'none' : 'fade'} presentationStyle="fullScreen" statusBarTranslucent onRequestClose={onClose}>
       <QrScannerContent onClose={onClose} onBarcodeScanned={onBarcodeScanned} />
     </Modal>
   );

@@ -1,7 +1,8 @@
+import { rateStaleAfterMs } from '@/services/upload/rateFreshness';
+
 const BYTES_PER_MB = 1_000_000;
 const ETA_HALF_LIFE_MS = 5000;
 const ETA_WARMUP_MS = 5000;
-import { rateStaleAfterMs } from '@/services/upload/rateFreshness';
 
 export type EtaObservation = {
   acknowledgedMediaBytes: number;

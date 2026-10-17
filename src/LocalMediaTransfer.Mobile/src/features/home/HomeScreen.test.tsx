@@ -58,6 +58,8 @@ describe('HomeScreen', () => {
           },
         ]}
         historyLoading={false}
+        historyError={null}
+        onRetryHistory={jest.fn()}
         onOpenPicker={jest.fn()}
         onOpenConnect={jest.fn()}
         onOpenHistory={jest.fn()}
@@ -73,5 +75,32 @@ describe('HomeScreen', () => {
     fireEvent.press(screen.getByLabelText(/^Completed\./));
     expect(screen.getByText('Transfer Details')).toBeTruthy();
     expect(screen.getByText('1m 30s')).toBeTruthy();
+  });
+
+  it('shows a retry instead of an empty state when the first history load fails', () => {
+    const onRetryHistory = jest.fn();
+    const screen = render(<HomeScreen
+      isConnected connectionSecurity={{ mode: 'https', certificateVerified: true, tlsVersion: 'TLS 1.3' }}
+      connectionHealthStatus="connected" history={[]} historyLoading={false}
+      historyError="Request failed" onRetryHistory={onRetryHistory}
+      onOpenPicker={jest.fn()} onOpenConnect={jest.fn()} onOpenHistory={jest.fn()} onRetryConnection={jest.fn()}
+    />);
+    expect(screen.getByText('Could not load receiver history.')).toBeTruthy();
+    expect(screen.queryByText('Completed transfers will appear here.')).toBeNull();
+    fireEvent.press(screen.getByLabelText('Retry loading receiver history'));
+    expect(onRetryHistory).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps stale history visible after a failed refresh', () => {
+    const screen = render(<HomeScreen
+      isConnected connectionSecurity={{ mode: 'https', certificateVerified: true, tlsVersion: 'TLS 1.3' }}
+      connectionHealthStatus="connected"
+      history={[{ sessionId: 'old', completedAt: '2026-09-12T10:30:00Z', selectedAssets: 1,
+        expandedFiles: 1, uploadedFiles: 1, skippedFiles: 0, failedFiles: 0, completionStatus: 'completed' }]}
+      historyLoading={false} historyError="Request failed" onRetryHistory={jest.fn()}
+      onOpenPicker={jest.fn()} onOpenConnect={jest.fn()} onOpenHistory={jest.fn()} onRetryConnection={jest.fn()}
+    />);
+    expect(screen.getByText('Recent activity may be out of date.')).toBeTruthy();
+    expect(screen.getByLabelText(/^Completed\./)).toBeTruthy();
   });
 });

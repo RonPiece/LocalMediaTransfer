@@ -227,7 +227,6 @@ describe('useMediaSelection', () => {
 
   it('clears loading and reports a useful error when recent media fails to load', async () => {
     (mediaScanner.getMediaPage as jest.Mock).mockRejectedValueOnce(new Error('photos unavailable'));
-    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
     const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
 
     const { result } = renderHook(() => useMediaSelection());
@@ -235,10 +234,32 @@ describe('useMediaSelection', () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.media).toEqual([]);
     expect(errorSpy).toHaveBeenCalledWith('Failed to load media library.');
-    expect(alertSpy).toHaveBeenCalledWith(
-      'Media unavailable',
-      'Could not load photos and videos. Check Photos permission and try again.',
-    );
+    expect(result.current.mediaError).toBe('Could not load photos and videos. Check Photos permission and try again.');
+    act(() => result.current.retryMedia());
+    await waitFor(() => expect(result.current.media).toHaveLength(3));
+    expect(result.current.mediaError).toBeNull();
+  });
+
+  it('preserves loaded pages and the previous selection if Select All fails, then retries every page', async () => {
+    (mediaScanner.getMediaPage as jest.Mock)
+      .mockResolvedValueOnce({ assets: [asset('one')], hasNextPage: true, endCursor: 'first' })
+      .mockResolvedValueOnce({ assets: [asset('two')], hasNextPage: true, endCursor: 'second' })
+      .mockRejectedValueOnce(new Error('later page unavailable'))
+      .mockResolvedValueOnce({ assets: [asset('two')], hasNextPage: true, endCursor: 'second' })
+      .mockResolvedValueOnce({ assets: [asset('three')], hasNextPage: false, endCursor: 'third' });
+    const { result } = renderHook(() => useMediaSelection());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    act(() => result.current.toggleSelection('one'));
+
+    await act(async () => { await result.current.selectAll(); });
+    expect(result.current.media.map(item => item.id)).toEqual(['one']);
+    expect(result.current.selectedCount).toBe(1);
+    expect(result.current.hasNextPage).toBe(true);
+
+    await act(async () => { await result.current.selectAll(); });
+    expect((mediaScanner.getMediaPage as jest.Mock).mock.calls[3][2]).toBe('first');
+    expect(result.current.media.map(item => item.id)).toEqual(['one', 'two', 'three']);
+    expect(result.current.selectedCount).toBe(3);
   });
 
 });

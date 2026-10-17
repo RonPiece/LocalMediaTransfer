@@ -224,7 +224,7 @@ export default function SettingsScreen({
               </React.Fragment>
             ))}
             {diagnosticState === 'loading' && <Text className="px-4 pb-4 text-[13px] text-on-surface-variant dark:text-on-surface-variant-dark">Loading diagnostics…</Text>}
-            {diagnosticState === 'failed' && <TouchableOpacity onPress={() => void loadDiagnostics()} className="px-4 pb-4"><Text className="text-error dark:text-error-dark text-[13px]">Diagnostics could not be loaded. Tap to retry.</Text></TouchableOpacity>}
+            {diagnosticState === 'failed' && <TouchableOpacity accessibilityRole="button" accessibilityLabel="Retry loading diagnostics" onPress={() => void loadDiagnostics()} className="px-4 py-3 min-h-[48px] justify-center"><Text className="text-error dark:text-error-dark text-[13px]">Diagnostics could not be loaded. Tap to retry.</Text></TouchableOpacity>}
             {diagnosticState === 'loaded' && reports.length === 0 && <Text className="px-4 pb-4 text-[13px] text-on-surface-variant dark:text-on-surface-variant-dark">No diagnostic reports are available.</Text>}
             <Divider />
             <View testID="diagnostic-export-all-row" className="px-4 py-3 flex-row items-center">

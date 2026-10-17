@@ -89,8 +89,7 @@
                         <TextBlock Text="Current transfer speed" Foreground="{StaticResource MetricSpeedBrush}" />
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="{Binding CurrentSpeed}" FontSize="32" FontWeight="Bold"
-                                       Foreground="{StaticResource MetricSpeedBrush}"
-                                       AutomationProperties.Name="Current transfer speed" />
+                                       Foreground="{StaticResource MetricSpeedBrush}" />
                             <TextBlock Text="{Binding CurrentSpeedUnit}" Margin="6,0,0,6" VerticalAlignment="Bottom"
                                        Foreground="{StaticResource MetricSpeedBrush}" />
                         </StackPanel>
@@ -104,8 +103,7 @@
                         <TextBlock Text="Files received" Foreground="{StaticResource MetricFilesBrush}" />
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="{Binding FileCount}" FontSize="32" FontWeight="Bold"
-                                       Foreground="{StaticResource MetricFilesBrush}"
-                                       AutomationProperties.Name="Files received" />
+                                       Foreground="{StaticResource MetricFilesBrush}" />
                             <TextBlock Text=" files" Margin="6,0,0,6" VerticalAlignment="Bottom"
                                        Foreground="{StaticResource MetricFilesBrush}" />
                         </StackPanel>
@@ -118,8 +116,7 @@
                     <StackPanel Spacing="8">
                         <TextBlock Text="Receiver session duration" Foreground="{StaticResource MetricDurationBrush}" />
                         <TextBlock Text="{Binding SessionDuration}" FontSize="32" FontWeight="Bold"
-                                   Foreground="{StaticResource MetricDurationBrush}"
-                                   AutomationProperties.Name="Receiver session duration" />
+                                   Foreground="{StaticResource MetricDurationBrush}" />
                     </StackPanel>
                 </Border>
 
@@ -130,8 +127,7 @@
                         <TextBlock Text="Total received" Foreground="{StaticResource MetricTotalBrush}" />
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="{Binding TotalSizeGb}" FontSize="32" FontWeight="Bold"
-                                       Foreground="{StaticResource MetricTotalBrush}"
-                                       AutomationProperties.Name="Total received in gigabytes" />
+                                       Foreground="{StaticResource MetricTotalBrush}" />
                             <TextBlock Text=" GB" Margin="6,0,0,6" VerticalAlignment="Bottom"
                                        Foreground="{StaticResource MetricTotalBrush}" />
                         </StackPanel>
@@ -186,10 +182,18 @@
                         <TextBlock Grid.Column="2" Text="Speed" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                         <TextBlock Grid.Column="3" Text="Completed" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                     </Grid>
-                    <ListView x:Name="RecentTransfersList" MinHeight="180" SelectionMode="None"
-                              HorizontalContentAlignment="Stretch"
-                              AutomationProperties.Name="Recent transfer sessions"
-                              ItemTemplate="{StaticResource NarrowTransferItemTemplate}" />
+                    <Grid MinHeight="180">
+                        <ListView x:Name="RecentTransfersList" SelectionMode="None"
+                                  HorizontalContentAlignment="Stretch"
+                                  AutomationProperties.Name="Recent transfer sessions"
+                                  ItemTemplate="{StaticResource NarrowTransferItemTemplate}" />
+                        <TextBlock x:Name="RecentTransfersEmptyText"
+                                   Text="No completed transfers yet. Finished sessions will appear here."
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   TextAlignment="Center" TextWrapping="Wrap"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                   Margin="16" IsHitTestVisible="False" />
+                    </Grid>
                 </StackPanel>
             </Border>
         </Grid>

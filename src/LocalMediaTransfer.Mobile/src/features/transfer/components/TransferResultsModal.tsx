@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { transferText } from '../content/transferText';
 import { FileState, TransferFailureGroup, groupFailureResults } from '../transferPresentation';
 import { TransferFileItem } from './TransferFileItem';
+import { useReduceMotionEnabled } from '@/theme';
 
 const emptyResults: FileState[] = [];
 const resultsListContentStyle = { paddingHorizontal: 20, paddingBottom: 24 };
@@ -46,6 +47,7 @@ export const TransferResultsModal = React.memo(function TransferResultsModal({
   results,
   onClose,
 }: TransferResultsModalProps) {
+  const reduceMotion = useReduceMotionEnabled();
   const [showIndividualErrors, setShowIndividualErrors] = React.useState(false);
   React.useEffect(() => {
     if (!visible || !showOnlyErrors) setShowIndividualErrors(false);
@@ -99,7 +101,7 @@ export const TransferResultsModal = React.memo(function TransferResultsModal({
   ) : null;
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+    <Modal visible={visible} animationType={reduceMotion ? 'none' : 'slide'} presentationStyle="pageSheet" onRequestClose={onClose}>
       <SafeAreaView className="flex-1 bg-background dark:bg-background-dark" accessibilityViewIsModal>
         <View className="h-16 px-5 flex-row items-center justify-between border-b border-separator dark:border-separator-dark bg-surface dark:bg-surface-dark">
           <View className="flex-1 flex-row items-center">

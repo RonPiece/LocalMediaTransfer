@@ -1,7 +1,7 @@
 import React from 'react';
 import { fireEvent, render } from '@testing-library/react-native';
 
-import { RecentActivityPanel } from './RecentActivityPanel';
+import { RecentActivityPanel, recentActivityPreviewCount } from './RecentActivityPanel';
 
 jest.mock('@expo/vector-icons', () => {
   const React = require('react');
@@ -19,7 +19,6 @@ describe('RecentActivityPanel', () => {
     const screen = render(<RecentActivityPanel items={items} compact={false} />);
 
     expect(screen.getByText('first.jpg')).toBeTruthy();
-    expect(screen.getByText('second.jpg')).toBeTruthy();
     expect(screen.queryByText('third.jpg')).toBeNull();
 
     fireEvent.press(screen.getByLabelText('Recent activity, 3 recent items. Open full list'));
@@ -28,5 +27,11 @@ describe('RecentActivityPanel', () => {
 
     fireEvent.press(screen.getByLabelText('Collapse recent activity'));
     expect(screen.queryByText('3 most recent items')).toBeNull();
+  });
+
+  it('uses one preview row on compact screens or enlarged text', () => {
+    expect(recentActivityPreviewCount(false, 1)).toBe(2);
+    expect(recentActivityPreviewCount(true, 1)).toBe(1);
+    expect(recentActivityPreviewCount(false, 2)).toBe(1);
   });
 });

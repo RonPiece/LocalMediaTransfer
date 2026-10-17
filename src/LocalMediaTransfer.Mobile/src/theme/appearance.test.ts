@@ -75,31 +75,17 @@ describe('dark palette contrast', () => {
   });
 });
 
-it('preserves existing Light palette values', () => {
-  expect(tokens.colors).toMatchObject({
-  "primary": "#007AFF",
-  "success": "#34C759",
-  "error": "#FF3B30",
-  "warning": "#FF9500",
-  "background": "#F2F2F7",
-  "surface": "#FFFFFF",
-  "elevatedSurface": "#FFFFFF",
-  "onPrimary": "#FFFFFF",
-  "onSurface": "#000000",
-  "onSurfaceVariant": "rgba(60, 60, 67, 0.6)",
-  "border": "rgba(60, 60, 67, 0.12)",
-  "separator": "rgba(60, 60, 67, 0.12)",
-  "disabledFill": "rgba(60, 60, 67, 0.18)",
-  "switchOffTrack": "rgba(120,120,128,0.16)",
-  "primarySoft": "#EAF4FF",
-  "warningSoft": "#FFF4E5",
-  "errorSoft": "#FFEEF0",
-  "white": "#FFFFFF",
-  "github": "#24292e",
-  "inputPlaceholder": "rgba(60, 60, 67, 0.3)",
-  "progressTrack": "#E6E9E8",
-  "startupErrorBackground": "#FFF7F6",
-  "startupErrorTitle": "#9B2119",
-  "startupErrorText": "#3B2725"
-});
+describe('light palette contrast', () => {
+  const palette = tokens.colors;
+  it.each(['background', 'surface', 'elevatedSurface', 'surfaceInset'] as const)('keeps body text readable on %s', surface => {
+    expect(contrast(palette.onSurface, palette[surface])).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(palette.onSurfaceVariant, palette[surface])).toBeGreaterThanOrEqual(4.5);
+  });
+  it.each(['info', 'success', 'warning', 'error'] as const)('keeps %s text readable on its soft background', tone => {
+    const appearance = toneAppearance(palette, tone);
+    expect(contrast(appearance.foreground, appearance.background)).toBeGreaterThanOrEqual(4.5);
+  });
+  it('keeps white text readable on the filled primary action', () => {
+    expect(contrast(palette.onPrimary, palette.primaryFill)).toBeGreaterThanOrEqual(4.5);
+  });
 });

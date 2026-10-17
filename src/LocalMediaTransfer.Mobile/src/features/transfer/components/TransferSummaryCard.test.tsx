@@ -1,5 +1,6 @@
 import React from 'react';
 import { render } from '@testing-library/react-native';
+import * as ReactNative from 'react-native';
 
 import { TransferSummaryCard } from './TransferSummaryCard';
 
@@ -9,7 +10,9 @@ jest.mock('@expo/vector-icons', () => {
 }, { virtual: true });
 
 describe('TransferSummaryCard', () => {
+  afterEach(() => jest.restoreAllMocks());
   it('does not label a partial prepared-byte total as the full selection size', () => {
+    jest.spyOn(ReactNative, 'useWindowDimensions').mockReturnValue({ width: 320, height: 568, scale: 2, fontScale: 2 });
     const screen = render(
       <TransferSummaryCard
         successCount={4}
@@ -43,5 +46,9 @@ describe('TransferSummaryCard', () => {
     expect(screen.getByText('Avoided before upload')).toBeTruthy();
     expect(screen.getByText('Uploaded, then found duplicate')).toBeTruthy();
     expect(screen.getByText('Stored as new files')).toBeTruthy();
+    expect(screen.UNSAFE_getAllByType(ReactNative.View).some(view =>
+      ReactNative.StyleSheet.flatten(view.props.style)?.width === '50%',
+    )).toBe(true);
+    expect(screen.getByLabelText('View all 7').props.accessibilityRole).toBe('button');
   });
 });
