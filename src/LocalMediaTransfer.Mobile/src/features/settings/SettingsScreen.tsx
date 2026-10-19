@@ -1,5 +1,6 @@
 import { DiagnosticExportButton } from './DiagnosticExportButton';
 import React from 'react';
+import { UiPreviewEntry, useUiPreview } from '@lmt/ui-preview';
 import { Alert, Linking, Platform, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -75,19 +76,20 @@ export default function SettingsScreen({
 }) {
   const palette = useThemePalette();
   const { preference, setPreference } = useAppearancePreference();
+  const { diagnostics, openProjectLink, serverVersion } = useUiPreview();
   const [reports, setReports] = React.useState<DiagnosticReportSummary[]>([]);
   const [diagnosticState, setDiagnosticState] = React.useState<'loading' | 'loaded' | 'failed'>('loading');
 
   const loadDiagnostics = React.useCallback(async () => {
     setDiagnosticState('loading');
     try {
-      setReports(await listDiagnosticReports());
+      setReports(await (diagnostics?.listReports ?? listDiagnosticReports)());
       setDiagnosticState('loaded');
     } catch {
       setReports([]);
       setDiagnosticState('failed');
     }
-  }, []);
+  }, [diagnostics]);
 
   React.useEffect(() => {
     const timeout = setTimeout(() => { void loadDiagnostics(); }, 0);
@@ -96,28 +98,32 @@ export default function SettingsScreen({
 
   const exportReport = React.useCallback(async (path: string) => {
     try {
-      if (!await exportDiagnosticReport(path)) Alert.alert('Diagnostics unavailable', 'That diagnostic report is no longer available.');
+      if (!await (diagnostics?.exportReport ?? exportDiagnosticReport)(path)) Alert.alert('Diagnostics unavailable', 'That diagnostic report is no longer available.');
     } catch {
       Alert.alert('Could not export diagnostics', 'The diagnostic report could not be opened.');
     }
-  }, []);
+  }, [diagnostics]);
 
   const exportAll = React.useCallback(async () => {
     try {
-      if (!await exportAllDiagnosticReports()) Alert.alert('No diagnostics available', 'Complete or start a transfer before exporting diagnostics.');
+      if (!await (diagnostics?.exportAll ?? exportAllDiagnosticReports)()) Alert.alert('No diagnostics available', 'Complete or start a transfer before exporting diagnostics.');
     } catch {
       Alert.alert('Could not export diagnostics', 'The diagnostic reports could not be opened.');
     }
-  }, []);
+  }, [diagnostics]);
 
   const openGithub = React.useCallback(async () => {
+    if (openProjectLink) {
+      openProjectLink();
+      return;
+    }
     try {
       if (!await Linking.canOpenURL('https://github.com/RonPiece')) throw new Error('Unavailable');
       await Linking.openURL('https://github.com/RonPiece');
     } catch {
       Alert.alert('Could not open link', 'The GitHub page could not be opened on this device.');
     }
-  }, []);
+  }, [openProjectLink]);
 
   const secure = isConnected && connectionSecurity.mode === 'https' && connectionSecurity.certificateVerified;
   return (
@@ -125,6 +131,7 @@ export default function SettingsScreen({
       <SafeAreaView edges={['top']} className="flex-1">
         <ScreenHeader title="Settings" subtitle="Transfer preferences and privacy" />
         <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 32 }}>
+          <UiPreviewEntry />
           {expectedServerEnvironment() === 'test' && (
             <View className="items-center mb-1"><StatusBadge label="TEST ENVIRONMENT" tone="warning" icon="flask-outline" /></View>
           )}
@@ -238,7 +245,7 @@ export default function SettingsScreen({
           <SettingsGroup>
             <InfoRow icon="information-circle-outline" title="App Version" detail={`Local Media Transfer · ${MOBILE_APP_VERSION}`} />
             <Divider />
-            <InfoRow icon="server-outline" title="Server Version" detail={api.serverVersion || 'Unavailable while disconnected'} />
+            <InfoRow icon="server-outline" title="Server Version" detail={serverVersion ?? (api.serverVersion || 'Unavailable while disconnected')} />
             <Divider />
             <TouchableOpacity accessibilityRole="link" onPress={() => void openGithub()} className="px-4 py-4 flex-row items-center">
               <Ionicons name="logo-github" size={22} color={palette.onSurface} />

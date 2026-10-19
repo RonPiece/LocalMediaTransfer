@@ -47,6 +47,19 @@ it('does not guess a Photos asset for older records with no local mapping', asyn
   fireEvent.press(button);
   expect(MediaLibrary.getAssetInfoAsync).not.toHaveBeenCalled();
 });
+it('renders supplied video thumbnails without reading Photos or persisted sessions, and falls back after an image error', () => {
+  const screen = render(<HistoryProblemDetailsModal files={files} totalProblems={1}
+    thumbnails={new Map([['variant', { uri: 'data:image/png;base64,AQ==', mediaType: 'video' }]])} onClose={jest.fn()} />);
+  const thumbnail = screen.getByTestId('preview-image');
+  expect(thumbnail.props.source.uri).toBe('data:image/png;base64,AQ==');
+  const button = screen.getByLabelText('Video thumbnail fixture');
+  expect(button).toBeDisabled();
+  fireEvent.press(button);
+  expect(loadProblemPreviews).not.toHaveBeenCalled();
+  expect(MediaLibrary.getAssetInfoAsync).not.toHaveBeenCalled();
+  fireEvent(thumbnail, 'error');
+  expect(screen.queryByTestId('preview-image')).toBeNull();
+});
 it('ignores a late original response after the problem list closes', async () => {
   let resolveOriginal!: (value: MediaLibrary.AssetInfo) => void;
   jest.mocked(MediaLibrary.getAssetInfoAsync).mockImplementationOnce(() => new Promise(resolve => { resolveOriginal = resolve; }));

@@ -86,11 +86,17 @@ jobs:
 
       - name: Check TypeScript
         working-directory: src/LocalMediaTransfer.Mobile
-        run: npx tsc --noEmit
+        run: |
+          npx tsc --noEmit
+          npx tsc --noEmit --project tsconfig.android.json
 
       - name: Run ESLint
         working-directory: src/LocalMediaTransfer.Mobile
         run: npm run lint
+
+      - name: Verify production and TEST JavaScript boundaries on both platforms
+        working-directory: src/LocalMediaTransfer.Mobile
+        run: npm run verify:preview-bundles
 
       - name: Generate native iOS project
         working-directory: src/LocalMediaTransfer.Mobile

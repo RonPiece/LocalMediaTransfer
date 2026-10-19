@@ -1,5 +1,6 @@
 import { CopyAddressButton } from './CopyAddressButton';
 import React from 'react';
+import { useUiPreview } from '@lmt/ui-preview';
 import { Alert, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
@@ -25,10 +26,12 @@ export function ConnectionStatusCard({
   onRetryConnection: () => void;
 }) {
   const palette = useThemePalette();
+  const { receiverAddress } = useUiPreview();
+  const address = receiverAddress === undefined ? api.url : isConnected ? receiverAddress : '';
   const copyAddress = async () => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
     try {
-      await Clipboard.setStringAsync(api.url);
+      await Clipboard.setStringAsync(address);
       Alert.alert(dashboardText.copiedTitle, dashboardText.copiedAddressMessage);
     } catch {
       console.error('Failed to copy dashboard server address.');
@@ -78,7 +81,7 @@ export function ConnectionStatusCard({
         style={[addressPanelAppearance(palette), { borderWidth: 1, opacity: interactionAppearance('row', { disabled: !isConnected }).opacity }]}
       >
         <View className="flex-1 mr-3">
-          <Text className="text-on-surface dark:text-on-surface-dark text-[15px] font-semibold" numberOfLines={1}>{api.url || 'No receiver connected'}</Text>
+          <Text className="text-on-surface dark:text-on-surface-dark text-[15px] font-semibold" numberOfLines={1}>{address || 'No receiver connected'}</Text>
           <Text className="text-on-surface-variant dark:text-on-surface-variant-dark text-[13px] mt-[3px]">{dashboardText.tapSecurityDetails}</Text>
         </View>
         <View className="bg-surface dark:bg-surface-dark w-7 h-7 rounded-full items-center justify-center shadow-sm shadow-black/5 elevation-1">

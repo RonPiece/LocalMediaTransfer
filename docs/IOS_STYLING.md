@@ -39,6 +39,11 @@ classes; recipes resolve state-dependent native colors.
 
 ## State precedence
 
+`components/ui/BackButton.tsx` owns the chevron, label, touch target, disabled
+state and press feedback for navigation Back controls. `AppHeader`, transfer
+affected-file details and Android media review share it. Header titles and
+optional subtitles grow with text size instead of using a fixed-height bar.
+
 Disabled overrides pressed. Selection persists independently of a press. Busy
 state remains feature-owned: callers decide availability, labels and progress.
 
@@ -59,7 +64,10 @@ chooses a tone; it does not construct alpha-based status backgrounds.
 
 `components/ui/controls.tsx` renders a continuous elevated tray with a quiet
 border. `SegmentedControl` uses the `segmentAppearance` recipe for selected,
-pressed and disabled colors; disabled overrides the other states. History
+pressed and disabled colors; disabled overrides the other states. Selected
+options use solid primary fill and on-primary text so their state stays distinct
+from the tray in Light and Dark. The animated indicator uses the same recipe as
+the initial, unmeasured selection. History
 uses four equal-width pills: All, Completed, Skipped and Failed. Failed
 includes sessions with failed files, including mixed outcomes, and fatal status.
 Cancellation without failures remains in All. Skipped includes every session

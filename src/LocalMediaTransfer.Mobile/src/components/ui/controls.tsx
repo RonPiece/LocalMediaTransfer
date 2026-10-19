@@ -87,15 +87,16 @@ function Segment<T extends string>({ option, selected, scrollable, hasIndicator,
 
 function SelectionIndicator({ bounds }: { bounds: LayoutRectangle }) {
   const palette = useThemePalette();
+  const { backgroundColor, borderColor } = segmentAppearance(palette, { selected: true });
   const reduceMotion = useReduceMotionEnabled();
   const { x, y, width, height } = bounds;
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: transitionValue(x, reduceMotion) }, { translateY: transitionValue(y, reduceMotion) }],
     width: transitionValue(width, reduceMotion),
     height: transitionValue(height, reduceMotion),
-    backgroundColor: transitionValue(palette.primarySoft, reduceMotion),
-    borderColor: transitionValue(palette.border, reduceMotion),
-  }), [x, y, width, height, palette.primarySoft, palette.border, reduceMotion]);
+    backgroundColor: transitionValue(backgroundColor, reduceMotion),
+    borderColor: transitionValue(borderColor, reduceMotion),
+  }), [x, y, width, height, backgroundColor, borderColor, reduceMotion]);
   return <Animated.View testID="segment-selection-indicator" pointerEvents="none" accessible={false} style={[styles.indicator, animatedStyle]} />;
 }
 

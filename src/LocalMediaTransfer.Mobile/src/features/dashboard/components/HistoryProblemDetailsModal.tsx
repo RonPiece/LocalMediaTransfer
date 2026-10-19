@@ -1,6 +1,5 @@
 import React from 'react';
-import { ActivityIndicator, FlatList, Modal, Text, TouchableOpacity, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { ActivityIndicator, FlatList, Modal, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import { Image } from 'expo-image';
@@ -10,6 +9,8 @@ import { loadProblemPreviews, ProblemPreview, subscribeProblemPreviews } from '@
 import AppHeader from '@/components/AppHeader';
 import { TransferHistoryFile } from '@/api/types';
 import { useReduceMotionEnabled, useThemePalette } from '@/theme';
+import { ProblemFileThumbnail, ProblemThumbnail, ProblemThumbnails } from '@/features/history/components/ProblemFileThumbnail';
+import { useUiPreview } from '@lmt/ui-preview';
 
 function formatBytes(value = 0): string {
   if (value < 1_000) return `${value} B`;
@@ -19,23 +20,12 @@ function formatBytes(value = 0): string {
 }
 
 type LoadedPreview = ProblemPreview & { uri: string };
-function HistoryProblemFile({ file, preview, onPreview }: { file: TransferHistoryFile; preview?: LoadedPreview; onPreview: (preview: LoadedPreview) => void }) {
-  const palette = useThemePalette();
-  const [failedUri, setFailedUri] = React.useState<string | null>(null);
+function HistoryProblemFile({ file, preview, thumbnail, onPreview }: { file: TransferHistoryFile; preview?: LoadedPreview; thumbnail?: ProblemThumbnail; onPreview: (preview: LoadedPreview) => void }) {
   const skipped = file.outcome === 'skipped';
   return (
     <View className="flex-row py-3 border-b border-separator dark:border-separator-dark">
-      <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Preview original photo ${file.name}`} accessibilityHint="Opens this photo inside the app"
-        accessibilityState={{ disabled: !preview || preview.mediaType !== 'photo' }}
-        disabled={!preview || preview.mediaType !== 'photo'} onPress={() => preview && onPreview(preview)}
-        className="w-14 h-14 rounded-xl overflow-hidden items-center justify-center bg-surface dark:bg-surface-dark">
-        {preview?.uri && preview.uri !== failedUri ? <Image source={{ uri: preview.uri }} style={{ width: 56, height: 56 }} contentFit="cover"
-          onError={() => setFailedUri(preview.uri)} cachePolicy="disk" allowDownscaling enforceEarlyResizing recyclingKey={file.id} /> :
-          <Ionicons name={skipped ? 'play-skip-forward-outline' : 'alert-circle-outline'} size={24} color={skipped ? palette.warning : palette.error} />}
-        {preview?.uri && preview.uri !== failedUri && <View className="absolute bottom-0 right-0 rounded-tl-md bg-surface dark:bg-surface-dark p-0.5">
-          <Ionicons name={skipped ? 'play-skip-forward-outline' : 'alert-circle-outline'} size={14} color={skipped ? palette.warning : palette.error} />
-        </View>}
-      </TouchableOpacity>
+      <ProblemFileThumbnail id={file.id} name={file.name} skipped={skipped} thumbnail={thumbnail ?? preview}
+        onPress={preview?.mediaType === 'photo' ? () => onPreview(preview) : undefined} />
       <View className="ml-3 flex-1">
         <Text className="text-[14px] text-on-surface dark:text-on-surface-dark" numberOfLines={2}>
           {skipped
@@ -54,6 +44,7 @@ function HistoryProblemFile({ file, preview, onPreview }: { file: TransferHistor
 
 type ProblemModalProps = {
   files: TransferHistoryFile[] | null; totalProblems: number; sessionId?: string; onClose: () => void;
+  thumbnails?: ProblemThumbnails;
 };
 export function HistoryProblemDetailsModal(props: ProblemModalProps) {
   // Closing or changing receiver/session unmounts loading and preview state.
@@ -64,9 +55,11 @@ function ProblemFilesModal({
   files,
   totalProblems,
   sessionId,
+  thumbnails,
   onClose,
 }: ProblemModalProps) {
   const palette = useThemePalette();
+  const previewIntegration = useUiPreview();
   const reduceMotion = useReduceMotionEnabled();
   const [previews, setPreviews] = React.useState<Map<string, LoadedPreview>>(new Map());
   const [selected, setSelected] = React.useState<LoadedPreview | null>(null);
@@ -114,7 +107,7 @@ function ProblemFilesModal({
           <FlatList
             data={files}
             keyExtractor={(file, index) => `${file.id}:${index}`}
-            renderItem={({ item }) => <HistoryProblemFile file={item} preview={previews.get(item.id)} onPreview={preview => { setOriginal({}); setSelected(preview); }} />}
+            renderItem={({ item }) => <HistoryProblemFile file={item} preview={previews.get(item.id)} thumbnail={(thumbnails ?? previewIntegration.problemThumbnails)?.get(item.id)} onPreview={preview => { setOriginal({}); setSelected(preview); }} />}
             initialNumToRender={20}
             maxToRenderPerBatch={20}
             windowSize={7}

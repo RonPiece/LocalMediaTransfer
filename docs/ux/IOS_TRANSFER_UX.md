@@ -59,6 +59,16 @@ in [Shared Transfer Behavior](SHARED_TRANSFER_BEHAVIOR.md).
   available, while pinned HTTPS and native transfer require the installed app.
 - Authentication expiry tells the user to scan the current Windows QR again; it
   is not presented as a retryable network timeout.
+- Active trusted and nearby receiver rows retain normal contrast, show Connected
+  and open the shared Connection details screen. Public URL origin matching
+  (scheme, host and effective port) identifies the active receiver; names and
+  saved trust alone do not establish identity or certificate verification.
+- Other receiver rows show Disconnect to connect without a chevron while a
+  connection is active. Conflicting actions remain unavailable during pairing.
+- Home and receiver rows share read-only details: name, public address and copy,
+  health, protocol, certificate verification, TLS when available, and saved trust.
+  Details close on disconnect or receiver change. Opening details causes no
+  network request. TEST UI Preview is entered only from Settings.
 
 ## Selection
 
@@ -120,8 +130,8 @@ and terminal files remain separate monotonic metrics.
 - Duplicate windows keep the preparation title stable while its status changes
   among `Finding possible matches`, `Checking file contents`, or `Verifying
   matches on Windows`.
-- When preparation and preflight complete, reset the ring for the file-transfer
-  phase so it cannot display 100% while files are still uploading.
+- Preparation and transfer have separate inline bars; completing preparation
+  never represents transfer completion.
 - Honor prepare-first through one 250-item preparation window. Above that bound,
   switch visibly to streaming and release prepared temporary files continuously.
 
@@ -147,23 +157,31 @@ and terminal files remain separate monotonic metrics.
 
 ### Progress
 
-- Before overlapping upload begins, the preparation ring represents analyzed
-  Photos assets divided by selected Photos assets. During overlap, the two
-  compact phase rows carry preparation and transfer separately.
-- After authoritative expansion, the ring resets for the transfer phase and
-  represents terminal files divided by expanded transfer entries. Its label and
-  unit change with the denominator, so the reset is explicit rather than a false
-  100% completion signal. Skips and failures advance transfer progress.
+- There is no large progress ring. The two compact phase rows carry preparation
+  and transfer separately, with their icons aligned to the headings. Optional
+  transfer explanations expand beneath the rows.
+- The preparation bar represents analyzed Photos assets divided by selected
+  Photos assets. After authoritative expansion the transfer bar represents
+  terminal files divided by expanded transfer entries. While upload overlaps
+  preparation, show completed-file counts and activity without a guessed final
+  percentage. Skips and failures advance transfer progress.
 - The file denominator grows monotonically as additional PhotoKit components
   are discovered and can never display below the terminal-file count. When the
   additional-components setting is active, a short note explains that the total
   may grow during preparation.
-- The subtitle keeps `terminal / selected` readable at normal text size and
-  places the `files` or `assets` unit on its own line instead of shrinking the
-  complete string to fit.
+- Remaining media/files, acknowledged transferred bytes, and current speed use
+  three equal columns with vertical separators. Narrow cards or enlarged text
+  use individually divided full-width rows. Time has its own separated row.
+- The tab-lock explanation is a quiet neutral line: `Other tabs unlock when this
+  transfer ends`. Disabled tab roles and labels retain the accessible reason.
 - Skips and failures advance file-transfer progress.
 - Media left and files left use their own denominators.
 - Current speed remains separate from ETA.
+- Error reason groups and full affected-file explanations use solid content
+  cards and primary text in both themes. Nested affected-file navigation uses
+  the shared chevron Back control. A results sheet has no per-file retry action
+  and must not suggest that one exists. Sending an item again requires a new
+  selection/transfer after addressing its reported issue.
 - ETA must not appear before final planned bytes are known; elapsed time is used
   instead. Once totals are final, ETA may temporarily say `Calculating...` while
   the smoothed rate warms up or becomes stale.

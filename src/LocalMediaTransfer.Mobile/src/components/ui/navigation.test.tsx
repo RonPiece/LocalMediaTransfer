@@ -46,7 +46,7 @@ describe('BottomTabBar', () => {
     const onSelect = jest.fn();
     const screen = render(<BottomTabBar activeTab="transfers" onSelect={onSelect} locked />);
 
-    expect(screen.getByText('Transfer in progress · other tabs are temporarily unavailable')).toBeTruthy();
+    expect(screen.getByText('Other tabs unlock when this transfer ends')).toBeTruthy();
     expect(screen.getByLabelText('Transfers').props.accessibilityState).toEqual({ selected: true, disabled: false });
     const lockedHome = screen.getByLabelText('Home. Transfer in progress');
     expect(lockedHome.props.accessibilityState).toEqual({ selected: false, disabled: true });

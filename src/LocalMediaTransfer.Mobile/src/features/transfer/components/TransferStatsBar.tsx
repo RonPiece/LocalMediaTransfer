@@ -1,11 +1,9 @@
 import React from 'react';
 import { LayoutChangeEvent, Text, useWindowDimensions, View } from 'react-native';
 
+import { useThemePalette } from '@/theme';
 import { transferText } from '../content/transferText';
 import { formatBytes } from '../transferPresentation';
-
-const SCREEN_HORIZONTAL_PADDING = 48;
-const CARD_HORIZONTAL_INSET = 18;
 
 type TransferStatsBarProps = {
   itemsRemaining: number;
@@ -17,88 +15,44 @@ type TransferStatsBarProps = {
   timeHint?: string;
 };
 
+// Narrow and large-text layouts use divided rows instead of orphaning a metric.
 export function shouldUseCompactStatsLayout(availableWidth: number, fontScale: number): boolean {
-  return availableWidth < 330 || fontScale > 1.15;
+  return availableWidth < 300 || fontScale > 1.15;
 }
 
-export function TransferStatsBar({
-  itemsRemaining,
-  remainingLabel,
-  transferredBytes,
-  currentMediaMBps,
-  timeLabel,
-  timeText,
-  timeHint,
-}: TransferStatsBarProps) {
+export function TransferStatsBar({ itemsRemaining, remainingLabel, transferredBytes,
+  currentMediaMBps, timeLabel, timeText, timeHint }: TransferStatsBarProps) {
+  const palette = useThemePalette();
   const { width, fontScale } = useWindowDimensions();
-  const [measuredContentWidth, setMeasuredContentWidth] = React.useState(0);
-  const availableWidth = measuredContentWidth || Math.max(
-    0,
-    width - SCREEN_HORIZONTAL_PADDING - CARD_HORIZONTAL_INSET,
-  );
-  const compact = shouldUseCompactStatsLayout(availableWidth, fontScale);
-  const measureContent = React.useCallback((event: LayoutChangeEvent) => {
-    setMeasuredContentWidth(event.nativeEvent.layout.width);
-  }, []);
-  const hasTransferredColumn = transferredBytes !== undefined;
-  const statHorizontalPadding = hasTransferredColumn ? 'px-2' : 'px-3';
-  const valueTextSize = hasTransferredColumn ? 'text-[16px]' : 'text-[18px]';
-  const labelTextSize = 'text-[12px]';
-
-  const filesStat = (
-    <View className={`${compact ? 'w-1/2' : 'flex-1'} min-w-0 items-start ${statHorizontalPadding}`}>
-      <Text className={`text-on-surface-variant dark:text-on-surface-variant-dark ${labelTextSize} font-bold uppercase tracking-wider`}>{remainingLabel}</Text>
-      <Text className={`text-on-surface dark:text-on-surface-dark ${valueTextSize} font-semibold mt-1`} style={{ fontVariant: ['tabular-nums'] }}>{itemsRemaining.toLocaleString()}</Text>
-    </View>
-  );
-  const speedStat = (
-    <View className={`${compact ? 'w-1/2' : 'flex-1'} min-w-0 items-start ${statHorizontalPadding} ${compact ? '' : 'border-l border-separator dark:border-separator-dark'}`}>
-      <Text className={`text-on-surface-variant dark:text-on-surface-variant-dark ${labelTextSize} font-bold uppercase tracking-wider`}>{transferText.currentSpeed}</Text>
-      <Text className={`text-on-surface dark:text-on-surface-dark ${valueTextSize} font-semibold mt-1`} style={{ fontVariant: ['tabular-nums'] }}>
-        {currentMediaMBps.toFixed(1)} <Text className="text-[12px]">MB/s</Text>
-      </Text>
-    </View>
-  );
-  const transferredStat = transferredBytes === undefined ? null : (
-    <View className={`${compact ? 'w-1/2' : 'flex-1'} min-w-0 items-start ${statHorizontalPadding} ${compact ? '' : 'border-l border-separator dark:border-separator-dark'}`}>
-      <Text className={`text-on-surface-variant dark:text-on-surface-variant-dark ${labelTextSize} font-bold uppercase tracking-wider`}>Transferred</Text>
-      <Text
-        className={`text-on-surface dark:text-on-surface-dark ${valueTextSize} font-semibold mt-1`}
-        style={{ fontVariant: ['tabular-nums'] }}
-        numberOfLines={1}
-        adjustsFontSizeToFit
-        minimumFontScale={0.82}
-      >
-        {formatBytes(transferredBytes)}
-      </Text>
-    </View>
-  );
-  const timeStat = (
-    <View
-      testID={compact ? 'transfer-eta-compact' : 'transfer-eta-wide'}
-      className={compact ? 'min-w-0 items-start px-3 pt-3 mt-3 border-t border-border dark:border-border-dark' : 'flex-1 min-w-0 items-start px-3 border-l border-separator dark:border-separator-dark'}
-    >
-      <Text className="text-on-surface-variant dark:text-on-surface-variant-dark text-[12px] font-bold uppercase tracking-wider">{timeLabel}</Text>
-      <Text className="text-[14px] leading-5 font-semibold mt-1 text-primary dark:text-primary-dark">
-        {timeText}
-      </Text>
-      {timeHint && (
-        <Text className="text-on-surface-variant dark:text-on-surface-variant-dark text-[12px] leading-4 mt-1">{timeHint}</Text>
-      )}
-    </View>
-  );
-
-  return (
-    <View testID="transfer-stats-card" className="bg-surface dark:bg-surface-dark rounded-[18px] px-2 py-4 mb-4 border border-border dark:border-border-dark">
-      <View testID="transfer-stats-content" onLayout={measureContent}>
-        <View className={compact ? 'flex-row flex-wrap' : 'flex-row'}>
-          {filesStat}
-          {transferredStat}
-          {speedStat}
-          {!compact && timeStat}
+  const [contentWidth, setContentWidth] = React.useState(0);
+  const compact = shouldUseCompactStatsLayout(contentWidth || Math.max(0, width - 80), fontScale);
+  const measureContent = React.useCallback((event: LayoutChangeEvent) => setContentWidth(event.nativeEvent.layout.width), []);
+  const metrics = [
+    { label: remainingLabel, value: itemsRemaining.toLocaleString() },
+    ...(transferredBytes === undefined ? [] : [{ label: 'Transferred', value: formatBytes(transferredBytes) }]),
+    { label: transferText.currentSpeed, value: `${currentMediaMBps.toFixed(1)} MB/s` },
+  ];
+  return <View testID="transfer-stats-card" className="bg-surface dark:bg-surface-dark rounded-[18px] p-4 mb-4 border border-border dark:border-border-dark">
+    <View testID="transfer-stats-content" onLayout={measureContent}>
+      <View testID={compact ? 'transfer-metrics-rows' : 'transfer-metrics-columns'} style={{ flexDirection: compact ? 'column' : 'row' }}>
+        {metrics.map((metric, index) => <View key={metric.label} style={{
+          flex: compact ? undefined : 1, minWidth: 0,
+          paddingHorizontal: compact ? 0 : 8, paddingVertical: compact ? 12 : 0,
+          borderLeftWidth: !compact && index > 0 ? 1 : 0,
+          borderTopWidth: compact && index > 0 ? 1 : 0,
+          borderColor: palette.separator,
+        }}>
+          <Text style={{ color: palette.onSurfaceVariant, fontSize: 12, lineHeight: 16, fontWeight: '600', minHeight: compact ? undefined : 32 * fontScale }}>{metric.label}</Text>
+          <Text style={{ color: palette.onSurface, fontSize: 16, fontWeight: '600', marginTop: 6, fontVariant: ['tabular-nums'] }}>{metric.value}</Text>
+        </View>)}
+      </View>
+      <View testID={compact ? 'transfer-eta-compact' : 'transfer-eta-wide'} style={{ borderTopWidth: 1, borderColor: palette.separator, paddingTop: 12, marginTop: compact ? 0 : 16 }}>
+        <View className="flex-row flex-wrap items-baseline justify-between">
+          <Text className="text-on-surface-variant dark:text-on-surface-variant-dark text-[12px] font-semibold">{timeLabel}</Text>
+          <Text className="text-on-surface dark:text-on-surface-dark text-[14px] font-semibold">{timeText}</Text>
         </View>
-        {compact && timeStat}
+        {timeHint && <Text className="text-on-surface-variant dark:text-on-surface-variant-dark text-[12px] leading-4 mt-2">{timeHint}</Text>}
       </View>
     </View>
-  );
+  </View>;
 }

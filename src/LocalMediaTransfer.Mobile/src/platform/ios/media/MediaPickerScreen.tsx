@@ -33,6 +33,14 @@ interface MediaPickerScreenProps {
 }
 
 export default function MediaPickerScreen({ onTransfer, onDisconnect }: MediaPickerScreenProps) {
+  const selection = useMediaSelection();
+  return <MediaPickerView onTransfer={onTransfer} onDisconnect={onDisconnect} selection={selection} />;
+}
+
+/** Uses the same grid and controls with a supplied selection model. */
+export function MediaPickerView({ onTransfer, onDisconnect, selection }: MediaPickerScreenProps & {
+  selection: ReturnType<typeof useMediaSelection>;
+}) {
   const [transferResolving, setTransferResolving] = React.useState(false);
   const transferResolvingRef = React.useRef(false);
   const mountedRef = React.useRef(true);
@@ -70,7 +78,7 @@ export default function MediaPickerScreen({ onTransfer, onDisconnect }: MediaPic
     deselectAll,
     selectAll,
     selectedAssets,
-  } = useMediaSelection();
+  } = selection;
 
   React.useEffect(() => {
     mountedRef.current = true;

@@ -10,7 +10,7 @@ export const dashboardText = {
   linkFailedTitle: 'Could not open link',
   linkFailedMessage: 'The link could not be opened on this device.',
   desktopAddress: 'Desktop Address',
-  desktopAddressSecret: 'Your approved-device credential stays hidden in the iOS Keychain and is never included here.',
+  desktopAddressSecret: 'Approval credentials stay in secure device storage and are never included here.',
   copyLink: 'Copy Address',
   localNetwork: 'Local network',
   tapSecurityDetails: 'Tap for secure connection details',

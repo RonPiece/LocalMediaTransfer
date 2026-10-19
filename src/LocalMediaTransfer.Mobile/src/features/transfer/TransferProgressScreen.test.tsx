@@ -5,7 +5,6 @@ import tokens from '@/theme/tokens.json';
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
 import TransferProgressScreen, { transferProgressLayout } from './TransferProgressScreen';
 import { uploadManager } from '@/services/UploadManager';
-import { TransferProgressRing } from './components/TransferProgressRing';
 import { useReduceMotionEnabled } from '@/theme';
 
 jest.mock('@/theme', () => ({ ...jest.requireActual('@/theme'), useReduceMotionEnabled: jest.fn(() => false) }));
@@ -35,10 +34,10 @@ describe('TransferProgressScreen', () => {
     { id: '2', filename: 'photo2.jpg', uri: 'file://photo2.jpg', type: 'photo', size: 2000 }
   ];
 
-  it('caps the ring on iPad and compacts spacing on short iPhones', () => {
-    expect(transferProgressLayout(393, 852)).toEqual({ compactHeight: false, ringSize: 220.08 });
-    expect(transferProgressLayout(768, 1024)).toEqual({ compactHeight: false, ringSize: 240 });
-    expect(transferProgressLayout(320, 568)).toEqual({ compactHeight: true, ringSize: 179.20000000000002 });
+  it('compacts spacing on short iPhones', () => {
+    expect(transferProgressLayout(393, 852)).toEqual({ compactHeight: false });
+    expect(transferProgressLayout(768, 1024)).toEqual({ compactHeight: false });
+    expect(transferProgressLayout(320, 568)).toEqual({ compactHeight: true });
   });
 
   it('renders correctly and initiates upload', async () => {
@@ -221,70 +220,9 @@ describe('TransferProgressScreen', () => {
     expect(screen.getByText('2 filenames')).toBeTruthy();
     expect(screen.getByText('photo1.jpg')).toBeTruthy();
     expect(screen.getByText('photo2.jpg')).toBeTruthy();
-  });
-
-  it('clamps progress ring display at 100 percent when bytes exceed total', () => {
-    const screen = render(
-      <TransferProgressRing
-        size={200}
-        isFinished={false}
-        finalColor="#00ff00"
-        completedItems={3}
-        totalItems={2}
-        unit="files"
-        phaseLabel="Processing files"
-      />,
-    );
-
-    expect(screen.getByText('100%')).toBeTruthy();
-    expect(screen.getByText('2 / 2')).toBeTruthy();
-    expect(screen.getByText('files')).toBeTruthy();
-    expect(screen.getByTestId('transfer-progress-count')).toHaveStyle({
-      fontSize: 16,
-      lineHeight: 19,
-    });
-  });
-
-  it('keeps large final counts readable instead of scaling the subtitle down', () => {
-    const screen = render(
-      <TransferProgressRing
-        size={220}
-        isFinished
-        finalColor="#00ff00"
-        completedItems={19_807}
-        totalItems={19_807}
-        unit="files"
-        phaseLabel="Transfer complete"
-      />,
-    );
-
-    expect(screen.getByText('19,807 / 19,807')).toBeTruthy();
-    expect(screen.getByTestId('transfer-progress-count')).toHaveStyle({
-      fontSize: 16,
-      lineHeight: 19,
-    });
-    expect(screen.getByTestId('transfer-progress-count').props.adjustsFontSizeToFit).toBeUndefined();
-  });
-
-  it('renders the percentage ring on a white circular surface', () => {
-    const screen = render(
-      <TransferProgressRing
-        size={200}
-        isFinished={false}
-        finalColor="#00ff00"
-        completedItems={1}
-        totalItems={2}
-        unit="files"
-        phaseLabel="Processing files"
-      />,
-    );
-
-    expect(screen.getByTestId('transfer-progress-ring')).toHaveStyle({
-      width: 200,
-      height: 200,
-      borderRadius: 100,
-      backgroundColor: '#FFFFFF',
-    });
+    fireEvent.press(screen.getByLabelText('Back to grouped error reasons'));
+    expect(screen.getByText('Transfer errors')).toBeTruthy();
+    expect(screen.queryByText('Affected files')).toBeNull();
   });
 
   it('keeps preparation visible during uploads and shows a green completion state', async () => {
@@ -321,8 +259,7 @@ describe('TransferProgressScreen', () => {
     await waitFor(() => expect(screen.getByText('1 of 2 media items analyzed')).toBeTruthy());
     expect(screen.getByText('Transferring files')).toBeTruthy();
     expect(screen.getByText('Waiting for prepared media')).toBeTruthy();
-    expect(screen.getByText('1 / 2')).toBeTruthy();
-    expect(screen.getByText('assets')).toBeTruthy();
+    expect(screen.queryByTestId('transfer-progress-ring')).toBeNull();
 
     observer.onProgress({
       currentAsset: mockAssets[1],
@@ -344,10 +281,8 @@ describe('TransferProgressScreen', () => {
 
     expect(await screen.findByText('Transferring files')).toBeTruthy();
     await waitFor(() => expect(screen.getByText('2 media items analyzed')).toBeTruthy());
-    expect(screen.getByText('Waiting for prepared media')).toBeTruthy();
-    expect(screen.getByText('Files processed')).toBeTruthy();
-    expect(screen.getByText('0 / 3')).toBeTruthy();
-    expect(screen.getByText('files')).toBeTruthy();
+    expect(screen.getByText('0 of 3 files completed')).toBeTruthy();
+    expect(screen.getByTestId('concurrent-file-progress')).toHaveStyle({ width: '0%' });
   });
 
   it('explains streaming preparation and passes the optional mode to scheduling', async () => {
@@ -548,9 +483,10 @@ describe('TransferProgressScreen', () => {
       <TransferProgressScreen assets={mockAssets} onCancel={jest.fn()} onComplete={jest.fn()} />,
     );
 
-    expect(await screen.findByText('50%')).toBeTruthy();
-    expect(screen.getByText('1 / 2')).toBeTruthy();
-    expect(screen.getByText('files')).toBeTruthy();
+    expect(await screen.findByText('1 of 2 files completed')).toBeTruthy();
+    expect(screen.getByText('1 of 2 files completed')).toBeTruthy();
+    expect(screen.getByTestId('concurrent-file-progress')).toHaveStyle({ width: '50%' });
+    expect(screen.queryByTestId('transfer-progress-ring')).toBeNull();
     expect(screen.queryByText('iPhone is warm')).toBeNull();
     expect(screen.queryByText(/reduced speed/i)).toBeNull();
     expect(screen.queryByText(/paused/i)).toBeNull();

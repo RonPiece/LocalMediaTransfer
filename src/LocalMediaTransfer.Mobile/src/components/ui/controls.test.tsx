@@ -36,9 +36,10 @@ describe.each(['light', 'dark'] as const)('%s grouped controls', mode => {
       options={[{ value: 'all', label: 'All' }, { value: 'skipped', label: 'Skipped' }, { value: 'locked', label: 'Unavailable', disabled: true }]} />);
     const all = screen.getByRole('button', { name: 'All' });
     expect(all.props.accessibilityState.selected).toBe(true);
-    expect(all).toHaveStyle({ backgroundColor: palette.primarySoft });
+    expect(all).toHaveStyle({ backgroundColor: palette.primaryFill });
+    expect(screen.getByText('All')).toHaveStyle({ color: palette.onPrimary });
     fireEvent(all, 'pressIn');
-    expect(all).toHaveStyle({ backgroundColor: palette.primarySoft });
+    expect(all).toHaveStyle({ backgroundColor: palette.primaryFill });
     expect(screen.getByLabelText('Filter')).toHaveStyle({ backgroundColor: palette.elevatedSurface });
     fireEvent.press(screen.getByRole('button', { name: 'Skipped' }));
     expect(onChange).toHaveBeenCalledWith('skipped');
@@ -71,7 +72,8 @@ describe.each(['light', 'dark'] as const)('%s control transitions', mode => {
   for (const [index, label] of ['All', 'Failed', 'Unavailable'].entries()) {
    fireEvent(screen.getByRole('button', { name: label }), 'layout', { nativeEvent: { layout: { x: 4 + index * 90, y: 4, width: 86, height: 36 } } });
   }
-  expect(screen.getByTestId('segment-selection-indicator')).toHaveStyle({ width: 86, height: 36, backgroundColor: palette.primarySoft, transform: [{ translateX: 4 }, { translateY: 4 }] });
+  expect(screen.getByTestId('segment-selection-indicator')).toHaveStyle({ width: 86, height: 36, backgroundColor: palette.primaryFill, transform: [{ translateX: 4 }, { translateY: 4 }] });
+  expect(screen.getByText('All')).toHaveStyle({ color: palette.onPrimary });
   fireEvent.press(screen.getByRole('button', { name: 'Failed' }));
   expect(onChange).toHaveBeenCalledWith('failed');
   screen.rerender(<SegmentedControl label="History" options={options} value="failed" onChange={onChange} />);

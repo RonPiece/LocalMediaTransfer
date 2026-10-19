@@ -1,4 +1,4 @@
-import { actionAppearance, interactionAppearance, navigationAppearance, tabAppearance, toneAppearance } from './appearance';
+import { actionAppearance, interactionAppearance, navigationAppearance, outlinedActionAppearance, segmentAppearance, tabAppearance, toneAppearance } from './appearance';
 import tokens from './tokens.json';
 
 describe.each([['light', tokens.colors], ['dark', tokens.darkColors]] as const)('%s appearance recipes', (mode, palette) => {
@@ -59,6 +59,24 @@ function contrast(first: string, second: string) {
   const a = luminance(first), b = luminance(second);
   return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
 }
+
+describe.each([['light', tokens.colors], ['dark', tokens.darkColors]] as const)('%s control contrast', (_mode, palette) => {
+  it('keeps selected pills readable and distinct from the tray before and during a press', () => {
+    for (const pressed of [false, true]) {
+      const selected = segmentAppearance(palette, { selected: true, pressed });
+      expect(contrast(selected.foreground, selected.backgroundColor)).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(selected.backgroundColor, palette.elevatedSurface)).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it('keeps outlined action edges visible against the button and page', () => {
+    const action = outlinedActionAppearance(palette);
+    expect(contrast(action.foreground, palette.surface)).toBeGreaterThanOrEqual(4.5);
+    for (const background of [palette.surface, palette.background]) {
+      expect(contrast(action.container.borderColor, background)).toBeGreaterThanOrEqual(3);
+    }
+  });
+});
 
 describe('dark palette contrast', () => {
   const palette = tokens.darkColors;

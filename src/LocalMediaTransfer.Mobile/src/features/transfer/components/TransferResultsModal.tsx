@@ -5,14 +5,15 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { transferText } from '../content/transferText';
 import { FileState, TransferFailureGroup, groupFailureResults } from '../transferPresentation';
 import { TransferFileItem } from './TransferFileItem';
-import { useReduceMotionEnabled } from '@/theme';
+import { outlinedActionAppearance, useReduceMotionEnabled, useThemePalette } from '@/theme';
+import AppHeader from '@/components/AppHeader';
 
 const emptyResults: FileState[] = [];
 const resultsListContentStyle = { paddingHorizontal: 20, paddingBottom: 24 };
 const renderTransferFile = ({ item }: { item: FileState }) => <TransferFileItem item={item} />;
 
 const renderFailureGroup = ({ item }: { item: TransferFailureGroup }) => (
-  <View className="py-4 border-b border-separator dark:border-separator-dark">
+  <View className="p-4 mt-3 rounded-2xl bg-surface dark:bg-surface-dark border border-border dark:border-border-dark">
     <View className="flex-row items-start">
       <View className="px-2.5 py-1 rounded-full bg-error-soft dark:bg-error-soft-dark">
         <Text className="text-error dark:text-error-dark text-[12px] font-bold">{item.count.toLocaleString()}</Text>
@@ -21,7 +22,7 @@ const renderFailureGroup = ({ item }: { item: TransferFailureGroup }) => (
         <Text className="text-on-surface dark:text-on-surface-dark text-[14px] font-semibold">
           {item.count === 1 ? 'File affected' : 'Files affected'}
         </Text>
-        <Text className="text-on-surface-variant dark:text-on-surface-variant-dark text-[13px] leading-5 mt-1">{item.message}</Text>
+        <Text className="text-on-surface dark:text-on-surface-dark text-[14px] leading-5 mt-2">{item.message}</Text>
         <Text className="text-on-surface-variant dark:text-on-surface-variant-dark text-[11px] mt-2">
           Affected files include: {item.sampleFilenames.join(', ')}
         </Text>
@@ -48,6 +49,7 @@ export const TransferResultsModal = React.memo(function TransferResultsModal({
   onClose,
 }: TransferResultsModalProps) {
   const reduceMotion = useReduceMotionEnabled();
+  const palette = useThemePalette();
   const [showIndividualErrors, setShowIndividualErrors] = React.useState(false);
   React.useEffect(() => {
     if (!visible || !showOnlyErrors) setShowIndividualErrors(false);
@@ -74,7 +76,7 @@ export const TransferResultsModal = React.memo(function TransferResultsModal({
   );
   const count = showOnlyErrors ? errorCount : results.length;
   const showingIndividualErrors = showOnlyErrors && showIndividualErrors;
-  const errorListHeader = showOnlyErrors ? (
+  const errorListHeader = showOnlyErrors && (!byteTotalComplete || hasTemporaryStorageFailures || (!showingIndividualErrors && errorResults.length > 0)) ? (
     <View className="mt-4 p-4 rounded-[14px] bg-surface dark:bg-surface-dark border border-border dark:border-border-dark">
       {!byteTotalComplete && (
         <Text className="text-on-surface dark:text-on-surface-dark text-[13px] leading-5">
@@ -90,7 +92,8 @@ export const TransferResultsModal = React.memo(function TransferResultsModal({
         <TouchableOpacity
           accessibilityRole="button"
           onPress={() => setShowIndividualErrors(true)}
-          className="h-11 mt-3 rounded-xl bg-primary-soft dark:bg-primary-soft-dark items-center justify-center"
+          style={{ ...outlinedActionAppearance(palette).container, backgroundColor: palette.surface, borderWidth: 1 }}
+          className="min-h-[48px] p-3 rounded-xl items-center justify-center"
         >
           <Text className="text-primary dark:text-primary-dark text-[13px] font-semibold">
             View all {errorResults.length.toLocaleString()} affected filenames
@@ -103,39 +106,14 @@ export const TransferResultsModal = React.memo(function TransferResultsModal({
   return (
     <Modal visible={visible} animationType={reduceMotion ? 'none' : 'slide'} presentationStyle="pageSheet" onRequestClose={onClose}>
       <SafeAreaView className="flex-1 bg-background dark:bg-background-dark" accessibilityViewIsModal>
-        <View className="h-16 px-5 flex-row items-center justify-between border-b border-separator dark:border-separator-dark bg-surface dark:bg-surface-dark">
-          <View className="flex-1 flex-row items-center">
-            {showingIndividualErrors && (
-              <TouchableOpacity
-                accessibilityRole="button"
-                accessibilityLabel="Back to grouped error reasons"
-                onPress={() => setShowIndividualErrors(false)}
-                className="h-10 pr-3 items-center justify-center"
-              >
-                <Text className="text-primary dark:text-primary-dark font-semibold">Back</Text>
-              </TouchableOpacity>
-            )}
-            <View className="flex-1">
-              <Text className="text-on-surface dark:text-on-surface-dark text-lg font-bold">
-                {showingIndividualErrors
-                  ? 'Affected files'
-                  : showOnlyErrors
-                    ? transferText.transferErrors
-                    : transferText.allTransferResults}
-              </Text>
-              <Text className="text-on-surface-variant dark:text-on-surface-variant-dark text-xs">
-                {showingIndividualErrors
-                  ? `${errorResults.length.toLocaleString()} filenames`
-                  : showOnlyErrors
-                    ? `${count.toLocaleString()} files · ${failureGroups.length.toLocaleString()} ${failureGroups.length === 1 ? 'reason group' : 'reason groups'}`
-                    : transferText.virtualizedListLabel(count.toLocaleString())}
-              </Text>
-            </View>
-          </View>
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close transfer results" onPress={onClose} className="h-10 px-4 rounded-full bg-background dark:bg-background-dark items-center justify-center">
-            <Text className="text-primary dark:text-primary-dark font-semibold">{transferText.close}</Text>
-          </TouchableOpacity>
-        </View>
+        <AppHeader
+          title={showingIndividualErrors ? 'Affected files' : showOnlyErrors ? transferText.transferErrors : transferText.allTransferResults}
+          subtitle={showingIndividualErrors ? `${errorResults.length.toLocaleString()} filenames`
+            : showOnlyErrors ? `${count.toLocaleString()} files \u00b7 ${failureGroups.length.toLocaleString()} ${failureGroups.length === 1 ? 'reason group' : 'reason groups'}`
+              : transferText.virtualizedListLabel(count.toLocaleString())}
+          onClose={showingIndividualErrors ? () => setShowIndividualErrors(false) : undefined}
+          closeStyle="back" backLabel="Back to grouped error reasons"
+          onDone={onClose} doneText="Close" />
         {showingIndividualErrors ? (
           <FlatList
             data={errorResults}

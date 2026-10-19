@@ -1,4 +1,5 @@
 import React from 'react';
+import { BackButton } from '@/components/ui/BackButton';
 import { Alert, FlatList, Image, Pressable, Text, useWindowDimensions, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -21,9 +22,6 @@ export function mediaReviewColumns(width: number, fontScale: number): number {
 
 /** The system picker grants access only to the user's chosen items. */
 export default function MediaSelectionScreen({ onTransfer, onDisconnect }: Props) {
-  const palette = useThemePalette();
-  const { width, fontScale } = useWindowDimensions();
-  const columns = mediaReviewColumns(width, fontScale);
   const [items, setItems] = React.useState<SelectedMedia[]>([]);
   const [opening, setOpening] = React.useState(false);
   const openPicker = React.useCallback(async () => {
@@ -47,16 +45,24 @@ export default function MediaSelectionScreen({ onTransfer, onDisconnect }: Props
     setItems(current => current.filter(item => (item.nativeReference ?? item.uri) !== uri));
   }, []);
 
+  return <MediaReviewView items={items} opening={opening} openPicker={openPicker} remove={remove}
+    onTransfer={onTransfer} onDisconnect={onDisconnect} />;
+}
+
+/** Shared Android review presentation; native picker access belongs to the wrapper. */
+export function MediaReviewView({ items, opening, openPicker, remove, onTransfer, onDisconnect }: Props & {
+  items: SelectedMedia[]; opening: boolean; openPicker: () => void | Promise<void>; remove: (uri: string) => void;
+}) {
+  const palette = useThemePalette();
+  const { width, fontScale } = useWindowDimensions();
+  const columns = mediaReviewColumns(width, fontScale);
+
   const countLabel = `${items.length.toLocaleString()} ${items.length === 1 ? 'item' : 'items'} selected`;
 
   return (
     <SafeAreaView className="flex-1 bg-background dark:bg-background-dark">
       <View className="bg-surface dark:bg-surface-dark border-b border-border dark:border-border-dark px-4 min-h-[56px] flex-row items-center justify-between">
-        <Pressable onPress={onDisconnect} accessibilityRole="button" accessibilityLabel="Back to Home"
-          className="min-w-[48px] min-h-[48px] flex-row items-center justify-start">
-          <Ionicons name="chevron-back" size={22} color={palette.primary} />
-          <Text className="text-primary dark:text-primary-dark text-[16px]">Back</Text>
-        </Pressable>
+        <BackButton onPress={() => onDisconnect?.()} disabled={!onDisconnect} accessibilityLabel="Back to Home" />
         <Text accessibilityRole="header" className="text-[17px] font-semibold text-on-surface dark:text-on-surface-dark">Review media</Text>
         <Pressable onPress={() => void openPicker()} accessibilityRole="button" accessibilityLabel="Add media"
           disabled={opening} accessibilityState={{ disabled: opening, busy: opening }}

@@ -5,12 +5,20 @@ module.exports = [
     ignores: [
       'coverage/**',
       'dist/**',
+      '.expo/**',
       'build/**',
       'modules/**/build/**',
       'ios/**',
       'android/**',
       'node_modules/**',
     ],
+  },
+  {
+    files: ['build-tools/*.cjs'],
+    languageOptions: {
+      sourceType: 'commonjs',
+      globals: { __dirname: 'readonly', require: 'readonly', module: 'readonly', process: 'readonly', console: 'readonly' },
+    },
   },
   {
     files: ['**/*.{ts,tsx}'],

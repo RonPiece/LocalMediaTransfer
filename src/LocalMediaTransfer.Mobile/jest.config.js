@@ -2,6 +2,7 @@ module.exports = {
   preset: "jest-expo",
   setupFiles: ["<rootDir>/jest.setup.js"],
   moduleNameMapper: {
+    "^@lmt/ui-preview$": "<rootDir>/src/dev/preview/integration.tsx",
     "^@/(.*)$": "<rootDir>/src/$1"
   },
   transformIgnorePatterns: [

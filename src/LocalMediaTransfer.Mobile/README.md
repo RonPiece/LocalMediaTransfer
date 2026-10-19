@@ -95,6 +95,14 @@ upload, and discovery logic should not be placed in generic UI components.
 | Expo Go | UI development and compatibility checks | QR/manual connection and Base64 compatibility uploader; no native hashing or archival Photos fidelity |
 | Browser fallback | No installed app available | Local web upload page from the Windows server |
 
+The TEST app has a **UI Preview** entry only in Settings, available before
+pairing. Its catalog
+opens real screens with sample loading, offline, transfer, result, and error
+states without pairing or selecting real media. Transfer playback can be
+paused or scrubbed; screenshot mode hides the developer controls. See
+[Mobile UI Preview](../../docs/MOBILE_UI_PREVIEW.md) for usage and isolation
+limits. Production does not expose this workspace.
+
 Installed builds honor the persistent **Transfer while preparing** preference
 through one 250-item prepare-first window. Larger native selections
 automatically use storage-saving streaming and disclose that adjustment. In
@@ -142,10 +150,10 @@ The free Windows-first install path is:
 
 See [Unsigned IPA + Sideloadly](../../docs/IOS_SIDELOADLY.md).
 See [Environments, build profiles, and Metro](../../docs/IOS_BUILD_CONFIGURATION.md)
-for the current workflow override, the separate JavaScript runtime selection,
-and the implementation plan for independent choices and mismatch detection.
+for the supported build targets, JavaScript runtime selection, and installed
+environment checks.
 For Fast Refresh with the native module, run the `ios-unsigned-ipa.yml` workflow
-with the `development` build profile, sideload its TEST IPA, and start Metro with
+with the `test-development` build target, sideload its TEST IPA, and start Metro with
 `npm run start:dev-client`. That command explicitly selects the TEST environment
 and its dedicated `exp+ronthedev-local-media-transfer-iphone-2026-test`
 development-client URL scheme. Keep the production IPA installed for normal use.

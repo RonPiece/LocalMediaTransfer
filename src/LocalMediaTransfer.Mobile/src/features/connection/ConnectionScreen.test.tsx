@@ -11,8 +11,17 @@ import { useCameraPermissions } from 'expo-camera';
 import { qrScannerControlsTop } from './components/QrScannerOverlay';
 import { nearbyHeaderUsesIconOnlyActions } from './components/NearbyDesktopSection';
 import * as Haptics from 'expo-haptics';
+import type { ActiveConnection } from './connectionPresentation';
+import type { SavedConnection } from '@/app/types';
 
 jest.mock('expo-status-bar', () => ({ StatusBar: jest.fn(() => null) }));
+jest.mock('react-native-safe-area-context', () => {
+  const React = require('react');
+  const { View } = require('react-native');
+  return { SafeAreaProvider: ({ children }: React.PropsWithChildren) => <>{children}</>, SafeAreaView: View,
+    useSafeAreaInsets: () => ({ top: 44, bottom: 34, left: 0, right: 0 }),
+    initialWindowMetrics: { insets: { top: 44, bottom: 34, left: 0, right: 0 }, frame: { width: 390, height: 844, x: 0, y: 0 } } };
+});
 
 jest.mock('@expo/vector-icons', () => {
   const React = require('react');
@@ -57,6 +66,67 @@ describe('ConnectionScreen QR Logic', () => {
 
   afterEach(() => {
     jest.restoreAllMocks();
+  });
+
+  const active: ActiveConnection = { address: 'https://receiver.local:8443', name: 'Receiver', healthStatus: 'connected',
+    security: { mode: 'https', certificateVerified: true, tlsVersion: 'TLS 1.3' }, trusted: true };
+  const saved: SavedConnection = { version: 3, environment: 'test', serverId: 'current', name: active.name,
+    httpsUrl: active.address, certificateFingerprint: '' };
+  const servers = [8443, 9443].map(httpsPort => ({ name: active.name, address: 'receiver.local', httpsPort,
+    serverId: `server-${httpsPort}`, environment: 'test' as const, certificateFingerprint: '', approvalRequired: true }));
+
+  it.each(['light', 'dark'] as const)('opens shared details from active trusted and nearby rows in %s without reconnecting', mode => {
+    jest.spyOn(ReactNative, 'useColorScheme').mockReturnValue(mode);
+    const onConnect = jest.fn(), onConnectTrusted = jest.fn(), onConnectDiscovered = jest.fn();
+    const screen = render(<ConnectionScreen onConnect={onConnect} onConnectTrusted={onConnectTrusted} onConnectDiscovered={onConnectDiscovered}
+      isConnected activeConnection={active} savedReceiver={saved} nearbyDiscoveryEnabled discoveredServers={servers} />);
+    const rows = screen.getAllByLabelText('View connection details for Receiver');
+    expect(rows).toHaveLength(2);
+    for (const row of rows) {
+      expect(row).not.toBeDisabled();
+      expect(row).toHaveStyle({ opacity: 1 });
+      fireEvent.press(row);
+      expect(screen.getByText('Connection details')).toBeTruthy();
+      expect(screen.getByText('TLS 1.3')).toBeTruthy();
+      fireEvent.press(screen.getByLabelText('Back'));
+    }
+    const other = screen.getByLabelText('Connect to Receiver');
+    expect(other).toBeDisabled();
+    expect(other.findAllByType(Ionicons).map(icon => icon.props.name)).not.toContain('chevron-forward');
+    expect(screen.getByText('Disconnect to connect')).toBeTruthy();
+    fireEvent.press(other);
+    expect(onConnect).not.toHaveBeenCalled();
+    expect(onConnectTrusted).not.toHaveBeenCalled();
+    expect(onConnectDiscovered).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText('Open UI Preview')).toBeNull();
+  });
+
+  it('keeps busy rows unavailable and closes details across a disconnect or receiver switch', () => {
+    const props = { onConnect: jest.fn(), activeConnection: active, isConnected: true, savedReceiver: saved };
+    const screen = render(<ConnectionScreen {...props} isConnecting />);
+    const row = screen.getByLabelText('View connection details for Receiver');
+    expect(row).toBeDisabled();
+    expect(row.props.accessibilityState.busy).toBe(true);
+    fireEvent.press(row);
+    expect(screen.queryByText('Connection details')).toBeNull();
+    screen.rerender(<ConnectionScreen {...props} />);
+    fireEvent.press(screen.getByLabelText('View connection details for Receiver'));
+    screen.rerender(<ConnectionScreen {...props} activeConnection={{ ...active, address: 'https://other.local' }} />);
+    expect(screen.queryByText('Connection details')).toBeNull();
+    screen.rerender(<ConnectionScreen {...props} />);
+    expect(screen.queryByText('Connection details')).toBeNull();
+    fireEvent.press(screen.getByLabelText('View connection details for Receiver'));
+    screen.rerender(<ConnectionScreen {...props} isConnected={false} activeConnection={null} />);
+    expect(screen.queryByText('Connection details')).toBeNull();
+    screen.rerender(<ConnectionScreen {...props} />);
+    expect(screen.queryByText('Connection details')).toBeNull();
+  });
+
+  it('retains reconnect action when disconnected', () => {
+    const onConnectTrusted = jest.fn();
+    const screen = render(<ConnectionScreen onConnect={jest.fn()} savedReceiver={saved} onConnectTrusted={onConnectTrusted} />);
+    fireEvent.press(screen.getByLabelText('Reconnect to trusted receiver'));
+    expect(onConnectTrusted).toHaveBeenCalledTimes(1);
   });
 
   it('keeps nearby UDP discovery disabled by default', () => {

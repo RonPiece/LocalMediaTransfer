@@ -62,9 +62,9 @@ export function navigationAppearance(palette: ThemePalette, mode: 'light' | 'dar
 // selected/pressed; pressing never erases the selected fill.
 export function segmentAppearance(palette: ThemePalette, state: InteractionState & { selected: boolean }) {
   return {
-    foreground: state.disabled ? palette.onSurfaceVariant : state.selected || state.pressed ? palette.primary : palette.onSurfaceVariant,
-    backgroundColor: state.disabled ? palette.disabledFill : state.selected || state.pressed ? palette.primarySoft : 'transparent',
-    borderColor: state.selected && !state.disabled ? palette.border : 'transparent',
+    foreground: state.disabled ? palette.onSurfaceVariant : state.selected ? palette.onPrimary : state.pressed ? palette.primary : palette.onSurfaceVariant,
+    backgroundColor: state.disabled ? palette.disabledFill : state.selected ? palette.primaryFill : state.pressed ? palette.primarySoft : 'transparent',
+    borderColor: state.selected && !state.disabled ? palette.primaryFill : 'transparent',
   };
 }
 

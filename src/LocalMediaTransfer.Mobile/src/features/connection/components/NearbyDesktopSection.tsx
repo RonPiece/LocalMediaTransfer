@@ -1,11 +1,13 @@
 import React from 'react';
-import { Alert, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import { Alert, Text, useWindowDimensions, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { connectionText } from '../content/connectionText';
 import { DiscoveredServer } from '@/services/NativeCapabilities';
-import { interactionAppearance, useThemePalette } from '@/theme';
-import { Card, ControlGroup, GroupAction, HelpButton, IconTile, SecondaryButton, SectionLabel } from '@/components/ui';
+import { useThemePalette } from '@/theme';
+import { Card, ControlGroup, GroupAction, HelpButton, SecondaryButton, SectionLabel } from '@/components/ui';
+import { ActiveConnection, discoveredReceiverAddress } from '../connectionPresentation';
+import { ReceiverRow } from './ReceiverRow';
 
 export function nearbyHeaderUsesIconOnlyActions(width: number, fontScale: number): boolean {
   return width < 370 || fontScale > 1.2;
@@ -24,6 +26,8 @@ export function NearbyDesktopSection({
   onRefreshDiscovery,
   isConnected,
   onDisconnect,
+  activeConnection,
+  onOpenDetails,
 }: {
   discoveredServers: DiscoveredServer[];
   isDiscovering: boolean;
@@ -37,6 +41,8 @@ export function NearbyDesktopSection({
   onRefreshDiscovery: () => void;
   isConnected: boolean;
   onDisconnect: () => Promise<void> | void;
+  activeConnection: ActiveConnection | null;
+  onOpenDetails: () => void;
 }) {
   const palette = useThemePalette();
   const { width, fontScale } = useWindowDimensions();
@@ -106,36 +112,15 @@ export function NearbyDesktopSection({
           discoveredServers.map((server, index) => (
             <React.Fragment key={server.serverId}>
               {index > 0 && <View className="h-[0.5px] bg-separator dark:bg-separator-dark ml-14" />}
-              <TouchableOpacity
-                accessibilityRole="button"
-                accessibilityLabel={`Connect to ${server.name}`}
-                accessibilityState={{ disabled: isConnecting || isConnected, busy: isConnecting }}
-                onPress={async () => {
-                  if (isConnecting) return;
-                  await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
-                  try {
-                    await onConnectDiscovered(server);
-                  } catch {
-                    Alert.alert(
-                      connectionText.connectionFailedTitle,
-                      connectionText.connectionFailedMessage,
-                    );
-                  }
-                }}
-                disabled={isConnecting || isConnected}
-                className="flex-row items-center p-3"
-                style={{ opacity: interactionAppearance('row', { disabled: isConnecting || isConnected }).opacity }}
-                activeOpacity={interactionAppearance('row', { disabled: isConnecting || isConnected }).activeOpacity}
-              >
-                <IconTile icon="desktop-outline" />
-                <View className="flex-1">
-                  <Text className="text-[17px] font-normal text-on-surface dark:text-on-surface-dark">{server.name}</Text>
-                  <Text className="text-[13px] text-on-surface-variant dark:text-on-surface-variant-dark mt-[2px]">
-                    {server.address}:{server.httpsPort} · {connectionText.tapToConnect}
-                  </Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color={palette.onSurfaceVariant} />
-              </TouchableOpacity>
+              <ReceiverRow name={server.name} address={discoveredReceiverAddress(server)}
+                activeConnection={activeConnection} isConnected={isConnected} isConnecting={isConnecting}
+                onOpenDetails={onOpenDetails} onConnect={() => {
+                  void (async () => {
+                    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
+                    try { await onConnectDiscovered(server); }
+                    catch { Alert.alert(connectionText.connectionFailedTitle, connectionText.connectionFailedMessage); }
+                  })();
+                }} />
             </React.Fragment>
           ))
         )}

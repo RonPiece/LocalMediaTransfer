@@ -4,8 +4,8 @@ import { fireEvent, render } from '@testing-library/react-native';
 import { shouldUseCompactStatsLayout, TransferStatsBar } from './TransferStatsBar';
 
 describe('TransferStatsBar', () => {
-  it('uses compact layout at 393-point/SE widths and three columns on wider iPhones or iPad', () => {
-    expect(shouldUseCompactStatsLayout(327, 1)).toBe(true);
+  it('uses three columns on normal phones and divided rows on narrow or enlarged-text layouts', () => {
+    expect(shouldUseCompactStatsLayout(327, 1)).toBe(false);
     expect(shouldUseCompactStatsLayout(254, 1)).toBe(true);
     expect(shouldUseCompactStatsLayout(364, 1)).toBe(false);
     expect(shouldUseCompactStatsLayout(702, 1)).toBe(false);
@@ -24,7 +24,7 @@ describe('TransferStatsBar', () => {
       />,
     );
     fireEvent(screen.getByTestId('transfer-stats-content'), 'layout', {
-      nativeEvent: { layout: { width: 300, height: 140, x: 0, y: 0 } },
+      nativeEvent: { layout: { width: 254, height: 140, x: 0, y: 0 } },
     });
 
     expect(screen.getByTestId('transfer-eta-compact')).toBeTruthy();
@@ -48,7 +48,7 @@ describe('TransferStatsBar', () => {
     expect(screen.getByText('Transferred')).toBeTruthy();
     expect(screen.getByText('821.3 MB')).toBeTruthy();
     expect(screen.getByText('Speed')).toBeTruthy();
-    expect(screen.getByText('MB/s')).toBeTruthy();
+    expect(screen.getByText('42.9 MB/s')).toBeTruthy();
     expect(screen.getByText('About 40s')).toBeTruthy();
     expect(screen.queryByLabelText('File transfer progress')).toBeNull();
   });

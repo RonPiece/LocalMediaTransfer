@@ -9,7 +9,6 @@ import { SelectedMedia } from '@/services/media/SelectedMedia';
 import { actionAppearance, useReduceMotionEnabled, useThemePalette } from '@/theme';
 import { RecentActivityPanel } from './components/RecentActivityPanel';
 import { ConcurrentTransferProgress } from './components/ConcurrentTransferProgress';
-import { TransferProgressRing } from './components/TransferProgressRing';
 import { TransferResultsModal } from './components/TransferResultsModal';
 import { TransferStatsBar } from './components/TransferStatsBar';
 import { TransferSummaryCard } from './components/TransferSummaryCard';
@@ -18,10 +17,9 @@ import { useTransferController } from './useTransferController';
 import { PreparationMode } from '@/services/upload/types';
 import { formatDuration } from './transferPresentation';
 
-export function transferProgressLayout(width: number, height: number) {
+export function transferProgressLayout(_width: number, height: number) {
   return {
     compactHeight: height < 700,
-    ringSize: Math.min(height < 700 ? 190 : 240, Math.max(176, width * 0.56)),
   };
 }
 
@@ -41,14 +39,27 @@ const ActiveTransferKeepAwake = React.memo(function ActiveTransferKeepAwake() {
 });
 
 export default function TransferProgressScreen({
-  assets,
-  onCancel,
+  onTerminalStateChange,
   onComplete,
-  preparationMode = 'prepare-first',
-  skipExactDuplicates = true,
+  ...props
+}: TransferProgressScreenProps) {
+  const controller = useTransferController(props);
+  return <>
+    {!controller.isFinished && <ActiveTransferKeepAwake />}
+    <TransferProgressView {...props} onComplete={onComplete} onTerminalStateChange={onTerminalStateChange} controller={controller} />
+  </>;
+}
+
+export type TransferPresentation = ReturnType<typeof useTransferController>;
+
+/** Shared presentation: rendering this view never starts or cancels an upload. */
+export function TransferProgressView({
+  assets,
+  onComplete,
   includeAdditionalMediaComponents = false,
   onTerminalStateChange,
-}: TransferProgressScreenProps) {
+  controller,
+}: TransferProgressScreenProps & { controller: TransferPresentation }) {
   const palette = useThemePalette();
   const reduceMotion = useReduceMotionEnabled();
   const completionEntrance = useAnimatedValue(0);
@@ -66,7 +77,6 @@ export default function TransferProgressScreen({
     queueCatchUpVisible,
     preparedFiles,
     preparationComplete,
-    activePreparationMode,
     automaticallyStreamsLargeSelection,
     totalTransferFiles,
     duplicateCheck,
@@ -79,15 +89,9 @@ export default function TransferProgressScreen({
     elapsedSeconds,
     resultList,
     cancelTransfer,
-  } = useTransferController({
-    assets,
-    onCancel,
-    preparationMode,
-    skipExactDuplicates,
-    includeAdditionalMediaComponents,
-  });
+  } = controller;
   const { width, height } = useWindowDimensions();
-  const { compactHeight, ringSize } = transferProgressLayout(width, height);
+  const { compactHeight } = transferProgressLayout(width, height);
 
   const errorCount = summary.failed;
   const skipCount = summary.skipped;
@@ -97,17 +101,10 @@ export default function TransferProgressScreen({
     completionSummary?.expandedFiles ?? totalTransferFiles,
     processedCount,
   );
-  const transferPhaseActive = preparationComplete || isFinished;
-  const ringCompleted = transferPhaseActive ? processedCount : preparedFiles;
-  const ringTotal = transferPhaseActive ? displayedTotalFiles : assets.length;
   const itemsRemaining = preparationComplete
     ? Math.max(0, displayedTotalFiles - processedCount)
     : Math.max(0, assets.length - preparedFiles);
   const progressBytes = currentProgress?.acknowledgedMediaBytes || 0;
-  const streamingOverlapActive = !isFinished
-    && !preparationComplete
-    && activePreparationMode === 'streaming'
-    && hasUploadStarted;
   const selectedBytes = completionSummary?.selectedBytes ?? currentProgress?.totalBytes ?? 0;
   const transferredBytes = completionSummary?.uploadedBytes ?? progressBytes;
   const showRemainingTime = preparationComplete && hasUploadStarted;
@@ -116,9 +113,6 @@ export default function TransferProgressScreen({
   const timeHint = !preparationComplete
     ? 'Final transfer size is still being determined.'
     : undefined;
-  const finalColor = errorCount === 0
-    ? palette.success
-    : (successCount + skipCount > 0 ? palette.warning : palette.error);
 
   const showAllResultsModal = React.useCallback(() => {
     setShowOnlyErrors(false);
@@ -164,7 +158,6 @@ export default function TransferProgressScreen({
 
   return (
     <View className="flex-1 bg-background dark:bg-background-dark">
-      {!isFinished && <ActiveTransferKeepAwake />}
       <SafeAreaView edges={['top']} className="bg-surface dark:bg-surface-dark">
         <AppHeader title={transferText.title} />
       </SafeAreaView>
@@ -190,23 +183,6 @@ export default function TransferProgressScreen({
           />
         )}
 
-        {!isFinished && !streamingOverlapActive && (
-          <TransferProgressRing
-            size={ringSize}
-            compactHeight={compactHeight}
-            isFinished={isFinished}
-            finalColor={finalColor}
-            completedItems={ringCompleted}
-            totalItems={ringTotal}
-            unit={transferPhaseActive ? 'files' : 'assets'}
-            phaseLabel={isFinished
-              ? 'Transfer complete'
-              : preparationComplete
-                ? 'Files processed'
-                : 'Analyzing media'}
-          />
-        )}
-
         {skipCount > 0 && !isFinished && (
           <View className="rounded-[16px] bg-warning-soft dark:bg-warning-soft-dark border border-border dark:border-border-dark px-4 py-3 mb-4 flex-row items-center">
             <Ionicons name="play-skip-forward-outline" size={20} color={palette.warning} />
@@ -220,7 +196,7 @@ export default function TransferProgressScreen({
           <TransferStatsBar
             itemsRemaining={itemsRemaining}
             remainingLabel={preparationComplete ? transferText.filesLeft : 'Media left to analyze'}
-            transferredBytes={streamingOverlapActive ? progressBytes : undefined}
+            transferredBytes={progressBytes}
             currentMediaMBps={currentMediaMBps}
             timeLabel={timeLabel}
             timeText={timeText}

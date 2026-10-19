@@ -1,6 +1,6 @@
 import React from 'react';
 import { Image, Text, TouchableOpacity, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { BackButton } from './ui/BackButton';
 import { useThemePalette } from '@/theme';
 
 // iOS HIG navigation bar:
@@ -12,6 +12,8 @@ type CloseStyle = 'back' | 'cancel';
 
 interface AppHeaderProps {
   title: string;
+  subtitle?: string;
+  backLabel?: string;
   showIcon?: boolean;
   onClose?: () => void;
   closeStyle?: CloseStyle;
@@ -22,6 +24,8 @@ interface AppHeaderProps {
 
 export default function AppHeader({
   title,
+  subtitle,
+  backLabel,
   showIcon = false,
   onClose,
   closeStyle = 'cancel',
@@ -31,20 +35,11 @@ export default function AppHeader({
 }: AppHeaderProps) {
   const palette = useThemePalette();
   return (
-    <View className="border-b-[0.5px] border-border dark:border-border-dark h-[44px] flex-row items-center bg-surface dark:bg-surface-dark">
+    <View className="border-b-[0.5px] border-border dark:border-border-dark min-h-[48px] py-1 flex-row items-center bg-surface dark:bg-surface-dark">
       <View className="w-20 items-start pl-3">
         {onClose ? (
           closeStyle === 'back' ? (
-            <TouchableOpacity
-              accessibilityRole="button"
-              accessibilityLabel="Back"
-              onPress={onClose}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              className="flex-row items-center"
-            >
-              <Ionicons name="chevron-back" size={22} color={palette.primary} />
-              <Text className="text-primary dark:text-primary-dark text-[17px]">Back</Text>
-            </TouchableOpacity>
+            <BackButton onPress={onClose} accessibilityLabel={backLabel} />
           ) : (
             <TouchableOpacity
               accessibilityRole="button"
@@ -63,12 +58,10 @@ export default function AppHeader({
         ) : null}
       </View>
 
-      <Text
-        numberOfLines={1}
-        className="flex-1 text-center text-[17px] font-semibold text-on-surface dark:text-on-surface-dark"
-      >
-        {title}
-      </Text>
+      <View className="flex-1 py-1">
+        <Text accessibilityRole="header" className="text-center text-[17px] font-semibold text-on-surface dark:text-on-surface-dark">{title}</Text>
+        {subtitle && <Text className="text-center text-[12px] text-on-surface-variant dark:text-on-surface-variant-dark mt-0.5">{subtitle}</Text>}
+      </View>
 
       <View className="w-20 items-end pr-3">
         {onDone ? (

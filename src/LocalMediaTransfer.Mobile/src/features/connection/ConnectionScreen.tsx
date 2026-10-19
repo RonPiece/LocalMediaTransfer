@@ -14,13 +14,17 @@ import { ConnectionOptionsSection } from './components/ConnectionOptionsSection'
 import { NearbyDesktopSection } from './components/NearbyDesktopSection';
 import { PairingApprovalBanner } from './components/PairingApprovalBanner';
 import { QrScannerOverlay } from './components/QrScannerOverlay';
-import { Card, IconTile, ScreenHeader, SectionLabel, StatusBadge } from '@/components/ui';
+import { Card, IconTile, ScreenHeader, SectionLabel } from '@/components/ui';
 import { useManualConnection } from './hooks/useManualConnection';
 import { useQrScanner } from './hooks/useQrScanner';
 import { DiscoveredServer, nativeCapabilities } from '@/services/NativeCapabilities';
 import { PairingPayload } from '@/security/ConnectionSecurity';
 import { SavedConnection } from '@/app/types';
-import { actionAppearance, interactionAppearance, useThemePalette } from '@/theme';
+import { actionAppearance, useThemePalette } from '@/theme';
+import { ActiveConnection } from './connectionPresentation';
+import { ReceiverRow } from './components/ReceiverRow';
+import { useConnectionDetails } from './hooks/useConnectionDetails';
+import { ConnectionDetailsModal } from '@/features/dashboard/components/ConnectionDetailsModal';
 
 function savedReceiverLabel(savedReceiver: SavedConnection): string {
   if (savedReceiver.name?.trim()) return savedReceiver.name.trim();
@@ -49,13 +53,20 @@ interface ConnectionScreenProps {
   scanRequestId?: number;
   pairingDesktopName?: string | null;
   isConnected?: boolean;
+  activeConnection?: ActiveConnection | null;
   savedReceiver?: SavedConnection | null;
   onConnectTrusted?: () => Promise<void> | void;
   onDisconnect?: () => Promise<void> | void;
 }
 
-export default function ConnectionScreen({
-  onConnect,
+export default function ConnectionScreen(props: ConnectionScreenProps) {
+  const nativeHttpsAvailable = props.nativeHttpsAvailable ?? (nativeCapabilities.capabilities?.pinnedHttps ?? nativeCapabilities.available);
+  const qrScanner = useQrScanner({ onConnect: props.onConnect });
+  const manualConnection = useManualConnection({ onConnect: props.onConnect, nativeHttpsAvailable });
+  return <ConnectionScreenView {...props} nativeHttpsAvailable={nativeHttpsAvailable} qrScanner={qrScanner} manualConnection={manualConnection} />;
+}
+
+export function ConnectionScreenView({
   onConnectDiscovered = () => undefined,
   discoveredServers = [],
   isDiscovering = false,
@@ -72,13 +83,20 @@ export default function ConnectionScreen({
   scanRequestId = 0,
   pairingDesktopName = null,
   isConnected = false,
+  activeConnection = null,
   savedReceiver = null,
   onConnectTrusted = () => undefined,
   onDisconnect = () => undefined,
-}: ConnectionScreenProps) {
+  qrScanner,
+  manualConnection,
+  cameraContent,
+}: ConnectionScreenProps & {
+  qrScanner: ReturnType<typeof useQrScanner>;
+  manualConnection: ReturnType<typeof useManualConnection>;
+  cameraContent?: React.ReactNode;
+}) {
   const palette = useThemePalette();
-  const qrScanner = useQrScanner({ onConnect });
-  const manualConnection = useManualConnection({ onConnect, nativeHttpsAvailable });
+  const details = useConnectionDetails(activeConnection);
   const { startScanning } = qrScanner;
   const qrDisabled = isConnecting || isConnected;
 
@@ -91,6 +109,7 @@ export default function ConnectionScreen({
   if (qrScanner.isScanning) {
     return (
       <QrScannerOverlay
+        cameraContent={cameraContent}
         onClose={qrScanner.stopScanning}
         onBarcodeScanned={qrScanner.handleBarCodeScanned}
       />
@@ -103,7 +122,6 @@ export default function ConnectionScreen({
         <ScrollView contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled">
           <ScreenHeader title="Connect" subtitle="Pair with a receiver on your local network" />
           <View className="flex-1 px-5 pb-8">
-
             <TouchableOpacity
               accessibilityRole="button"
               accessibilityLabel={isConnected ? "Disconnect before pairing with another receiver" : "Scan Receiver QR"}
@@ -139,6 +157,8 @@ export default function ConnectionScreen({
               onRefreshDiscovery={onRefreshDiscovery}
               isConnected={isConnected}
               onDisconnect={onDisconnect}
+              activeConnection={activeConnection}
+              onOpenDetails={details.open}
             />
 
             <ConnectionOptionsSection
@@ -166,22 +186,9 @@ export default function ConnectionScreen({
               <SectionLabel>{connectionText.trustedReceiversTitle}</SectionLabel>
               <Card className="dark:bg-surface-dark border border-border dark:border-border-dark">
                 {savedReceiver ? (
-                  <TouchableOpacity
-                    accessibilityRole="button"
-                    accessibilityLabel="Reconnect to trusted receiver"
-                    disabled={isConnecting || isConnected}
-                    onPress={() => void onConnectTrusted()}
-                    className="p-4 flex-row items-center"
-                    style={{ opacity: interactionAppearance('row', { disabled: isConnecting || isConnected }).opacity }}
-                  >
-                    <IconTile icon="star-outline" />
-                    <View className="flex-1 min-w-0">
-                      <Text className="text-[16px] font-semibold text-on-surface dark:text-on-surface-dark" numberOfLines={1}>{savedReceiverLabel(savedReceiver)}</Text>
-                      <Text className="text-[12px] text-on-surface-variant dark:text-on-surface-variant-dark mt-0.5" numberOfLines={1}>{savedReceiver.httpsUrl}</Text>
-                    </View>
-                    <StatusBadge label="Trusted" tone="success" icon="checkmark-circle" />
-                    <Ionicons name="chevron-forward" size={18} color={palette.onSurfaceVariant} style={{ marginLeft: 6 }} />
-                  </TouchableOpacity>
+                  <ReceiverRow name={savedReceiverLabel(savedReceiver)} address={savedReceiver.httpsUrl} trusted
+                    activeConnection={activeConnection} isConnected={isConnected} isConnecting={isConnecting}
+                    onConnect={() => void onConnectTrusted()} onOpenDetails={details.open} />
                 ) : (
                   <View className="p-4 flex-row items-center">
                     <IconTile icon="star-outline" />
@@ -194,6 +201,7 @@ export default function ConnectionScreen({
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+      <ConnectionDetailsModal visible={details.visible} connection={activeConnection} onClose={details.close} />
     </SafeAreaView>
   );
 }

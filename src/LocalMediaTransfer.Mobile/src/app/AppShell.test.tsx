@@ -6,6 +6,7 @@ import { api } from '@/api/ApiClient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import { nativeCapabilities } from '@/services/NativeCapabilities';
+import * as runtimeEnvironment from '@/config/runtimeEnvironment';
 
 type NativeCapabilitiesMock = typeof nativeCapabilities & { available: boolean };
 
@@ -118,6 +119,25 @@ describe('App Routing Logic', () => {
       return Promise.resolve(null);
     });
     (api.pingServer as jest.Mock).mockResolvedValue(true);
+  });
+
+  it('keeps UI Preview unavailable in the production application', async () => {
+    const screen = await renderApp();
+    expect(screen.queryByLabelText('Open UI Preview')).toBeNull();
+    await act(async () => { fireEvent.press(screen.getByLabelText('Settings')); });
+    expect(screen.queryByLabelText('Open UI Preview')).toBeNull();
+  });
+
+  it('exposes UI Preview only in TEST Settings, including before pairing', async () => {
+    const environment = jest.spyOn(runtimeEnvironment, 'mobileClientEnvironment').mockReturnValue('test');
+    (nativeCapabilities.getInstalledEnvironment as jest.Mock).mockReturnValue('test');
+    try {
+      const screen = await renderApp();
+      expect(screen.queryByLabelText('Open UI Preview')).toBeNull();
+      await act(async () => { fireEvent.press(screen.getByLabelText('Settings')); });
+      expect(screen.getByLabelText('Open UI Preview')).toBeTruthy();
+      screen.unmount();
+    } finally { environment.mockRestore(); }
   });
 
   it('blocks a mismatched installed app before reading saved trust or connecting', async () => {

@@ -18,6 +18,7 @@ import { PairingPayload } from '@/security/ConnectionSecurity';
 import { ConnectionHealthStatus, ConnectionSecurityState, MainTab, SavedConnection, ScreenState } from './types';
 import { PreparationMode } from '@/services/upload/types';
 import { useReduceMotionEnabled, useThemeMode } from '@/theme';
+import type { ActiveConnection } from '@/features/connection/connectionPresentation';
 
 export type NavigationProps = {
   appState: ScreenState;
@@ -32,6 +33,7 @@ export type NavigationProps = {
 };
 
 export type ConnectionProps = {
+  activeConnection: ActiveConnection | null;
   isServerConnected: boolean;
   isConnecting: boolean;
   pairingDesktopName: string | null;
@@ -92,7 +94,7 @@ export function pageTransitionMotion(reduceMotionEnabled: boolean) {
   };
 }
 
-function IdleTransfers({ isConnected, onChooseMedia, onConnect }: { isConnected: boolean; onChooseMedia: () => void; onConnect: () => void }) {
+export function IdleTransfers({ isConnected, onChooseMedia, onConnect }: { isConnected: boolean; onChooseMedia: () => void; onConnect: () => void }) {
   return (
     <View className="flex-1 bg-background dark:bg-background-dark">
       <SafeAreaView edges={['top']} className="flex-1">
@@ -166,6 +168,7 @@ export default function AppNavigator({ navigation, connection, preferences, disc
             <Animated.View style={transitionStyle}>
               {navigation.appState === 'home' && (
                 <HomeScreen
+                  activeConnection={connection.activeConnection}
                   isConnected={connection.isServerConnected}
                   connectionSecurity={connection.connectionSecurity}
                   connectionHealthStatus={connection.connectionHealthStatus}
@@ -182,6 +185,7 @@ export default function AppNavigator({ navigation, connection, preferences, disc
               {navigation.appState === 'transfers' && <IdleTransfers isConnected={connection.isServerConnected} onChooseMedia={navigation.onOpenPicker} onConnect={() => navigation.onSelectTab('connect')} />}
               {navigation.appState === 'connect' && (
                 <ConnectionScreen
+                  activeConnection={connection.activeConnection}
                   onConnect={connection.onConnect}
                   onConnectDiscovered={connection.onConnectDiscovered}
                   discoveredServers={discovery.discoveredServers}

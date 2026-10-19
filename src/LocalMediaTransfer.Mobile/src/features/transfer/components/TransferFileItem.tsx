@@ -19,7 +19,7 @@ export const TransferFileItem = React.memo(function TransferFileItem({
   const active = item.status === 'uploading' || item.status === 'pending';
 
   return (
-    <View className="flex-row items-center justify-between py-3 border-b border-separator dark:border-separator-dark">
+    <View className={`flex-row items-center justify-between py-3 ${showFullFilename ? 'px-3 my-2 rounded-xl bg-surface dark:bg-surface-dark border border-border dark:border-border-dark' : 'border-b border-separator dark:border-separator-dark'}`}>
       <View className="flex-row items-center flex-1 min-w-0">
         {item.thumbnailUri ? (
           <View className="w-12 h-12 rounded-xl overflow-hidden bg-background dark:bg-background-dark">
@@ -46,6 +46,7 @@ export const TransferFileItem = React.memo(function TransferFileItem({
             {item.sizeBytes !== undefined ? `${formatBytes(item.sizeBytes)} · ` : ''}{presentation.text}
             {item.msg ? ` · ${item.msg}` : ''}
           </Text>
+          {showFullFilename && item.msg && <Text className="text-on-surface dark:text-on-surface-dark text-[13px] leading-5 mt-2">{item.msg}</Text>}
         </View>
       </View>
       <View className="w-9 h-9 rounded-full items-center justify-center ml-3" style={{ backgroundColor: active ? palette.primarySoft : `${presentation.color}18` }}>

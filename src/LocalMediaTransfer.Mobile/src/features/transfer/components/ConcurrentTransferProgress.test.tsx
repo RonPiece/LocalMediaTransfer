@@ -51,4 +51,13 @@ describe('ConcurrentTransferProgress', () => {
     expect(screen.getByText(/protect phone storage/)).toBeTruthy();
     expect(screen.getByLabelText('Why transfer started while preparing media').props.accessibilityState.expanded).toBe(true);
   });
+
+  it('uses terminal files for the transfer bar and clamps counts above the total', () => {
+    const screen = render(<ConcurrentTransferProgress preparedAssets={10} totalAssets={10} processedFiles={11} totalFiles={10} preparationComplete hasUploadStarted />);
+    expect(screen.getByLabelText('File transfer progress').props.accessibilityValue.now).toBe(100);
+    expect(screen.getByTestId('concurrent-file-progress')).toHaveStyle({ width: '100%' });
+    screen.rerender(<ConcurrentTransferProgress preparedAssets={5} totalAssets={10} processedFiles={2} totalFiles={10} hasUploadStarted />);
+    expect(screen.queryByLabelText('File transfer progress')).toBeNull();
+    expect(screen.getByText('2 of 10 files completed')).toBeTruthy();
+  });
 });

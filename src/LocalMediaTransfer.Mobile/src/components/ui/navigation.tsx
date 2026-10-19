@@ -41,11 +41,11 @@ export function BottomTabBar({
       {locked && (
         <View
           accessibilityRole="alert"
-          className="min-h-[32px] flex-row items-center justify-center bg-primary-soft dark:bg-primary-soft-dark border-b border-separator dark:border-separator-dark px-3 py-1"
+          className="min-h-[28px] flex-row items-center justify-center border-b border-separator dark:border-separator-dark px-3 py-1"
         >
-          <Ionicons name="lock-closed" size={12} color={palette.primary} />
-          <Text className="text-[12px] font-semibold text-primary dark:text-primary-dark ml-1.5 text-center flex-shrink">
-            Transfer in progress · other tabs are temporarily unavailable
+          <Ionicons name="lock-closed-outline" size={12} color={palette.onSurfaceVariant} />
+          <Text className="text-[12px] text-on-surface-variant dark:text-on-surface-variant-dark ml-1.5 text-center flex-shrink">
+            Other tabs unlock when this transfer ends
           </Text>
         </View>
       )}

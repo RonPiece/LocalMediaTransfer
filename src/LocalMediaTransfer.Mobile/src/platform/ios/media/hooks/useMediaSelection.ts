@@ -138,7 +138,7 @@ export function dragSelectionDelta({
   return updates;
 }
 
-function createSelectionStore(): SelectionStore {
+export function createSelectionStore(): SelectionStore {
   let selectedIds = new Set<string>();
   const listeners = new Map<string, Set<() => void>>();
 

@@ -54,6 +54,7 @@
     "start": "npm run start:dev-client",
     "start:dev-client": "cross-env EXPO_PUBLIC_LMT_ENVIRONMENT=test expo start --offline --dev-client",
     "start:go": "cross-env EXPO_PUBLIC_LMT_ENVIRONMENT=test expo start --offline --go",
+    "verify:preview-bundles": "node build-tools/check-preview-bundles.cjs",
     "android": "expo start --android --offline",
     "ios": "expo start --ios --offline",
     "web": "expo start --web --offline",

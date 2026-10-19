@@ -17,21 +17,23 @@ export function qrScannerControlsTop(
 function QrScannerContent({
   onClose,
   onBarcodeScanned,
+  cameraContent,
 }: {
   onClose: () => void;
   onBarcodeScanned: ({ data }: { data: string }) => void;
+  cameraContent?: React.ReactNode;
 }) {
   const controlsTop = qrScannerControlsTop();
 
   return (
     <View className="flex-1 bg-black">
         <StatusBar style="light" />
-        <CameraView
+        {cameraContent ?? <CameraView
           style={StyleSheet.absoluteFill}
           facing="back"
           barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
           onBarcodeScanned={onBarcodeScanned}
-        />
+        />}
         <View
           testID="qr-scanner-controls"
           className="absolute left-4 right-4 flex-row justify-between items-center z-10"
@@ -61,14 +63,16 @@ function QrScannerContent({
 export function QrScannerOverlay({
   onClose,
   onBarcodeScanned,
+  cameraContent,
 }: {
   onClose: () => void;
   onBarcodeScanned: ({ data }: { data: string }) => void;
+  cameraContent?: React.ReactNode;
 }) {
   const reduceMotion = useReduceMotionEnabled();
   return (
     <Modal visible animationType={reduceMotion ? 'none' : 'fade'} presentationStyle="fullScreen" statusBarTranslucent onRequestClose={onClose}>
-      <QrScannerContent onClose={onClose} onBarcodeScanned={onBarcodeScanned} />
+      <QrScannerContent onClose={onClose} onBarcodeScanned={onBarcodeScanned} cameraContent={cameraContent} />
     </Modal>
   );
 }

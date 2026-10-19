@@ -14,6 +14,8 @@ import { formatHistoryDate, historyStatus } from '@/features/history/historyPres
 import { SessionDetails } from '@/features/history/HistoryScreen';
 import { expectedServerEnvironment } from '@/services/NativeCapabilities';
 import { interactionAppearance, useThemePalette } from '@/theme';
+import type { ActiveConnection } from '@/features/connection/connectionPresentation';
+import { useConnectionDetails } from '@/features/connection/hooks/useConnectionDetails';
 
 function RecentSessionRow({ item, onPress }: { item: TransferHistoryItem; onPress: () => void }) {
   const palette = useThemePalette();
@@ -54,6 +56,7 @@ function RecentSessionRow({ item, onPress }: { item: TransferHistoryItem; onPres
 }
 
 export default function HomeScreen({
+  activeConnection = null,
   isConnected,
   connectionSecurity,
   connectionHealthStatus,
@@ -66,6 +69,7 @@ export default function HomeScreen({
   onOpenHistory,
   onRetryConnection,
 }: {
+  activeConnection?: ActiveConnection | null;
   isConnected: boolean;
   connectionSecurity: ConnectionSecurityState;
   connectionHealthStatus: ConnectionHealthStatus;
@@ -79,7 +83,7 @@ export default function HomeScreen({
   onRetryConnection: () => void;
 }) {
   const palette = useThemePalette();
-  const [detailsOpen, setDetailsOpen] = React.useState(false);
+  const details = useConnectionDetails(activeConnection);
   const [selectedHistory, setSelectedHistory] = React.useState<TransferHistoryItem | null>(null);
   const chooseMedia = React.useCallback(() => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined);
@@ -108,7 +112,7 @@ export default function HomeScreen({
             isConnected={isConnected}
             connectionSecurity={connectionSecurity}
             connectionHealthStatus={connectionHealthStatus}
-            onOpenDetails={() => setDetailsOpen(true)}
+            onOpenDetails={details.open}
             onRetryConnection={onRetryConnection}
           />
 
@@ -174,7 +178,7 @@ export default function HomeScreen({
           </View>
         </ScrollView>
       </SafeAreaView>
-      <ConnectionDetailsModal visible={detailsOpen} onClose={() => setDetailsOpen(false)} />
+      <ConnectionDetailsModal visible={details.visible} connection={activeConnection} onClose={details.close} />
       <SessionDetails item={selectedHistory} onClose={() => setSelectedHistory(null)} />
     </View>
   );

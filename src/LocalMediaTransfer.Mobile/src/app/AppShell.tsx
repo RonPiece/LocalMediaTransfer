@@ -21,6 +21,8 @@ import { SavedConnection, ScreenState } from './types';
 import { PreparationMode } from '@/services/upload/types';
 import { useReceiverHistory } from '@/features/history/useReceiverHistory';
 import { pruneProblemPreviews } from '@/services/history/ProblemPreviewStore';
+import { PreviewWorkspace } from '@lmt/ui-preview';
+import { createActiveConnection } from '@/features/connection/connectionPresentation';
 
 export default function AppShell() {
   const requestedEnvironment = mobileClientEnvironment(nativeCapabilities.available);
@@ -33,6 +35,9 @@ export default function AppShell() {
         Install the matching app build.
       </Text>
     </View>;
+  }
+  if (requestedEnvironment === 'test') {
+    return <PreviewWorkspace><MatchedAppShell /></PreviewWorkspace>;
   }
   return <MatchedAppShell />;
 }
@@ -265,6 +270,8 @@ function MatchedAppShell() {
         onSelectTab: setAppState,
       }}
       connection={{
+        activeConnection: createActiveConnection({ address: api.url, isConnected: isServerConnected,
+          savedReceiver, discoveredServers, security: connectionSecurity, healthStatus: connectionHealthStatus }),
         isServerConnected: isServerConnected,
         isConnecting: isConnecting,
         pairingDesktopName: pairingDesktopName,

@@ -49,6 +49,7 @@ function props(): AppNavigatorProps {
       onSelectTab: jest.fn(),
     },
     connection: {
+      activeConnection: null,
       isServerConnected: true,
       isConnecting: false,
       pairingDesktopName: null,

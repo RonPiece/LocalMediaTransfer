@@ -152,6 +152,9 @@ function Invoke-Target {
                 Invoke-Checked "iOS TypeScript" {
                     npx tsc --noEmit
                 }
+                Invoke-Checked "Android TypeScript" {
+                    npx tsc --noEmit --project tsconfig.android.json
+                }
                 Invoke-Checked "iOS ESLint" {
                     npm run lint
                 }

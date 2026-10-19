@@ -55,20 +55,22 @@ export function ConcurrentTransferProgress({
       : `${analyzedAssets.toLocaleString()} of ${totalAssets.toLocaleString()} media items analyzed`;
   const transferIsExplicitlyWaiting = hasUploadStarted === false;
   const transferIsActive = hasUploadStarted !== false;
-  const completedTransferText = transferIsExplicitlyWaiting
+  const completedTransferText = transferIsExplicitlyWaiting && !preparationComplete
     ? 'Waiting for prepared media'
     : totalFiles > 0
       ? `${processedFiles.toLocaleString()} of ${totalFiles.toLocaleString()} files completed`
       : processedFiles > 0
         ? `${processedFiles.toLocaleString()} ${processedFiles === 1 ? 'file' : 'files'} completed`
         : 'Transfer active';
+  const transferPercent = preparationComplete && totalFiles > 0
+    ? Math.max(0, Math.min(100, Math.floor(processedFiles / totalFiles * 100))) : 0;
 
   return (
     <View
       testID="concurrent-transfer-progress"
       className={`bg-surface dark:bg-surface-dark rounded-[18px] border border-border dark:border-border-dark px-4 ${compact ? 'py-3 mb-3' : 'py-4 mb-4'}`}
     >
-      <View className="flex-row items-center">
+      <View className="flex-row items-start">
         <View className="w-10 h-10 rounded-full bg-success-soft dark:bg-success-soft-dark items-center justify-center">
           <Ionicons name="images-outline" size={20} color={palette.success} />
         </View>
@@ -85,11 +87,12 @@ export function ConcurrentTransferProgress({
           <Text
             className="text-on-surface-variant dark:text-on-surface-variant-dark text-[13px] mt-0.5"
             style={{ fontVariant: ['tabular-nums'] }}
-            numberOfLines={2}
           >
             {preparationStatus}
           </Text>
           <View
+            accessible accessibilityRole="progressbar" accessibilityLabel="Media preparation progress"
+            accessibilityValue={{ min: 0, max: 100, now: preparationPercent }}
             className="h-1.5 rounded-full mt-2 overflow-hidden"
             style={{ backgroundColor: palette.progressTrack }}
           >
@@ -104,37 +107,50 @@ export function ConcurrentTransferProgress({
 
       <View className={`${compact ? 'my-2.5' : 'my-3'} border-t border-border dark:border-border-dark`} />
 
-      <View className="flex-row items-center">
+      <View className="flex-row items-start">
         <View className="w-10 h-10 rounded-full bg-primary-soft dark:bg-primary-soft-dark items-center justify-center">
           <Ionicons name="cloud-upload-outline" size={20} color={palette.primary} />
         </View>
-        <View className="flex-1 ml-3 min-w-0" style={{ minHeight: 112 }}>
-          <Text className="text-on-surface dark:text-on-surface-dark text-[15px] font-semibold">Transferring files</Text>
+        <View className="flex-1 ml-3 min-w-0" style={{ minHeight: 76 }}>
+          <View className="flex-row items-center justify-between">
+            <Text className="flex-1 text-on-surface dark:text-on-surface-dark text-[15px] font-semibold">Transferring files</Text>
+            {transferIsActive ? <ActivityIndicator size="small" color={palette.primary} /> : <Ionicons name="time-outline" size={20} color={palette.onSurfaceVariant} />}
+          </View>
           <Text
             className="text-primary dark:text-primary-dark text-[13px] font-semibold mt-0.5"
             style={{ fontVariant: ['tabular-nums'] }}
           >
             {completedTransferText}
           </Text>
-          <View style={{ minHeight: 22 }} className="justify-center">
+          <View style={{ minHeight: 14 }}>
+          {(preparationComplete || transferIsExplicitlyWaiting) && <View accessible accessibilityRole="progressbar" accessibilityLabel="File transfer progress"
+            accessibilityValue={preparationComplete ? { min: 0, max: 100, now: transferPercent } : { text: completedTransferText }}
+            style={{ height: 6, borderRadius: 3, marginTop: 8, overflow: 'hidden', backgroundColor: palette.progressTrack }}>
+            <View testID="concurrent-file-progress" style={{ height: 6, width: `${transferPercent}%`, backgroundColor: palette.primaryFill }} />
+          </View>}
+          </View>
+          <View style={{ minHeight: 20 }} className="justify-center">
             {queueCatchUpVisible && (
               <Text className="text-on-surface-variant dark:text-on-surface-variant-dark text-[12px]">
                 Transfer is catching up with prepared files.
               </Text>
             )}
           </View>
+        </View>
+      </View>
           <TouchableOpacity
             accessibilityRole="button"
             accessibilityLabel={automaticallyStreamsLargeSelection ? 'Why transfer started while preparing media' : 'Show transfer details'}
             accessibilityState={{ expanded: detailsExpanded }}
             onPress={() => setDetailsExpanded(value => !value)}
-            className="self-start min-h-[44px] justify-center"
+            className="self-start min-h-[44px] flex-row items-center"
           >
             <Text className="text-primary dark:text-primary-dark text-[12px] font-semibold">
               {automaticallyStreamsLargeSelection
                 ? `Storage-saving mode · ${detailsExpanded ? 'Hide details' : 'Why?'}`
                 : `Transfer details · ${detailsExpanded ? 'Hide' : 'Show'}`}
             </Text>
+            <Ionicons name={detailsExpanded ? 'chevron-up' : 'chevron-down'} size={14} color={palette.primary} style={{ marginLeft: 6 }} />
           </TouchableOpacity>
           {detailsExpanded && (
             <Text className="text-on-surface-variant dark:text-on-surface-variant-dark text-[13px] leading-5 mb-2">
@@ -148,11 +164,6 @@ export function ConcurrentTransferProgress({
               Extra files may be added as additional media components are discovered.
             </Text>
           )}
-        </View>
-        <View className="w-8 items-end">
-          {transferIsActive ? <ActivityIndicator size="small" color={palette.primary} /> : <Ionicons name="time-outline" size={20} color={palette.onSurfaceVariant} />}
-        </View>
-      </View>
     </View>
   );
 }
