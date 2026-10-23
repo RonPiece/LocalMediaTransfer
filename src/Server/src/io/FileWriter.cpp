@@ -34,6 +34,24 @@ namespace fs = std::filesystem;
 
 namespace {
 
+// No clock sampling when the caller did not opt into benchmark attribution.
+class FinalizationPhase {
+    double* m_duration;
+    double* m_excluded;
+    std::chrono::steady_clock::time_point m_start;
+public:
+    explicit FinalizationPhase(double* duration, double* excluded = nullptr)
+        : m_duration(duration), m_excluded(excluded),
+          m_start(duration ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{}) {}
+    ~FinalizationPhase() {
+        if (!m_duration) return;
+        const double elapsed = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - m_start).count();
+        *m_duration += elapsed;
+        if (m_excluded) *m_excluded -= elapsed;
+    }
+};
+
 constexpr uint64_t MappingWindowBytes = 64ULL * 1024ULL * 1024ULL;
 constexpr size_t MaxCompletedSessions = 2048;
 constexpr uint64_t MaxChunksPerFile = lmt::TransferLimits::MaxChunksPerFile;
@@ -1042,7 +1060,8 @@ ChunkWriteStatus FileWriter::writeChunk(const std::string& fileId,
 
 FileFinalizeResult FileWriter::finalizeFileResult(
     const std::string& fileId,
-    bool* finalizedNow) {
+    bool* finalizedNow,
+    FileFinalizeTimings* timings) {
     if (finalizedNow) {
         *finalizedNow = false;
     }
@@ -1131,20 +1150,29 @@ FileFinalizeResult FileWriter::finalizeFileResult(
     std::string fullHash;
     FileFinalizeDisposition disposition = FileFinalizeDisposition::Error;
     try {
-        if (!flushFile(localHandle)) {
+        bool flushed;
+        {
+            FinalizationPhase phase(timings ? &timings->flushMs : nullptr);
+            flushed = flushFile(localHandle);
+        }
+        if (!flushed) {
             if (m_hashEngine) m_hashEngine->abortHash(fileId);
             failFinalization();
             return {};
         }
-        if (localHandle.streamingHashValid && m_hashEngine) {
-            fullHash = m_hashEngine->finalizeHash(fileId);
-        } else if (m_hashEngine) {
-            m_hashEngine->abortHash(fileId);
-        }
+        {
+            FinalizationPhase phase(timings ? &timings->hashMs : nullptr);
+            if (localHandle.streamingHashValid && m_hashEngine) {
+                fullHash = m_hashEngine->finalizeHash(fileId);
+            } else if (m_hashEngine) {
+                m_hashEngine->abortHash(fileId);
+            }
 
+        }
         closeHandle(localHandle);
 
         if (fullHash.empty()) {
+            FinalizationPhase phase(timings ? &timings->hashMs : nullptr);
             fullHash = HashEngine::computeFileHash(localHandle.tempPath, localHandle.totalSize);
         }
         if (fullHash.empty()) {
@@ -1155,28 +1183,92 @@ FileFinalizeResult FileWriter::finalizeFileResult(
 
         // Serialize collision checks and the final rename so concurrent files
         // cannot select the same destination.
+        const auto lockStarted = timings ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
         std::lock_guard<std::mutex> finalizeLock(m_finalizeMutex);
-        finalName = makeFinalFilename(localHandle.originalName);
-        fs::path finalPath = fs::u8path(m_uploadDir) / fs::u8path(finalName);
+        if (timings) timings->lockWaitMs += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - lockStarted).count();
+        {
+            FinalizationPhase phase(timings ? &timings->verificationMs : nullptr);
+            finalName = makeFinalFilename(localHandle.originalName);
+            fs::path finalPath = fs::u8path(m_uploadDir) / fs::u8path(finalName);
 
-        if (fs::exists(finalPath)) {
-            const std::string existingHash =
-                localHandle.skipExactDuplicates
-                    ? HashEngine::computeFileHash(finalPath.u8string())
-                    : std::string{};
-            if (localHandle.skipExactDuplicates &&
-                !existingHash.empty() &&
-                existingHash == fullHash) {
-                std::error_code removeError;
-                fs::remove(fs::u8path(localHandle.tempPath), removeError);
-                if (removeError) {
-                    spdlog::error(
-                        "Failed to remove duplicate temporary file: {}",
-                        removeError.message());
-                    failFinalization();
-                    return {};
+            if (fs::exists(finalPath)) {
+                const std::string existingHash =
+                    localHandle.skipExactDuplicates
+                        ? HashEngine::computeFileHash(finalPath.u8string())
+                        : std::string{};
+                if (localHandle.skipExactDuplicates &&
+                    !existingHash.empty() &&
+                    existingHash == fullHash) {
+                    std::error_code removeError;
+                    fs::remove(fs::u8path(localHandle.tempPath), removeError);
+                    if (removeError) {
+                        spdlog::error(
+                            "Failed to remove duplicate temporary file: {}",
+                            removeError.message());
+                        failFinalization();
+                        return {};
+                    }
+                    disposition = FileFinalizeDisposition::Duplicate;
+                } else {
+                    auto [isDuplicate, duplicateName] =
+                        localHandle.skipExactDuplicates
+                            ? findVerifiedDuplicate(fullHash)
+                            : std::pair<bool, std::string>{false, ""};
+                    if (isDuplicate) {
+                        finalName = duplicateName;
+                        std::error_code removeError;
+                        fs::remove(fs::u8path(localHandle.tempPath), removeError);
+                        if (removeError) {
+                            spdlog::error(
+                                "Failed to remove duplicate temporary file: {}",
+                                removeError.message());
+                            failFinalization();
+                            return {};
+                        }
+                        disposition = FileFinalizeDisposition::Duplicate;
+                    } else if (
+                        m_filenameConflictPolicy ==
+                        lmt::FilenameConflictPolicy::KeepBoth) {
+                        finalName = makeNumberedFilename(finalName);
+                        if (finalName.empty()) {
+                            spdlog::error(
+                                "Unable to allocate a numbered filename for {}",
+                                localHandle.originalName);
+                            failFinalization();
+                            return {};
+                        }
+
+                        finalPath =
+                            fs::u8path(m_uploadDir) / fs::u8path(finalName);
+                        std::error_code renameError;
+                        {
+                            FinalizationPhase publication(timings ? &timings->publicationMs : nullptr, timings ? &timings->verificationMs : nullptr);
+                            publishTemporary(
+                                fs::u8path(localHandle.tempPath),
+                                finalPath,
+                                renameError, storageFault("publish"));
+                        }
+                        if (renameError) {
+                            spdlog::error(
+                                "Failed to rename conflicting file: {}",
+                                renameError.message());
+                            failFinalization();
+                            return {};
+                        }
+                        disposition = FileFinalizeDisposition::Saved;
+                    } else {
+                        std::error_code removeError;
+                        fs::remove(fs::u8path(localHandle.tempPath), removeError);
+                        if (removeError) {
+                            spdlog::warn(
+                                "Failed to remove conflicting temporary file: {}",
+                                removeError.message());
+                            failFinalization();
+                            return {};
+                        }
+                        disposition = FileFinalizeDisposition::NameConflict;
+                    }
                 }
-                disposition = FileFinalizeDisposition::Duplicate;
             } else {
                 auto [isDuplicate, duplicateName] =
                     localHandle.skipExactDuplicates
@@ -1194,84 +1286,32 @@ FileFinalizeResult FileWriter::finalizeFileResult(
                         return {};
                     }
                     disposition = FileFinalizeDisposition::Duplicate;
-                } else if (
-                    m_filenameConflictPolicy ==
-                    lmt::FilenameConflictPolicy::KeepBoth) {
-                    finalName = makeNumberedFilename(finalName);
-                    if (finalName.empty()) {
-                        spdlog::error(
-                            "Unable to allocate a numbered filename for {}",
-                            localHandle.originalName);
-                        failFinalization();
-                        return {};
+                } else {
+                    std::error_code renameError;
+                    {
+                        FinalizationPhase publication(timings ? &timings->publicationMs : nullptr, timings ? &timings->verificationMs : nullptr);
+                        publishTemporary(
+                            fs::u8path(localHandle.tempPath),
+                            finalPath,
+                            renameError, storageFault("publish"));
                     }
 
-                    finalPath =
-                        fs::u8path(m_uploadDir) / fs::u8path(finalName);
-                    std::error_code renameError;
-                    publishTemporary(
-                        fs::u8path(localHandle.tempPath),
-                        finalPath,
-                        renameError, storageFault("publish"));
                     if (renameError) {
                         spdlog::error(
-                            "Failed to rename conflicting file: {}",
+                            "Failed to rename temp file: {}",
                             renameError.message());
                         failFinalization();
                         return {};
                     }
                     disposition = FileFinalizeDisposition::Saved;
-                } else {
-                    std::error_code removeError;
-                    fs::remove(fs::u8path(localHandle.tempPath), removeError);
-                    if (removeError) {
-                        spdlog::warn(
-                            "Failed to remove conflicting temporary file: {}",
-                            removeError.message());
-                        failFinalization();
-                        return {};
-                    }
-                    disposition = FileFinalizeDisposition::NameConflict;
                 }
             }
-        } else {
-            auto [isDuplicate, duplicateName] =
-                localHandle.skipExactDuplicates
-                    ? findVerifiedDuplicate(fullHash)
-                    : std::pair<bool, std::string>{false, ""};
-            if (isDuplicate) {
-                finalName = duplicateName;
-                std::error_code removeError;
-                fs::remove(fs::u8path(localHandle.tempPath), removeError);
-                if (removeError) {
-                    spdlog::error(
-                        "Failed to remove duplicate temporary file: {}",
-                        removeError.message());
-                    failFinalization();
-                    return {};
-                }
-                disposition = FileFinalizeDisposition::Duplicate;
-            } else {
-                std::error_code renameError;
-                publishTemporary(
-                    fs::u8path(localHandle.tempPath),
-                    finalPath,
-                    renameError, storageFault("publish"));
 
-                if (renameError) {
-                    spdlog::error(
-                        "Failed to rename temp file: {}",
-                        renameError.message());
-                    failFinalization();
-                    return {};
-                }
-                disposition = FileFinalizeDisposition::Saved;
-            }
         }
-
         if (disposition == FileFinalizeDisposition::Saved ||
             disposition == FileFinalizeDisposition::Duplicate) {
             try {
+                FinalizationPhase phase(timings ? &timings->indexMs : nullptr);
                 storeHash(fullHash, finalName);
             } catch (const std::exception& e) {
                 // The file has already been published (or the duplicate was

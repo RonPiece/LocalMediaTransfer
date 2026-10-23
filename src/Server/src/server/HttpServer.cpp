@@ -56,7 +56,8 @@ static double elapsedMilliseconds(
 static void addServerTiming(
     crow::response& response,
     const std::chrono::steady_clock::time_point& requestStarted,
-    const std::vector<std::pair<const char*, double>>& phases) {
+    const std::vector<std::pair<const char*, double>>& phases,
+    const FileFinalizeTimings* detail = nullptr) {
     std::ostringstream value;
     value << std::fixed << std::setprecision(2);
     bool first = true;
@@ -64,6 +65,14 @@ static void addServerTiming(
         if (!first) value << ", ";
         first = false;
         value << name << ";dur=" << std::max(0.0, duration);
+    }
+    if (detail) {
+        for (const auto& [name, duration] : std::vector<std::pair<const char*, double>>{
+            {"flush", detail->flushMs}, {"hash", detail->hashMs}, {"lockwait", detail->lockWaitMs},
+            {"verification", detail->verificationMs}, {"publication", detail->publicationMs}, {"index", detail->indexMs}}) {
+            if (!first) value << ", "; first = false;
+            value << name << ";dur=" << std::max(0.0, duration);
+        }
     }
     if (!first) value << ", ";
     value << "app;dur=" << std::max(0.0, elapsedMilliseconds(requestStarted));
@@ -1394,8 +1403,9 @@ void HttpServer::setupRoutes(CrowApp& app) {
                         }
 
                         const auto finalizeStarted = std::chrono::steady_clock::now();
+                        FileFinalizeTimings detail;
                         FileFinalizeResult finalizeResult =
-                            m_fileWriter->finalizeFileResult(fileId);
+                            m_fileWriter->finalizeFileResult(fileId, nullptr, m_benchmarkStore ? &detail : nullptr);
                         const double finalizeDurationMs =
                             elapsedMilliseconds(finalizeStarted);
                         if (finalizeResult.disposition ==
@@ -1480,7 +1490,7 @@ void HttpServer::setupRoutes(CrowApp& app) {
                             {"init", initDurationMs},
                             {"write", writeDurationMs},
                             {"finalize", finalizeDurationMs}
-                        });
+                        }, m_benchmarkStore ? &detail : nullptr);
                         return res;
                     } else {
                         spdlog::error("initFile failed for '{}' (id: {})", filename, fileId);
@@ -1732,6 +1742,7 @@ void HttpServer::setupRoutes(CrowApp& app) {
             }
 
             FileFinalizeResult finalizeResult;
+            FileFinalizeTimings detail;
             bool finalizedNow = false;
             double finalizeDurationMs = 0.0;
             if (chunkIndex == totalChunks - 1 ||
@@ -1739,7 +1750,7 @@ void HttpServer::setupRoutes(CrowApp& app) {
                 const auto finalizeStarted = std::chrono::steady_clock::now();
                 finalizeResult = m_fileWriter->finalizeFileResult(
                     storageId,
-                    &finalizedNow);
+                    &finalizedNow, m_benchmarkStore ? &detail : nullptr);
                 finalizeDurationMs = std::chrono::duration<double, std::milli>(
                     std::chrono::steady_clock::now() - finalizeStarted).count();
                 if (finalizeResult.disposition ==
@@ -1848,7 +1859,7 @@ void HttpServer::setupRoutes(CrowApp& app) {
                 {"init", initDurationMs},
                 {"write", writeDurationMs},
                 {"finalize", finalizeDurationMs}
-            });
+            }, m_benchmarkStore && finalizedNow ? &detail : nullptr);
             return res;
 
         } catch (const std::exception& e) {

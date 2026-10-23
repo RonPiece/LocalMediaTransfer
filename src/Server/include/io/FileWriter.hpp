@@ -47,6 +47,16 @@ enum class FileFinalizeDisposition {
     Error
 };
 
+/** Optional benchmark-only attribution; normal calls pass no record. */
+struct FileFinalizeTimings {
+    double flushMs = 0;
+    double hashMs = 0;
+    double lockWaitMs = 0;
+    double verificationMs = 0;
+    double publicationMs = 0;
+    double indexMs = 0;
+};
+
 struct FileFinalizeResult {
     FileFinalizeDisposition disposition = FileFinalizeDisposition::Error;
     std::string filename;
@@ -142,7 +152,8 @@ public:
      */
     FileFinalizeResult finalizeFileResult(
         const std::string& fileId,
-        bool* finalizedNow = nullptr);
+        bool* finalizedNow = nullptr,
+        FileFinalizeTimings* timings = nullptr);
     
     /**
      * Check if a file with given hash already exists

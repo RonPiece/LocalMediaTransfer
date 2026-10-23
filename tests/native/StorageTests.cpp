@@ -414,12 +414,31 @@ static void sqliteFailureInvariants(const fs::path& base) {
     }
 }
 
+static void finalizationAttribution(const fs::path& root) {
+    FileWriter writer(root.u8string(), openedEngine(root));
+    require(writer.initFile("timed", "synthetic.bin", 3, 1), "Timing fixture init failed");
+    require(writer.writeChunk("timed", 0, "abc", 3) == ChunkWriteStatus::Success, "Timing fixture write failed");
+    FileFinalizeTimings timings;
+    bool finalized = false;
+    auto result = writer.finalizeFileResult("timed", &finalized, &timings);
+    require(finalized && result.disposition == FileFinalizeDisposition::Saved, "Timing changed finalization outcome");
+    require(timings.flushMs >= 0 && timings.hashMs >= 0 && timings.lockWaitMs >= 0 &&
+        timings.verificationMs >= 0 && timings.publicationMs >= 0 && timings.indexMs >= 0,
+        "Finalization phase timing invalid");
+    FileFinalizeTimings replay;
+    finalized = true;
+    (void)writer.finalizeFileResult("timed", &finalized, &replay);
+    require(!finalized && replay.flushMs == 0 && replay.indexMs == 0,
+        "Finalization replay repeated diagnostic work");
+}
+
 void sessionExhaustion(const fs::path& root);
 
 int main() {
     try {
         TestDirectory directory;
         hashing();
+        finalizationAttribution(directory.path / "timing");
         require(fmt::format("{} {:x}", -1, -1) == "-1 -1", "Signed fmt formatting regressed");
         bool invalidFormatRejected = false;
         try { (void)fmt::format(fmt::runtime("{:u}"), -1); }
