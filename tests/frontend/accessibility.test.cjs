@@ -201,5 +201,5 @@ test('large file lists avoid per-row compositor layers and live-region churn', (
     assert.equal(managerSource.includes('heartbeat'), false);
     assert.equal(workerSource.includes("'file_started'"), false);
     assert.equal(workerSource.includes("'file_success'"), false);
-    assert.match(workerSource, /now - meta\._lastUIUpdate >= 100/);
+    assert.match(workerSource, /now - lastUIUpdate >= 100/);
 });

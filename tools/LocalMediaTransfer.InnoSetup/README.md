@@ -3,6 +3,12 @@
 This folder builds the Windows installer for the GUI application. The headless
 server is included as a private runtime component and is launched by the GUI.
 
+Packaging verifies every staged browser asset against source, the shared frontend
+asset version, and the staged receiver against the Release executable. A local
+`output/BROWSER_BUILD_MANIFEST.json` records those hashes, the installer hash,
+branch, commit and dirty-tree flag. A manifest from a dirty tree identifies the
+local package; its commit alone does not reproduce uncommitted source changes.
+
 Uninstall ships a PowerShell/C# helper under `uninstall-support`. It matches
 each process to the exact installed executable path, requests a window close,
 then uses the retained verified process handle if forced shutdown is needed.

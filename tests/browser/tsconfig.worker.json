@@ -1,0 +1,7 @@
+{
+  "compilerOptions": {
+    "allowJs": true, "checkJs": true, "noEmit": true, "strict": false,
+    "target": "ES2022", "lib": ["ES2022", "WebWorker"], "types": []
+  },
+  "files": ["../../src/Server/static/js/upload/hash-worker.js", "worker-types.d.ts"]
+}

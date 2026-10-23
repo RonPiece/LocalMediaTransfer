@@ -82,6 +82,15 @@ internal static class TestHarness
             Console.WriteLine($"Ephemeral port: {port}");
             Console.WriteLine($"Server executable: {serverExecutable}");
 
+            if (options.BrowserTests || options.BrowserBenchmark)
+            {
+                server = await StartServerAsync(context, benchmarkMode: options.BrowserBenchmark, allowInsecureHttp: false);
+                pipe = await ConnectPipeAsync(options.BrowserBenchmark ? context.BenchmarkPipeName : context.TestPipeName, token);
+                await RunBrowserTestsAsync(context, pipe, options.BrowserBenchmark);
+                exitCode = 0;
+                return exitCode;
+            }
+
             if (options.OwnershipOnly)
             {
                 await VerifyAuthenticatedOwnershipControlAsync(context);
@@ -1070,6 +1079,44 @@ internal static class TestHarness
             lastError?.Message);
     }
 
+    private static async Task RunBrowserTestsAsync(HarnessContext context, PipeConnection pipe, bool benchmark = false)
+    {
+        foreach (string engine in benchmark ? new[] { "chromium" } : new[] { "chromium", "firefox", "webkit" })
+        {
+            string bootstrap = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
+            await pipe.SendAcknowledgedCommandAsync("set_browser_bootstrap", bootstrap);
+            var start = new ProcessStartInfo("node")
+            {
+                WorkingDirectory = Path.Combine(context.RepoRoot, "tests", "browser"),
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            };
+            start.ArgumentList.Add(benchmark ? "concurrency.cjs" : "live.cjs");
+            start.ArgumentList.Add(engine);
+            // Credentials travel only through the private child environment, never argv or artifacts.
+            start.Environment["LMT_BROWSER_URL"] = $"https://127.0.0.1:{context.HttpsPort}/#bootstrap={bootstrap}";
+            start.Environment["LMT_BROWSER_UPLOAD_ROOT"] = context.UploadDirectory;
+            start.Environment["LMT_BROWSER_ASSET_ROOT"] = Path.Combine(context.ServerDirectory, "static");
+            start.Environment["LMT_BROWSER_RUN_ID"] = context.RunId;
+            await using OwnedProcess runner = OwnedProcess.Start(start, "browser integration");
+            if (!await runner.WaitForExitAsync(TimeSpan.FromMinutes(benchmark ? 20 : 5)))
+            {
+                await runner.StopAsync();
+                throw new TimeoutException($"{engine} browser integration exceeded its deadline.");
+            }
+            if (runner.ExitCode != 0)
+                throw new InvalidOperationException($"{engine} browser integration failed. {runner.FormatCapturedOutput()}");
+            if (!benchmark && Environment.GetEnvironmentVariable("LMT_BROWSER_PROFILE") == "1" &&
+                !File.Exists(Path.Combine(context.RepoRoot, "tests", "browser", "artifacts", "receiver-profile", context.RunId, engine, "summary.json")))
+                throw new InvalidOperationException($"{engine} browser profile did not produce its evidence summary.");
+            Console.WriteLine(benchmark
+                ? $"{engine}: controlled browser measurements and content integrity passed."
+                : $"{engine}: isolated browser upload, duplicate, collision and integrity passed.");
+        }
+    }
+
     private static async Task<PipeConnection> ConnectPipeAsync(string pipeName, string token)
     {
         DateTime deadline = DateTime.UtcNow.AddSeconds(15);
@@ -1399,7 +1446,8 @@ internal static class TestHarness
         }
         foreach (string coldName in coldFiles)
         {
-            File.Delete(Path.Combine(context.UploadDirectory, coldName));
+            await DeleteTestFileWithRetryAsync(context.UploadDirectory,
+                Path.Combine(context.UploadDirectory, coldName));
         }
 
         long completedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
@@ -3164,6 +3212,22 @@ internal static class TestHarness
         }
     }
 
+    private static async Task DeleteTestFileWithRetryAsync(string uploadDirectory, string path)
+    {
+        AssertSafeTestDirectory(Path.Combine(Path.GetTempPath(), "LocalMediaTransfer.Tests"), uploadDirectory);
+        AssertSafeTestDirectory(uploadDirectory, path);
+        for (int attempt = 0; ; attempt++)
+        {
+            try { File.Delete(path); return; }
+            catch (IOException error) when (attempt < 4 && (error.HResult & 0xffff) is 32 or 33)
+            {
+                // Windows inventory readers/scanners can release shared handles
+                // just after the response. Retry only sharing/lock violations.
+                await Task.Delay(200);
+            }
+        }
+    }
+
     private static async Task DeleteDirectoryWithRetryAsync(
         string testRoot,
         string path)
@@ -3260,6 +3324,8 @@ internal sealed record HarnessOptions(
     bool SkipLargeBoundaryTests,
     string BenchmarkProfile,
     bool OwnershipOnly,
+    bool BrowserTests,
+    bool BrowserBenchmark,
     bool ShowHelp)
 {
     public static HarnessOptions Parse(string[] args)
@@ -3269,6 +3335,8 @@ internal sealed record HarnessOptions(
         bool skipLarge = false;
         string benchmarkProfile = "";
         bool ownershipOnly = false;
+        bool browserTests = false;
+        bool browserBenchmark = false;
         bool showHelp = false;
 
         for (int index = 0; index < args.Length; index++)
@@ -3293,6 +3361,12 @@ internal sealed record HarnessOptions(
                 case "--skip-large-boundary-tests":
                     skipLarge = true;
                     break;
+                case "--browser-benchmark":
+                    browserBenchmark = true;
+                    break;
+                case "--browser-tests":
+                    browserTests = true;
+                    break;
                 case "--ownership-only":
                     ownershipOnly = true;
                     break;
@@ -3315,7 +3389,7 @@ internal sealed record HarnessOptions(
                     throw new ArgumentException($"Unknown argument: {args[index]}");
             }
         }
-        if (ownershipOnly && !string.IsNullOrEmpty(benchmarkProfile))
+        if ((browserBenchmark && (browserTests || ownershipOnly || !string.IsNullOrEmpty(benchmarkProfile))) || (ownershipOnly && !string.IsNullOrEmpty(benchmarkProfile)) || (browserTests && (ownershipOnly || !string.IsNullOrEmpty(benchmarkProfile))))
         {
             throw new ArgumentException(
                 "--ownership-only cannot be combined with benchmark-only options.");
@@ -3326,6 +3400,8 @@ internal sealed record HarnessOptions(
             skipLarge,
             benchmarkProfile,
             ownershipOnly,
+            browserTests,
+            browserBenchmark,
             showHelp);
     }
 
@@ -3342,6 +3418,8 @@ internal sealed record HarnessOptions(
               --server-exe <path>             Use a specific server executable.
               --keep-artifacts                Preserve the isolated temporary directory.
               --skip-large-boundary-tests     Skip 99/100/101 MiB boundary uploads.
+              --browser-tests                Run browser engines against an isolated HTTPS receiver.
+              --browser-benchmark            Measure Chromium concurrency in isolated benchmark mode.
               --ownership-only               Run only authenticated process-control checks.
               --benchmark-only <profile>      Run smoke, standard, stress, soak or comparison in isolation.
               --benchmark-smoke-only          Alias for --benchmark-only smoke.

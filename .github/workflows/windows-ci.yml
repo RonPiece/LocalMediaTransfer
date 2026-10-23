@@ -36,7 +36,9 @@ jobs:
         with:
           node-version: "24"
           cache: npm
-          cache-dependency-path: src/LocalMediaTransfer.Mobile/package-lock.json
+          cache-dependency-path: |
+            src/LocalMediaTransfer.Mobile/package-lock.json
+            tests/browser/package-lock.json
 
       - name: Install iOS JavaScript dependencies
         working-directory: src/LocalMediaTransfer.Mobile
@@ -82,6 +84,20 @@ jobs:
         shell: powershell
         run: .\scripts\verify.ps1 -Target frontend-tests
 
+      - name: Install browser verification tools
+        working-directory: tests/browser
+        run: |
+          npm ci
+          npx playwright install chromium firefox webkit
+
+      - name: Check browser JavaScript types and lint
+        shell: powershell
+        run: .\scripts\verify.ps1 -Target web-checks
+
+      - name: Run browser scenarios and real receiver integration
+        shell: powershell
+        run: .\scripts\verify.ps1 -Target web-tests
+
       - name: Run Release integration and concurrent stress acceptance
         shell: powershell
         run: |
@@ -122,4 +138,6 @@ jobs:
             src/Server/logs/**
             tests/test_results_*.log
             tests/test_results_*.json
+            tests/browser/test-results/**
+            tests/browser/playwright-report/**
             tools/LocalMediaTransfer.InnoSetup/staging/**

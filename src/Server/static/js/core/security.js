@@ -2,17 +2,38 @@
  * Security Manager - Token handling and verification
  */
 
-window.SecurityManager = {
+const lmtSecurity = {
+    /** @type {string|null} */
     token: null,
     isValid: false,
+    /** @type {'connection'|'invalid'|'missing'|null} */
     failureReason: null,
     _initPromise: null,
     storageKey: 'lmt.browser.authorization.v1',
+    AUTH_TIMEOUT_MS: 10000,
 
     async init() {
         if (this._initPromise) return this._initPromise;
         this._initPromise = this.initializeCredential();
         return this._initPromise;
+    },
+
+    async retry() {
+        this._initPromise = null;
+        this.isValid = false;
+        await this.init();
+        if (this.isValid) window.TransferSession?.showStartup('');
+    },
+
+    async request(url, options) {
+        // Kept local so legacy consumers also get bounded authentication requests.
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), this.AUTH_TIMEOUT_MS);
+        try {
+            const response = await fetch(url, { ...options, signal: controller.signal });
+            const payload = response.ok ? await response.json() : {};
+            return { ok: response.ok, status: response.status, payload };
+        } finally { clearTimeout(timeout); }
     },
 
     async initializeCredential() {
@@ -23,12 +44,13 @@ window.SecurityManager = {
         const bootstrap = fragmentParams.get('bootstrap');
         this.clearCredentialFromAddressBar(urlParams);
 
+        this.failureReason = null;
         this.token = bootstrap
             ? await this.exchangeBootstrap(bootstrap)
-            : legacyToken || this.restoreBrowserAuthorization();
+            : this.token || legacyToken || this.restoreBrowserAuthorization();
 
         if (!this.token) {
-            this.failureReason = bootstrap ? 'invalid' : 'missing';
+            this.failureReason = this.failureReason || (bootstrap ? 'invalid' : 'missing');
             this.showAccessError(this.failureReason);
             this.disableControls();
             return;
@@ -37,8 +59,8 @@ window.SecurityManager = {
         // Verify token with server
         const valid = await this.verifyTokenWithServer(this.token);
         if (!valid) {
-            this.failureReason = 'invalid';
-            this.showAccessError('invalid');
+            this.failureReason = this.failureReason || 'invalid';
+            this.showAccessError(this.failureReason);
             this.disableControls();
             return;
         }
@@ -49,6 +71,8 @@ window.SecurityManager = {
     },
 
     showAccessError(reason) {
+        window.TransferSession?.showStartup(reason === 'connection' ? 'startup.connection' : reason === 'invalid' ? 'startup.expired' : 'startup.missing', reason === 'connection');
+        if (reason === 'connection') return;
         const invalid = reason === 'invalid';
         window.Modals.showTokenModal({
             titleKey: invalid ? 'modal.invalidTokenTitle' : 'modal.securityTitle',
@@ -69,7 +93,7 @@ window.SecurityManager = {
     async exchangeBootstrap(bootstrap) {
         if (!/^[a-f0-9]{64}$/.test(bootstrap || '')) return null;
         try {
-            const response = await fetch('/exchange_bootstrap', {
+            const response = await this.request('/exchange_bootstrap', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 cache: 'no-store',
@@ -78,12 +102,13 @@ window.SecurityManager = {
                 body: JSON.stringify({ bootstrap })
             });
             if (!response.ok) return null;
-            const payload = await response.json();
+            const payload = response.payload;
             if (typeof payload.token !== 'string' || payload.token.length === 0)
                 return null;
             this.persistBrowserAuthorization(payload.token);
             return payload.token;
         } catch (e) {
+            this.failureReason = 'connection';
             return null;
         }
     },
@@ -118,7 +143,7 @@ window.SecurityManager = {
     async verifyTokenWithServer(token) {
         if (!token) return false;
         try {
-            const resp = await fetch('/verify_token', {
+            const resp = await this.request('/verify_token', {
                 method: 'POST',
                 cache: 'no-store',
                 credentials: 'omit',
@@ -130,14 +155,17 @@ window.SecurityManager = {
                 body: JSON.stringify({})
             });
             if (!resp.ok) {
-                if (resp.status === 401 || resp.status === 403)
+                if (resp.status === 401 || resp.status === 403) {
+                    this.failureReason = 'invalid';
                     this.clearBrowserAuthorization(token);
+                } else { this.failureReason = 'connection'; }
                 return false;
             }
-            const j = await resp.json();
+            const j = resp.payload;
             if (j.valid === false) this.clearBrowserAuthorization(token);
-            return !!j.valid;
+            return j.valid === true;
         } catch (e) {
+            this.failureReason = 'connection';
             return false;
         }
     },
@@ -147,7 +175,7 @@ window.SecurityManager = {
         uploadSection?.classList?.add('secure-locked');
 
         ['fileInput','chooseBtn','uploadBtn','resetBtn'].forEach(id => {
-            const el = document.getElementById(id);
+            const el = /** @type {HTMLButtonElement | HTMLInputElement} */ (document.getElementById(id));
             if (!el) return;
             try {
                 el.disabled = true;
@@ -171,11 +199,12 @@ window.SecurityManager = {
     },
 
     enableControls() {
+        if (window.TransferSession && !window.TransferSession.initialized) return;
         const uploadSection = document.getElementById('uploadSection') || document.body;
         uploadSection?.classList?.remove('secure-locked');
 
         ['fileInput','chooseBtn','uploadBtn','resetBtn'].forEach(id => {
-            const el = document.getElementById(id);
+            const el = /** @type {HTMLButtonElement | HTMLInputElement} */ (document.getElementById(id));
             if (!el) return;
             try {
                 el.disabled = false;
@@ -186,5 +215,8 @@ window.SecurityManager = {
         });
         const banner = document.getElementById('tokenBanner');
         if (banner) banner.remove();
+        window.TransferSession?.renderControls();
     }
 };
+
+window.SecurityManager = lmtSecurity;

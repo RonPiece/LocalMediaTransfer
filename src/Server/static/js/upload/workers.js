@@ -2,7 +2,7 @@
  * Upload Workers - Parallel upload processing
  */
 
-window.UploadWorkers = {
+const lmtWorkers = {
 
     WHOLE_FILE_TIMEOUT_MS: 180000,
     CHUNK_TIMEOUT_MS: 180000,
@@ -16,10 +16,12 @@ window.UploadWorkers = {
             /iPhone|iPad|iPod/i.test(navigator.userAgent);
     },
 
+    /** @param {TransferFile} meta @param {{SINGLE_FILE_MAX_BYTES: number}} manager */
     shouldUseChunkedUpload(meta, manager) {
         return meta.file.size > manager.SINGLE_FILE_MAX_BYTES;
     },
 
+    /** @param {number} sizeBytes */
     computeWholeFileTimeoutMs(sizeBytes) {
         if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) {
             return this.WHOLE_FILE_TIMEOUT_MS;
@@ -29,116 +31,21 @@ window.UploadWorkers = {
         return Math.max(this.WHOLE_FILE_TIMEOUT_MS, transferBudgetMs + this.WHOLE_FILE_TIMEOUT_GRACE_MS);
     },
 
-    recordTransferProgress(manager, meta, loadedBytes) {
-        if (typeof manager.updateFileTransferProgress === 'function') {
-            return manager.updateFileTransferProgress(meta, loadedBytes);
-        }
-
-        const fileSize = Number(meta?.size) || Number(meta?.file?.size) || 0;
-        const safeLoaded = Number.isFinite(loadedBytes)
-            ? Math.max(0, Math.min(loadedBytes, fileSize))
-            : 0;
-        meta.uploadedBytes = safeLoaded;
-        meta.completedBytes = safeLoaded;
-        return { uploadDelta: 0, completedDelta: 0 };
+    /** @param {TransportContext} observer @param {TransferFile} meta @param {number} loadedBytes */
+    recordTransferProgress(observer, meta, loadedBytes) {
+        return observer.updateFileTransferProgress(meta, loadedBytes);
     },
 
-    recordFileSpeed(manager, meta, bytesPerSecond) {
-        if (typeof manager.updateFileSpeed === 'function') {
-            return manager.updateFileSpeed(meta, bytesPerSecond);
-        }
-        meta._speed = Number.isFinite(bytesPerSecond) && bytesPerSecond > 0
-            ? bytesPerSecond
-            : 0;
-        return meta._speed;
-    },
+    /** Compatibility adapter; file outcomes belong to the controller. */
+    /** @param {TransferFile} meta @param {typeof lmtController} manager */
+    uploadSingle(meta, manager) { return window.TransferController.processFile.call(manager, meta); },
 
-    clearFileSpeed(manager, meta) {
-        if (typeof manager.clearFileSpeed === 'function') {
-            manager.clearFileSpeed(meta);
-            return;
-        }
-        meta._speed = 0;
-    },
-    
-    async uploadSingle(meta, manager) {
-        return new Promise(async (resolve) => {
-            let wasFailedBefore = false;
-            try {
-                wasFailedBefore = !!meta.failed;
-                meta.failed = false;
-                this.clearFileSpeed(manager, meta);
-                meta.uploadedBytes = 0;
-                meta.completedBytes = 0;
-
-                window.ProgressTracker.setFileProgress(meta, 0, 'Uploading...');
-                const performUpload = () => this.shouldUseChunkedUpload(meta, manager)
-                    ? this.uploadChunked(meta, manager)
-                    : this.uploadWholeFile(meta, manager);
-
-                meta.serverResult = await performUpload();
-
-                this.clearFileSpeed(manager, meta);
-                if (wasFailedBefore && manager.errorCount > 0) {
-                    manager.errorCount--;
-                }
-                this.recordTransferProgress(manager, meta, meta.size);
-                manager.successCount++;
-                if (meta.serverResult?.skipped) {
-                    meta.skipped = true;
-                    const existingName = meta.serverResult.filename || meta.name;
-                    window.ProgressTracker.markFileSkipped(
-                        meta,
-                        existingName === meta.name
-                            ? 'Already exists'
-                            : `Already exists as ${existingName}`);
-                } else {
-                    const savedName = meta.serverResult?.filename || meta.name;
-                    window.ProgressTracker.markFileSuccess(
-                        meta,
-                        savedName === meta.name ? 'Done' : `Saved as ${savedName}`);
-                    window.uploadCacheManager?.trackUpload?.(
-                        meta.id,
-                        savedName,
-                        meta.size);
-                }
-                
-            } catch (error) {
-                meta.failed = true;
-                this.clearFileSpeed(manager, meta);
-                if (!wasFailedBefore) {
-                    manager.errorCount++;
-                }
-                window.ProgressTracker.markFileError(meta, error?.message || 'Error');
-                manager.logClientEvent('ERROR', 'file_error', 'File upload failed', {
-                    size: meta.size,
-                    status: Number(error?.status) || 0,
-                    errorType: error?.name || 'Error'
-                });
-            } finally {
-                meta.done = true;
-                meta.running = false;
-
-                window.ProgressTracker.updateStatsUI(
-                    manager.fileQueue,
-                    manager.successCount,
-                    manager.errorCount,
-                    manager.totalBytes
-                );
-
-                manager.displaySpeedEMA = window.ProgressTracker.updateCurrentSpeedDisplay(
-                    manager.getCurrentSpeedForDisplay?.() || 0,
-                    manager.displaySpeedEMA,
-                    manager.AGG_ALPHA
-                );
-                resolve();
-            }
-        });
-    },
-
+    /** @param {TransferFile} meta @param {TransportContext} manager */
     uploadWholeFile(meta, manager) {
+        let lastUIUpdate = 0;
         return new Promise((resolve, reject) => {
             const xhr = new XMLHttpRequest();
+            this.ownRequest(xhr);
             const requestStartedAt = Date.now();
             xhr.open('POST', manager.UPLOAD_URL, true);
             xhr.timeout = this.computeWholeFileTimeoutMs(meta.size);
@@ -152,41 +59,29 @@ window.UploadWorkers = {
 
             xhr.upload.onprogress = (e) => {
                 if (e.lengthComputable) {
-                    manager.lastProgressTs = Date.now();
+                    manager.onActivity?.();
                     const now = Date.now();
-                    const deltaLoaded = e.loaded - meta._lastLoaded;
-                    const deltaTime = now - meta._lastTime;
-
-                    if (deltaTime > 0 && meta._lastTime > 0) {
-                        const instantSpeed = (deltaLoaded / deltaTime) * 1000;
-                        const alpha = Math.min(1, deltaTime / manager.SPEED_WINDOW_MS);
-                    this.recordFileSpeed(
-                        manager,
-                        meta,
-                        meta._speed * (1 - alpha) + instantSpeed * alpha);
-                    }
-
-                    meta._lastLoaded = e.loaded;
-                    meta._lastTime = now;
                     this.recordTransferProgress(manager, meta, e.loaded);
 
-                    if (!meta._lastUIUpdate || now - meta._lastUIUpdate >= 100 || e.loaded === e.total) {
+                    if (!lastUIUpdate || now - lastUIUpdate >= 100 || e.loaded === e.total) {
                         const percent = Math.round((e.loaded / e.total) * 100);
-                        window.ProgressTracker.setFileProgress(meta, percent, `${percent}%`);
-                        meta._lastUIUpdate = now;
+                        manager.onSending?.(percent, e.loaded === e.total);
+                        lastUIUpdate = now;
                     }
                 }
             };
 
             xhr.onload = () => {
-                this.recordRequestTiming(meta, requestStartedAt, xhr);
+                manager.onTiming?.(requestStartedAt, xhr);
                 if (xhr.status >= 200 && xhr.status < 300) {
-                    manager.lastProgressTs = Date.now();
+                    manager.onActivity?.();
                     this.recordTransferProgress(manager, meta, meta.size);
                     try {
-                        resolve(JSON.parse(xhr.responseText || '{}'));
+                        const result = window.TransferContracts.upload(JSON.parse(xhr.responseText || '{}'));
+                        manager.recordFileAcknowledgement?.(meta, meta.size);
+                        resolve(result);
                     } catch {
-                        reject(new Error('Server returned an invalid response'));
+                        reject(Object.assign(new Error(window.I18n?.t('error.response') || 'Server returned an invalid response'), { retryable: false }));
                     }
                 } else {
                     reject(this.createUploadError(xhr));
@@ -194,31 +89,44 @@ window.UploadWorkers = {
             };
 
             xhr.onerror = () => {
-                this.recordRequestTiming(meta, requestStartedAt, xhr);
-                reject(new Error('Network error'));
+                manager.onTiming?.(requestStartedAt, xhr);
+                reject(new Error(window.I18n?.t('error.network') || 'Network error'));
             };
 
             xhr.ontimeout = () => {
-                this.recordRequestTiming(meta, requestStartedAt, xhr);
-                reject(new Error('Upload timeout'));
+                manager.onTiming?.(requestStartedAt, xhr);
+                reject(new Error(window.I18n?.t('error.timeout') || 'Upload timeout'));
             };
 
             xhr.onabort = () => {
-                this.recordRequestTiming(meta, requestStartedAt, xhr);
-                reject(new Error('Upload aborted'));
+                manager.onTiming?.(requestStartedAt, xhr);
+                reject(new Error(window.I18n?.t('error.aborted') || 'Upload aborted'));
             };
 
             xhr.send(formData);
         });
     },
 
-    // NEW HELPER: Replaces fetch with XHR to unlock mid-chunk progress events
-    async uploadChunkXHR(url, headers, chunk, timeoutMs, retries, onRetry, onProgress, onTiming) {
+    /** XHR provides upload progress events that Fetch does not expose.
+     * @param {string} url
+     * @param {Record<string, string>} headers
+     * @param {Blob} chunk
+     * @param {number} timeoutMs
+     * @param {number} retries
+     * @param {ChunkUploadObserver} observer
+     */
+    async uploadChunkXHR(url, headers, chunk, timeoutMs, retries, observer = {}) {
         let attempt = 0;
         while (true) {
+            // Authentication may be lost by another file during retry backoff
+            // or between sequential chunks. Never open a new request afterward.
+            if (window.TransferSession?.state === 'blocked') {
+                throw Object.assign(new Error(window.I18n?.t('error.aborted') || 'Upload aborted'), { retryable: false });
+            }
             try {
                 const responseText = await new Promise((resolve, reject) => {
                     const xhr = new XMLHttpRequest();
+                    this.ownRequest(xhr);
                     const requestStartedAt = Date.now();
                     xhr.open('POST', url, true);
                     xhr.timeout = timeoutMs;
@@ -229,19 +137,17 @@ window.UploadWorkers = {
 
                     xhr.upload.onprogress = (e) => {
                         if (e.lengthComputable) {
-                            onProgress(e.loaded, e.total);
+                            observer.onProgress?.(e.loaded, e.total);
                         }
                     };
 
                     xhr.onload = () => {
-                        if (typeof onTiming === 'function') {
-                            onTiming(requestStartedAt, xhr);
-                        }
+                        observer.onTiming?.(requestStartedAt, xhr);
                         if (xhr.status >= 200 && xhr.status < 300) {
-                            if (typeof onProgress === 'function') {
+                            if (observer.onProgress) {
                                 const finalSize = chunk && typeof chunk.size === 'number' ? chunk.size : 0;
                                 if (finalSize > 0) {
-                                    onProgress(finalSize, finalSize);
+                                    observer.onProgress(finalSize, finalSize);
                                 }
                             }
                             resolve(xhr.responseText);
@@ -250,13 +156,14 @@ window.UploadWorkers = {
                         }
                     };
 
+                    /** @param {string} message */
                     const fail = message => {
-                        if (typeof onTiming === 'function') onTiming(requestStartedAt, xhr);
+                        observer.onTiming?.(requestStartedAt, xhr);
                         reject(new Error(message));
                     };
-                    xhr.onerror = () => fail('Network error');
-                    xhr.ontimeout = () => fail('Timeout');
-                    xhr.onabort = () => fail('Abort');
+                    xhr.onerror = () => fail(window.I18n?.t('error.network') || 'Network error');
+                    xhr.ontimeout = () => fail(window.I18n?.t('error.timeout') || 'Timeout');
+                    xhr.onabort = () => fail(window.I18n?.t('error.aborted') || 'Abort');
 
                     xhr.send(chunk);
                 });
@@ -264,30 +171,32 @@ window.UploadWorkers = {
             } catch (err) {
                 if (attempt >= retries || !this.isRetryableUploadError(err)) throw err;
                 attempt++;
-                if (onRetry) onRetry(attempt, err);
+                observer.onRetry?.(attempt, window.TransferContracts.error(err));
                 await new Promise(r => setTimeout(r, 300 * attempt));
             }
         }
     },
 
+    /** @param {TransferFile} meta @param {TransportContext} manager */
     async uploadChunked(meta, manager) {
         const isIOS = this.isIOSLike();
         const chunkSize = isIOS ? Math.min(manager.chunkSizeBytes, this.IOS_MAX_CHUNK_BYTES) : manager.chunkSizeBytes;
         const totalChunks = Math.ceil(meta.file.size / chunkSize);
         if (totalChunks > window.TransferLimits.MaxChunksPerFile) {
-            throw new Error('File exceeds the receiver limit of 10,000 chunks. Split it before uploading.');
+            throw Object.assign(new Error(window.I18n?.t('error.chunkLimit') || 'File exceeds the receiver limit of 10,000 chunks. Split it before uploading.'), { retryable: false });
         }
         if (meta.file.size > window.TransferLimits.MaxFileBytes) {
-            throw new Error('File exceeds the receiver file-size limit. Split it before uploading.');
+            throw Object.assign(new Error(window.I18n?.t('error.fileLimit') || 'File exceeds the receiver file-size limit. Split it before uploading.'), { retryable: false });
         }
         const fileId = this.buildChunkFileId(meta.file);
         let uploadedBytes = 0;
+        let lastUIUpdate = 0;
         let finalResult = null;
 
         for (let i = 0; i < totalChunks; i++) {
             const start = i * chunkSize;
             const end = Math.min(start + chunkSize, meta.file.size);
-            
+
             // Just take the raw slice, do NOT use arrayBuffer()!
             const chunk = meta.file.slice(start, end);
             const chunkByteSize = Number(chunk.size);
@@ -295,6 +204,7 @@ window.UploadWorkers = {
                 ? chunkByteSize
                 : Math.max(0, end - start);
 
+            /** @type {Record<string, string>} */
             const headers = {
                 'X-File-Id': fileId,
                 'X-Filename': encodeURIComponent(meta.file.name),
@@ -306,8 +216,6 @@ window.UploadWorkers = {
             if (window.SecurityManager.token) {
                 headers['X-Upload-Token'] = window.SecurityManager.token;
             }
-            let chunkLastLoaded = 0;
-            meta._lastTime = Date.now();
 
             const responseText = await this.uploadChunkXHR(
                 manager.UPLOAD_CHUNK_URL,
@@ -315,66 +223,37 @@ window.UploadWorkers = {
                 chunk,
                 this.CHUNK_TIMEOUT_MS,
                 this.MAX_CHUNK_RETRIES,
-                (attemptNumber, err) => {
-                    manager.retryCount = (manager.retryCount || 0) + 1;
-                    manager.logClientEvent('WARN', 'chunk_retry', 'Retrying chunk upload', {
-                        chunkIndex: i,
-                        attempt: attemptNumber,
-                        errorType: err?.name || 'Error'
-                    });
-                },
-                (loaded, total) => {
-                    manager.lastProgressTs = Date.now(); 
-                    const now = Date.now();
-                    const deltaLoaded = loaded - chunkLastLoaded;
-                    const deltaTime = Math.max(1, now - meta._lastTime);
+                {
+                    onRetry: (attemptNumber, err) => {
+                        manager.onRetry?.(attemptNumber, i, err);
+                    },
+                    onProgress: (loaded, total) => {
+                        manager.onActivity?.();
+                        const now = Date.now();
 
-                    if (deltaTime > 0 && deltaLoaded > 0) {
-                        const instantSpeed = (deltaLoaded / deltaTime) * 1000;
-                        const alpha = Math.min(1, deltaTime / manager.SPEED_WINDOW_MS);
-                        this.recordFileSpeed(
-                            manager,
-                            meta,
-                            meta._speed * (1 - alpha) + instantSpeed * alpha);
-                    }
-
-                    chunkLastLoaded = loaded;
-                    meta._lastTime = now;
-
-                    // Throttle DOM updates to 200ms (5 FPS) to prevent iOS layout thrashing
-                    if (!meta._lastUIUpdate || now - meta._lastUIUpdate > 200 || loaded === total) {
-                        const absoluteLoaded = uploadedBytes + loaded;
-                        this.recordTransferProgress(manager, meta, absoluteLoaded);
-                        const percent = Math.round((absoluteLoaded / meta.file.size) * 100);
-                        window.ProgressTracker.setFileProgress(meta, percent, `${percent}%`);
-
-                        manager.displaySpeedEMA = window.ProgressTracker.updateCurrentSpeedDisplay(
-                            manager.getCurrentSpeedForDisplay?.() || 0,
-                            manager.displaySpeedEMA,
-                            manager.AGG_ALPHA
-                        );
-                        meta._lastUIUpdate = now;
-                    }
-                },
-                (requestStartedAt, xhr) => this.recordRequestTiming(
-                    meta,
-                    requestStartedAt,
-                    xhr)
+                        // Throttle DOM updates to 200ms (5 FPS) to prevent iOS layout thrashing
+                        if (!lastUIUpdate || now - lastUIUpdate > 200 || loaded === total) {
+                            const absoluteLoaded = uploadedBytes + loaded;
+                            this.recordTransferProgress(manager, meta, absoluteLoaded);
+                            const percent = Math.round((absoluteLoaded / meta.file.size) * 100);
+                            manager.onSending?.(percent, loaded === total);
+                            lastUIUpdate = now;
+                        }
+                    },
+                    onTiming: (requestStartedAt, xhr) => manager.onTiming?.(requestStartedAt, xhr)
+                }
             );
 
-            if (i === totalChunks - 1) {
-                try {
-                    finalResult = JSON.parse(responseText);
-                    if (!finalResult || finalResult.complete !== true) {
-                        throw new Error('Missing finalization confirmation');
-                    }
-                } catch {
-                    throw new Error('Server returned an invalid response');
-                }
+            try {
+                const result = window.TransferContracts.upload(JSON.parse(responseText), i === totalChunks - 1, i, totalChunks);
+                if (i === totalChunks - 1) finalResult = result;
+            } catch {
+                throw Object.assign(new Error(window.I18n?.t('error.response') || 'Server returned an invalid response'), { retryable: false });
             }
 
-            manager.lastProgressTs = Date.now();
+            manager.onActivity?.();
             uploadedBytes += safeChunkSize;
+            manager.recordFileAcknowledgement?.(meta, uploadedBytes);
             this.recordTransferProgress(manager, meta, uploadedBytes);
         }
 
@@ -382,6 +261,7 @@ window.UploadWorkers = {
         return finalResult || {};
     },
 
+    /** @param {File} file */
     buildChunkFileId(file) {
         const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
         const randomPart = globalThis.crypto?.randomUUID?.() ||
@@ -389,13 +269,27 @@ window.UploadWorkers = {
         return `${randomPart}-${safeName}`;
     },
 
-    isRetryableUploadError(error) {
+    /** @param {XMLHttpRequest} xhr */
+    ownRequest(xhr) {
+        if (!window.TransferSession) return;
+        const abort = () => xhr.abort();
+        window.TransferSession.aborters.add(abort);
+        xhr.addEventListener('loadend', () => window.TransferSession.aborters.delete(abort), { once: true });
+    },
+
+    /** @param {unknown} cause */
+    isRetryableUploadError(cause) {
+        const error = window.TransferContracts.error(cause);
+        if (window.TransferSession?.state === 'blocked') return false;
+        if (error?.retryable === false) return false;
         const status = Number(error?.status) || 0;
         return status === 0 || status === 408 || status === 425 ||
             status === 429 || status >= 500;
     },
 
+    /** @param {string} value @returns {Record<string, number>} */
     parseServerTiming(value) {
+        /** @type {Record<string, number>} */
         const result = {};
         if (typeof value !== 'string' || !value || value.length > 4096) return result;
         for (const entry of value.split(',')) {
@@ -412,44 +306,27 @@ window.UploadWorkers = {
         return result;
     },
 
-    recordRequestTiming(meta, requestStartedAt, xhr) {
-        const duration = Date.now() - requestStartedAt;
-        const requestDurationMs = Number.isFinite(duration)
-            ? Math.min(86400000, Math.max(0, duration)) : 0;
-        const server = this.parseServerTiming(
-            xhr?.getResponseHeader?.('Server-Timing') || '');
-        const timing = meta.transferTiming || {
-            requestCount: 0,
-            requestDurationMs: 0,
-            serverDurationMs: 0,
-            serverWriteDurationMs: 0,
-            serverFinalizeDurationMs: 0,
-            maxRequestDurationMs: 0
-        };
-        timing.requestCount += 1;
-        timing.requestDurationMs += requestDurationMs;
-        timing.serverDurationMs += server.app || 0;
-        timing.serverWriteDurationMs += server.write || 0;
-        timing.serverFinalizeDurationMs += server.finalize || 0;
-        timing.maxRequestDurationMs = Math.max(
-            timing.maxRequestDurationMs,
-            requestDurationMs);
-        meta.transferTiming = timing;
-    },
+    /** Compatibility adapter: only controller accounting writes file timing.
+     * @param {TransferFile} meta @param {number} requestStartedAt @param {XMLHttpRequest} xhr */
+    recordRequestTiming(meta, requestStartedAt, xhr) { return window.TransferController.recordRequestTiming(meta, requestStartedAt, xhr); },
 
+    /** @param {XMLHttpRequest} xhr */
     createUploadError(xhr) {
-        let message = `Upload failed (${xhr.status})`;
+        let message = window.I18n?.t('error.http', { status: xhr.status }) || `Upload failed (${xhr.status})`;
         try {
             const body = JSON.parse(xhr.responseText || '{}');
-            if (body.code === 'filename_conflict') {
-                message = `A different file named "${body.filename || 'this file'}" already exists`;
-            } else if (body.error) {
+            if (body.code === 'filename_conflict' && typeof body.filename === 'string') {
+                message = window.I18n?.t('error.conflict', { name: body.filename || 'this file' }) || `A different file named "${body.filename || 'this file'}" already exists`;
+            } else if (typeof body.error === 'string') {
                 message = body.error;
             }
         } catch {
         }
         const error = new Error(message);
         error.status = xhr.status;
+        if (xhr.status === 401 || xhr.status === 403) window.TransferSession?.authenticationLost();
         return error;
     }
 };
+
+window.UploadWorkers = lmtWorkers;

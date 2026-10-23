@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "strict": true },
+  "include": ["../../src/Server/static/js/core/throughput.js", "throughput-types.d.ts"]
+}

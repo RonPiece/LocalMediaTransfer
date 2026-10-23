@@ -1,0 +1,15 @@
+{
+  "name": "lmt-browser-verification",
+  "private": true,
+  "scripts": {
+    "test": "playwright test",
+    "check": "tsc -p tsconfig.json && tsc -p tsconfig.worker.json && tsc -p tsconfig.throughput.json && tsc -p tsconfig.components.json && node lint.cjs",
+    "profile": "node profile.cjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1",
+    "eslint": "10.13.0",
+    "globals": "17.13.0",
+    "typescript": "7.0.2"
+  }
+}

@@ -2,7 +2,25 @@
  * Progress Tracker - File rendering and progress management
  */
 
-window.ProgressTracker = {
+const lmtProgress = {
+    /** @type {Map<string, FileUI>} */
+    rows: new Map(),
+
+    refreshLanguage() {
+        for (const file of window.FileListView?.files || []) {
+            const row = this.rows.get(file.id);
+            if (row && file.presentation.labelKey) row.progressText.textContent = window.I18n.t(file.presentation.labelKey, file.presentation.labelValues || {});
+        }
+        void window.FileListView?.render();
+        window.TransferView?.render();
+    },
+    reset() { this.rows.clear(); },
+
+    remember(fileRef, patch) {
+        if (fileRef && typeof fileRef === 'object') {
+            fileRef.presentation = { percent: 0, text: '', state: 'queued', ...fileRef.presentation, ...patch };
+        }
+    },
     applyProgressTransform(progressBar, percent) {
         if (!progressBar) return;
 
@@ -33,6 +51,7 @@ window.ProgressTracker = {
     },
 
     // Render individual file item
+    /** @param {TransferFile} meta @param {Node} parent */
     renderFileItem(meta, parent) {
         const item = document.createElement('div');
         item.className = 'file-item uploading small';
@@ -93,61 +112,45 @@ window.ProgressTracker = {
         item.appendChild(top);
         item.appendChild(progressWrap);
 
-        // Cache DOM references on meta for O(1) updates
-        meta.ui = {
+        // The renderer owns mounted DOM references; domain files never retain them.
+        const row = {
             container: item,
             progressBar: progressFill,
             progressText: progressText,
             icon: icon
         };
 
+        this.rows.set(meta.id, row);
+        if (meta.file) window.MediaPreviews?.bind(icon, meta);
         parent.appendChild(item);
+        this.renderSnapshot(meta);
     },
 
-    createGroupContainer(startIndex, endIndex, groupIndex) {
-        const details = document.createElement('details');
-        details.className = 'file-group';
-        if (groupIndex === 0) details.open = true;
+    /** Render domain presentation without changing transfer state. @param {TransferFile} file */
+    renderSnapshot(file) {
+        const ui = this.rows.get(file.id);
+        if (!ui) return;
+        this.applySnapshot(ui, file);
+    },
 
-        const summary = document.createElement('summary');
-        summary.className = 'file-group-summary';
-
-        const textSpan = document.createElement('span');
-        textSpan.className = 'file-group-title';
-        textSpan.setAttribute('dir', 'auto');
-        textSpan.textContent = window.I18n?.t('group.files', {
-            start: startIndex + 1,
-            end: endIndex,
-            count: endIndex - startIndex
-        }) || `Files ${startIndex + 1} - ${endIndex} (${endIndex - startIndex})`;
-
-        const iconSpan = document.createElement('span');
-        iconSpan.className = 'file-group-chevron';
-        iconSpan.setAttribute('aria-hidden', 'true');
-        window.LocalIcons?.setIcon(iconSpan, 'chevron');
-
-        summary.appendChild(textSpan);
-        summary.appendChild(iconSpan);
-        details.appendChild(summary);
-
-        const container = document.createElement('div');
-        container.className = 'file-group-inner';
-        details.appendChild(container);
-
-        const progressContainer = (this.elements && this.elements.progressContainer)
-            || document.getElementById('progress');
-        if (progressContainer) {
-            progressContainer.appendChild(details);
-        }
-        return container;
+    /** Shared presentation for paged rows and recent activity.
+     * @param {FileUI} ui @param {FileSnapshot} file */
+    applySnapshot(ui, file) {
+        const snapshot = file.presentation;
+        if (!snapshot) return;
+        const text = snapshot.labelKey ? window.I18n.t(snapshot.labelKey, snapshot.labelValues || {}) : snapshot.text;
+        ui.container.classList.toggle('error', snapshot.state === 'error');
+        ui.container.classList.toggle('success', ['success', 'skipped'].includes(snapshot.state));
+        ui.container.classList.toggle('uploading', !['success', 'skipped', 'error'].includes(snapshot.state));
+        ui.progressText.textContent = text;
+        this.applyProgressTransform(ui.progressBar, snapshot.percent);
+        ui.progressBar.setAttribute('aria-valuetext', text);
     },
 
     resolveFileUI(fileRef) {
-        if (fileRef && typeof fileRef === 'object' && fileRef.ui) {
-            return fileRef.ui;
-        }
+        if (fileRef && typeof fileRef === 'object') return this.rows.get(fileRef.id) || fileRef.ui || null;
 
-        const fileId = (fileRef && typeof fileRef === 'object') ? fileRef.id : fileRef;
+        const fileId = fileRef;
         if (!fileId) return null;
 
         const item = document.getElementById(`file-${fileId}`);
@@ -163,6 +166,7 @@ window.ProgressTracker = {
 
     // Set progress for specific file
     setFileProgress(fileRef, percent, text) {
+        this.remember(fileRef, { percent, text, ...(/^\d+%$/.test(text || '') ? { labelKey: '' } : {}) });
         const ui = this.resolveFileUI(fileRef);
         if (!ui) return;
 
@@ -178,24 +182,31 @@ window.ProgressTracker = {
 
     // Mark file as successful
     markFileSuccess(fileRef, text) {
-        const ui = this.resolveFileUI(fileRef);
-        if (!ui || !ui.container) return;
-
-        ui.container.className = 'file-item success small';
-        if (ui.progressText) ui.progressText.textContent = text;
-        if (ui.progressBar) {
-            this.applyProgressTransform(ui.progressBar, 100);
-            ui.progressBar.setAttribute('aria-valuetext', text);
-        }
-
-        if (ui.icon) {
-            ui.icon.className = 'file-icon file-icon-success';
-            window.LocalIcons?.setIcon(ui.icon, 'check');
-        }
+        this.markFileCompleted(fileRef, text, 'success', 'file.done', 'file.savedAs');
     },
 
     // Mark file as skipped
     markFileSkipped(fileRef, text) {
+        this.markFileCompleted(fileRef, text, 'skipped', 'file.skipped', 'file.existingAs');
+    },
+
+    /** Shared success presentation for uploaded and verified duplicate files.
+     * @param {TransferFile|string} fileRef
+     * @param {string} text
+     * @param {'success'|'skipped'} state
+     * @param {string} defaultLabel
+     * @param {string} renamedLabel
+     */
+    markFileCompleted(fileRef, text, state, defaultLabel, renamedLabel) {
+        const savedName = typeof fileRef === 'object' ? fileRef.serverResult?.filename : null;
+        const renamed = savedName && typeof fileRef === 'object' && savedName !== fileRef.name;
+        this.remember(fileRef, {
+            state,
+            text,
+            percent: 100,
+            labelKey: renamed ? renamedLabel : defaultLabel,
+            labelValues: savedName ? { name: savedName } : {}
+        });
         const ui = this.resolveFileUI(fileRef);
         if (!ui || !ui.container) return;
 
@@ -206,14 +217,12 @@ window.ProgressTracker = {
             ui.progressBar.setAttribute('aria-valuetext', text);
         }
 
-        if (ui.icon) {
-            ui.icon.className = 'file-icon file-icon-success';
-            window.LocalIcons?.setIcon(ui.icon, 'check');
-        }
+
     },
 
     // Mark file as error
     markFileError(fileRef, text) {
+        this.remember(fileRef, { state: 'error', text, labelKey: '' });
         const ui = this.resolveFileUI(fileRef);
         if (!ui || !ui.container) return;
 
@@ -221,13 +230,11 @@ window.ProgressTracker = {
         if (ui.progressText) ui.progressText.textContent = text;
         if (ui.progressBar) ui.progressBar.setAttribute('aria-valuetext', text);
 
-        if (ui.icon) {
-            ui.icon.className = 'file-icon file-icon-error';
-            window.LocalIcons?.setIcon(ui.icon, 'failed');
-        }
+
     },
 
-    markFileQueued(fileRef, text = null) {
+    markFileQueued(fileRef, text = null, labelKey = 'file.queued') {
+        this.remember(fileRef, { state: 'queued', percent: 0, text, labelKey });
         const ui = this.resolveFileUI(fileRef);
         if (!ui || !ui.container) return;
 
@@ -240,10 +247,7 @@ window.ProgressTracker = {
         }
         this.applyProgressTransform(ui.progressBar, 0);
 
-        if (ui.icon) {
-            ui.icon.className = 'file-icon';
-            window.LocalIcons?.setIcon(ui.icon, 'file');
-        }
+
     },
 
     // Update statistics UI using cached elements
@@ -265,32 +269,20 @@ window.ProgressTracker = {
     },
 
     // Update current speed display
-    updateCurrentSpeedDisplay(currentInstantSpeed, displaySpeedEMA, AGG_ALPHA) {
+    updateCurrentSpeedDisplay(currentInstantSpeed) {
         const safeInstantSpeed = Number.isFinite(currentInstantSpeed) && currentInstantSpeed > 0
             ? currentInstantSpeed
             : 0;
-
-        // Apply EMA smoothing for stable display
-        let newSpeedEMA;
-        if (safeInstantSpeed > 0) {
-            newSpeedEMA = displaySpeedEMA * (1 - AGG_ALPHA) + safeInstantSpeed * AGG_ALPHA;
-        } else {
-            // Decay quickly to zero when there is no fresh progress.
-            newSpeedEMA = displaySpeedEMA * 0.6;
-            if (newSpeedEMA < 1) {
-                newSpeedEMA = 0;
-            }
-        }
 
         const el = this.elements || {};
         const currentSpeedEl = el.currentSpeed || document.getElementById('currentSpeed');
         if (currentSpeedEl) {
             currentSpeedEl.textContent = window.I18n?.t('speed.current', {
-                speed: window.Utils.formatSpeed(newSpeedEMA)
-            }) || `Current upload: ${window.Utils.formatSpeed(newSpeedEMA)}`;
+                speed: window.Utils.formatSpeed(safeInstantSpeed)
+            }) || `Current upload: ${window.Utils.formatSpeed(safeInstantSpeed)}`;
         }
 
-        return newSpeedEMA;
+        return safeInstantSpeed;
     },
 
     updateAggregateProgress(completedBytes, totalBytes) {
@@ -319,3 +311,5 @@ window.ProgressTracker = {
         this.applyProgressTransform(aggregateBar, percent);
     }
 };
+
+window.ProgressTracker = lmtProgress;

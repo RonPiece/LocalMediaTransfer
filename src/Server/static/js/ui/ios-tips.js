@@ -2,7 +2,7 @@
  * iOS Tips - Platform-specific upload guidance.
  */
 
-window.IOSTips = {
+const lmtTips = {
     init() {
         this.checkAndShowIOSTips();
     },
@@ -108,3 +108,5 @@ window.IOSTips = {
         container.appendChild(fragment);
     }
 };
+
+window.IOSTips = lmtTips;

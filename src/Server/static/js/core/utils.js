@@ -3,7 +3,7 @@
  */
 
 // Global utility functions
-window.Utils = {
+const lmtUtils = {
     isIOSLike() {
         try {
             const ua = navigator.userAgent || '';
@@ -51,6 +51,9 @@ window.Utils = {
         return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
     }
 };
+
+
+window.Utils = lmtUtils;
 
 // Make global functions available (for backwards compatibility)
 window.formatTime = window.Utils.formatTime;

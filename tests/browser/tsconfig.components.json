@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "allowJs": true, "checkJs": true, "noEmit": true, "strict": true,
+    "target": "ES2022", "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": [], "skipLibCheck": true
+  },
+  "include": [
+    "browser-types.d.ts",
+    "../../src/Server/static/js/core/contracts.js",
+    "../../src/Server/static/js/core/throughput.js",
+    "../../src/Server/static/js/upload/accounting.js",
+    "../../src/Server/static/js/upload/controller.js",
+    "../../src/Server/static/js/upload/selection.js",
+    "../../src/Server/static/js/upload/workers.js",
+    "../../src/Server/static/js/ui/file-list.js",
+    "../../src/Server/static/js/ui/media-previews.js"
+  ]
+}

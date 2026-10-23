@@ -62,6 +62,7 @@ function createContext(navigatorOverrides = {}) {
     };
 
     const window = {
+        I18n: { t: (key, values = {}) => Object.entries(values).reduce((text, [name, value]) => text.replaceAll(`{${name}}`, String(value)), require('../../src/Server/static/i18n/en.json')[key] || key) },
         location: {
             href: 'http://localhost:8080/?token=test',
             pathname: '/',
@@ -74,6 +75,8 @@ function createContext(navigatorOverrides = {}) {
         },
         addEventListener() {},
         ProgressTracker: {
+            remember() {},
+            registerGroup() {},
             createGroupContainer() { return { appendChild() {} }; },
             renderFileItem() {},
             updateStatsUI() {},
@@ -125,6 +128,7 @@ function createContext(navigatorOverrides = {}) {
         URLSearchParams,
         AbortController,
         Date,
+        performance: { now: () => Date.now() },
         Math,
         Array,
         Promise,
@@ -138,6 +142,7 @@ function createContext(navigatorOverrides = {}) {
         clearInterval(id) { activeTimers.delete(id); }
     };
 
+    window.lmtFetch = (url, options) => context.fetch(url, options);
     vm.createContext(context);
     return { context, elements, activeTimers };
 }
@@ -152,6 +157,12 @@ function loadManager(navigatorOverrides = {}) {
     const harness = createContext(navigatorOverrides);
     loadScript(harness.context, '../../src/Server/static/js/core/utils.js');
     loadScript(harness.context, '../../src/Server/static/js/core/transfer-limits.js');
+    loadScript(harness.context, '../../src/Server/static/js/core/telemetry.js');
+    loadScript(harness.context, '../../src/Server/static/js/core/throughput.js');
+    loadScript(harness.context, '../../src/Server/static/js/core/contracts.js');
+    loadScript(harness.context, '../../src/Server/static/js/upload/selection.js');
+    loadScript(harness.context, '../../src/Server/static/js/upload/accounting.js');
+    loadScript(harness.context, '../../src/Server/static/js/upload/controller.js');
     loadScript(harness.context, '../../src/Server/static/js/upload/manager.js');
     return { ...harness, manager: harness.context.window.UploadManager };
 }
@@ -162,13 +173,24 @@ function loadWorkers(navigatorOverrides = {}) {
     harness.context.AbortController = AbortController;
     loadScript(harness.context, '../../src/Server/static/js/core/transfer-limits.js');
     loadScript(harness.context, '../../src/Server/static/js/core/utils.js');
+    loadScript(harness.context, '../../src/Server/static/js/core/contracts.js');
+    loadScript(harness.context, '../../src/Server/static/js/upload/accounting.js');
+    loadScript(harness.context, '../../src/Server/static/js/upload/controller.js');
     loadScript(harness.context, '../../src/Server/static/js/upload/workers.js');
+    const original = harness.context.window.UploadWorkers.uploadSingle;
+    harness.context.window.UploadWorkers.uploadSingle = (meta, manager) => { Object.setPrototypeOf(manager, harness.context.window.TransferController); return original(meta, manager); };
     return { ...harness, workers: harness.context.window.UploadWorkers };
 }
 
 function loadPreflight(navigatorOverrides = {}) {
     const harness = createContext(navigatorOverrides);
+    loadScript(harness.context, '../../src/Server/static/js/core/transfer-limits.js');
+    loadScript(harness.context, '../../src/Server/static/js/core/contracts.js');
+    loadScript(harness.context, '../../src/Server/static/js/upload/accounting.js');
+    loadScript(harness.context, '../../src/Server/static/js/upload/controller.js');
     loadScript(harness.context, '../../src/Server/static/js/upload/preflight.js');
+    const original = harness.context.window.DuplicatePreflight.run;
+    harness.context.window.DuplicatePreflight.run = (files, tracker, owner) => { const controller = owner || harness.context.window.TransferController; Object.setPrototypeOf(controller, harness.context.window.TransferController === controller ? Object.prototype : harness.context.window.TransferController); harness.context.window.ProgressTracker = { ...harness.context.window.ProgressTracker, ...tracker, remember: tracker.remember || (() => {}) }; return original.call(harness.context.window.DuplicatePreflight, files, controller.preflightObserver()); };
     return {
         ...harness,
         preflight: harness.context.window.DuplicatePreflight
@@ -293,6 +315,92 @@ test('preflight hashes only server-selected candidates and skips before upload',
     assert.equal(files[0].uploadedBytes, 0);
     assert.equal(files[0].completedBytes, 10);
     assert.equal(files[1].done, undefined);
+});
+
+test('a failed file recovered by duplicate verification clears its prior failure', async () => {
+    const { preflight, context } = loadPreflight();
+    const file = { id: 'candidate', name: 'synthetic.bin', size: 10, file: {},
+        failed: true, retryable: true, failure: { message: 'Temporary failure' } };
+    const manager = { errorCount: 1, markFileCompletedWithoutUpload() {} };
+    preflight.hashFile = async () => 'a'.repeat(64);
+    preflight.post = async url => ({ files: [{ id: file.id,
+        action: url === preflight.PRECHECK_URL ? 'hash_required' : 'skip' }] });
+    await preflight.run([file], context.window.ProgressTracker, manager);
+    assert.equal(file.failed, false);
+    assert.equal(file.retryable, false);
+    assert.equal(file.failure, undefined);
+    assert.equal(manager.errorCount, 0);
+});
+
+test('failed parallel hashing disposes siblings before upload fallback', async () => {
+    const { preflight, context } = loadPreflight({ hardwareConcurrency: 4 });
+    let terminated = 0;
+    context.Worker = class {
+        postMessage({ requestId, file }) {
+            if (file.fail) queueMicrotask(() => this.onmessage({ data: { requestId, type: 'error' } }));
+        }
+        terminate() { terminated++; }
+    };
+    const files = [true, false, false].map((fail, i) => ({ id: String(i), file: { fail } }));
+    preflight.post = async () => ({ files: files.map(file => ({ id: file.id, action: 'hash_required' })) });
+    try {
+        await assert.rejects(preflight.run(files, context.window.ProgressTracker), /Hashing failed/);
+        assert.equal(preflight.requests.size, 0);
+        assert.equal(terminated, 2);
+    } finally {
+        preflight.dispose();
+    }
+});
+
+test('chunk retry cannot start a new request after another file loses authentication', async () => {
+    const { workers, context } = loadWorkers();
+    context.window.TransferSession = { state: 'busy' };
+    context.setTimeout = callback => {
+        context.window.TransferSession.state = 'blocked';
+        callback();
+        return 1;
+    };
+    let attempts = 0;
+    context.XMLHttpRequest = class {
+        constructor() { this.upload = {}; }
+        open() {} setRequestHeader() {}
+        send() { attempts++; this.onerror(); }
+    };
+    workers.ownRequest = () => {};
+    await assert.rejects(workers.uploadChunkXHR('/upload_chunk', {}, { size: 4 }, 1000, 2, {}));
+    assert.equal(attempts, 1);
+});
+
+test('late history failure cannot attach diagnostics to a later queue', async () => {
+    const { manager, context } = loadManager();
+    let rejectHistory;
+    context.window.lmtFetch = () => new Promise((_resolve, reject) => { rejectHistory = reject; });
+    let diagnostics = 0;
+    manager.logClientEvent = () => { diagnostics++; };
+    const pending = manager.submitTransferHistory(1);
+    manager.fileQueue = [];
+    rejectHistory(new Error('Previous request timed out'));
+    await pending;
+    assert.equal(diagnostics, 0);
+});
+
+test('history never labels unattempted files as uploaded after authentication loss', async () => {
+    const { manager, context } = loadManager();
+    manager.fileQueue = [
+        { id: 'saved', size: 1, done: true, failed: false },
+        { id: 'aborted', size: 2, done: true, failed: true },
+        { id: 'unattempted', size: 3, done: false, failed: false }
+    ];
+    manager.errorCount = 1;
+    let payload;
+    context.window.lmtFetch = async (_url, options) => {
+        payload = JSON.parse(options.body);
+        return { ok: true };
+    };
+    await manager.submitTransferHistory(1);
+    assert.equal(payload.uploadedFiles, 1);
+    assert.equal(payload.failedFiles, 2);
+    assert.deepEqual(payload.files.map(file => file.outcome), ['uploaded', 'failed', 'failed']);
 });
 
 test('preflight hash worker count stays single on mobile and capped on desktop', () => {
@@ -465,8 +573,8 @@ test('preflight checking does not show fake 99 percent per-file progress', async
     };
 
     context.window.ProgressTracker = {
-        setFileProgress(file, percent, text) {
-            progressCalls.push({ id: file.id, percent, text });
+        renderSnapshot(file) {
+            if (file.presentation.state === 'queued') progressCalls.push({ id: file.id, percent: file.presentation.percent, text: file.presentation.text });
         },
         markFileSkipped() {},
         markFileQueued() {}
@@ -478,8 +586,8 @@ test('preflight checking does not show fake 99 percent per-file progress', async
         progressCalls.some(call => call.percent === 99 || /99%/.test(call.text)),
         false);
     assert.deepEqual(
-        progressCalls.map(call => call.text),
-        ['Checking...', 'Checking...', 'Verifying...']);
+        [...new Set(progressCalls.map(call => call.text))],
+        ['Checking...', 'Verifying...']);
 });
 
 test('workers claim each queued file once without repeated queue find scans', async () => {
@@ -532,31 +640,24 @@ test('manager maintains upload counters without scanning the queue', () => {
     assert.equal(manager.networkBytesUploaded, 80);
 });
 
-test('manager speed sum expires without queue scans and recovers with epoch accounting', () => {
-    const { manager } = loadManager();
-    const file = { _speed: 0 };
+test('acknowledged rates ignore duplicate progress and expire without queue scans', () => {
+    const { context, manager } = loadManager();
+    const file = { size: 1_000_000 };
     let now = 10_000;
     const originalNow = Date.now;
     Date.now = () => now;
     try {
-        manager.speedEpoch = 0;
-        manager.activeSpeedSum = 0;
-        manager.lastProgressTs = now;
-        manager.updateFileSpeed(file, 100);
-        assert.equal(manager.getCurrentSpeedForDisplay(), 100);
-
-        now += 2500;
+        manager.throughput = new context.window.BrowserThroughputTracker(now, 100_000);
+        now += 1000;
+        manager.recordFileAcknowledgement(file, 500_000);
+        manager.recordFileAcknowledgement(file, 500_000);
+        manager.recordFileAcknowledgement(file, 100_000);
+        assert.equal(manager.getCurrentSpeedForDisplay(), 500_000);
+        assert.equal(manager.throughput.snapshot().acknowledgedMediaBytes, 500_000);
+        now += 5001;
         assert.equal(manager.getCurrentSpeedForDisplay(), 0);
-        assert.equal(manager.activeSpeedSum, 0);
-
-        manager.displaySpeedEMA = 100;
-        now += 2500;
-        assert.equal(manager.getCurrentSpeedForDisplay(), 0);
-        assert.equal(manager.displaySpeedEMA, 0);
-
-        manager.lastProgressTs = now;
-        manager.updateFileSpeed(file, 50);
-        assert.equal(manager.getCurrentSpeedForDisplay(), 50);
+        manager.recordFileAcknowledgement(file, 1_000_000);
+        assert.equal(manager.getCurrentSpeedForDisplay(), 100_000);
     } finally {
         Date.now = originalNow;
     }
@@ -709,18 +810,17 @@ test('all preflight duplicates complete once without starting upload workers', a
         files[0].completedBytes = 10;
         return { skippedFiles: 1, skippedBytes: 10 };
     };
-    context.window.Modals.showUploadCompleteModal = (...args) => {
-        summaries.push(args);
-    };
+    const finish = manager.finishSummary.bind(manager);
+    manager.finishSummary = value => { finish(value); summaries.push([value]); };
 
     await manager.uploadFiles();
 
     assert.equal(workerCalls, 0);
     assert.equal(summaries.length, 1);
-    assert.equal(summaries[0][0], 1);
-    assert.equal(summaries[0][1], 1);
-    assert.equal(Number.isFinite(summaries[0][2]), true);
-    assert.equal(summaries[0][2] >= 0, true);
+    assert.equal(summaries[0][0].uploaded, 0);
+    assert.equal(summaries[0][0].skipped, 1);
+    assert.equal(Number.isFinite(summaries[0][0].totalDurationMs), true);
+    assert.equal(summaries[0][0].totalDurationMs >= 0, true);
     assert.equal(manager.currentPhase, 'complete');
     assert.equal(manager.networkBytesUploaded, 0);
     assert.equal(manager.skippedBytes, 10);
@@ -902,6 +1002,9 @@ test('frontend loader cache key matches its module asset version', () => {
         true,
         'index.html should invalidate the loader when its module version changes'
     );
+    const scripts = Array.from(html.matchAll(/<script(?: defer)? src="([^"]+)"/g), match => match[1]);
+    assert.ok(scripts.length >= 13, 'dependencies should be ordered deferred declarations');
+    assert.ok(scripts.every(src => src.endsWith(`?v=${version}`)), 'every runtime script shares the release asset key');
     assert.equal(
         html.includes(`/static/style.css?v=${version}`),
         true,
@@ -966,6 +1069,7 @@ test('i18n detects Hebrew, Russian, and defaults to English', async () => {
         }
     };
     const document = {
+        getElementById() { return null; },
         documentElement: html,
         body,
         querySelectorAll() {
@@ -989,6 +1093,7 @@ test('i18n detects Hebrew, Russian, and defaults to English', async () => {
                 };
             }
         };
+        context.window.lmtFetch = context.fetch;
         vm.createContext(context);
         vm.runInContext(scriptSource, context, { filename: scriptPath });
         await context.window.I18n.init();
@@ -1038,9 +1143,7 @@ test('successful retry removes the previous error and adds one success', async (
 test('server-verified duplicate is shown as skipped', async () => {
     const { context, workers } = loadWorkers();
     let skippedText = '';
-    context.window.ProgressTracker.markFileSkipped = (_meta, text) => {
-        skippedText = text;
-    };
+    context.window.ProgressTracker.renderSnapshot = meta => { skippedText = meta.presentation.text; };
     const manager = {
         SINGLE_FILE_MAX_BYTES: 100,
         SPEED_WINDOW_MS: 2000,
@@ -1079,9 +1182,7 @@ test('server-verified duplicate is shown as skipped', async () => {
 test('numbered filename is shown after a same-name collision', async () => {
     const { context, workers } = loadWorkers();
     let successText = '';
-    context.window.ProgressTracker.markFileSuccess = (_meta, text) => {
-        successText = text;
-    };
+    context.window.ProgressTracker.renderSnapshot = meta => { successText = meta.presentation.text; };
     const manager = {
         SINGLE_FILE_MAX_BYTES: 10_000,
         SPEED_WINDOW_MS: 2000,
@@ -1114,6 +1215,79 @@ test('numbered filename is shown after a same-name collision', async () => {
     assert.equal(successText, 'Saved as IMG_1234 (2).JPG');
 });
 
+test('a rendering failure cannot turn a receiver-confirmed upload into a failed file', async () => {
+    const { context, manager } = loadManager();
+    const file = { id: 'synthetic-render', name: 'synthetic.bin', size: 8, file: { size: 8 }, failed: false };
+    manager.fileQueue = [file];
+    context.window.UploadWorkers = {
+        shouldUseChunkedUpload: () => false,
+        uploadWholeFile: async () => ({ success: true, filename: 'synthetic.bin' }),
+        isRetryableUploadError: () => false
+    };
+    context.window.ProgressTracker.renderSnapshot = () => { throw new Error('Synthetic detached view'); };
+    context.window.ProgressTracker.updateStatsUI = () => { throw new Error('Synthetic detached stats'); };
+    await manager.processFile(file);
+    assert.equal(file.done, true);
+    assert.equal(file.failed, false);
+    assert.equal(manager.successCount, 1);
+    assert.equal(manager.errorCount, 0);
+    assert.equal(file.presentation.state, 'success');
+});
+
+test('observations from a replaced run cannot mutate new counters or file presentation', () => {
+    const { manager } = loadManager();
+    const file = { id: 'synthetic-stale', size: 8, uploadedBytes: 0, completedBytes: 0,
+        acknowledgedBytes: 0, presentation: { percent: 0, text: 'Queued', state: 'queued' } };
+    manager.isUploadInProgress = true;
+    const observer = manager.transportObserver(file);
+    manager.revision++;
+    observer.onSending(100, true);
+    observer.onRetry(1, 0, new Error('Synthetic old response'));
+    observer.recordFileAcknowledgement(file, 8);
+    observer.updateFileTransferProgress(file, 8);
+    assert.equal(file.presentation.text, 'Queued');
+    assert.equal(file.acknowledgedBytes, 0);
+    assert.equal(manager.globalUploadedBytes, 0);
+    assert.equal(manager.retryCount, 0);
+});
+
+test('recent activity retains the latest terminal file despite parallel progress and resets cleanly', () => {
+    const { manager } = loadManager();
+    const first = { id: 'synthetic-first', name: 'first.bin', size: 8, presentation: { percent: 0, state: 'queued', text: '' } };
+    const second = { id: 'synthetic-second', name: 'second.bin', size: 8, presentation: { percent: 0, state: 'queued', text: '' } };
+    manager.running = 2;
+    manager.presentFile(first, { labelKey: 'file.uploading' });
+    manager.presentFile(second, { labelKey: 'file.uploading' });
+    assert.equal(manager.getSnapshot().activity.id, first.id);
+    assert.equal(manager.getSnapshot().activeFiles, 2);
+    manager.presentFile(second, { state: 'success', percent: 100, labelKey: 'file.done' });
+    manager.presentFile(first, { percent: 75, text: '75%', labelKey: '' });
+    const snapshot = manager.getSnapshot();
+    assert.equal(snapshot.activity.id, second.id);
+    assert.equal(snapshot.activity.presentation.state, 'success');
+    assert.equal(Object.isFrozen(snapshot.activity.presentation), true);
+    assert.notEqual(snapshot.activity.presentation, second.presentation);
+    manager.presentFile(first, { state: 'error', text: 'Synthetic rejection', labelKey: '' });
+    assert.equal(manager.getSnapshot().activity.id, first.id);
+    manager.resetFiles();
+    assert.equal(manager.getSnapshot().activity, null);
+    assert.equal(manager.getSnapshot().activeFiles, 0);
+});
+
+test('preflight sends large selections in bounded batches', async () => {
+    const { context, preflight } = loadPreflight();
+    const batches = [];
+    context.fetch = async (_url, options) => {
+        const files = JSON.parse(options.body).files;
+        batches.push(files.length);
+        return { ok: true, json: async () => ({ files: files.map(file => ({ id: file.id, action: 'upload' })) }) };
+    };
+    const files = Array.from({ length: 2501 }, (_, index) => ({ id: String(index), name: 'synthetic.bin', size: 1 }));
+    const result = await preflight.post(preflight.PRECHECK_URL, files);
+    assert.deepEqual(batches, [1000, 1000, 501]);
+    assert.equal(result.files.length, files.length);
+});
+
 test('speed samples are sent to the authenticated GUI metrics endpoint', () => {
     const { context, manager } = loadManager();
     let request = null;
@@ -1131,6 +1305,71 @@ test('speed samples are sent to the authenticated GUI metrics endpoint', () => {
         JSON.parse(request.options.body).bytesPerSecond,
         12 * 1024 * 1024
     );
+});
+
+test('metrics coalesce stalled samples and terminal zero is ordered last', async () => {
+    const { context, manager } = loadManager();
+    const requests = [];
+    context.fetch = (_url, options) => new Promise(resolve => {
+        requests.push({ body: JSON.parse(options.body), resolve });
+    });
+    manager.reportSpeedSample(10, true);
+    manager.reportSpeedSample(20, true);
+    manager.reportSpeedSample(30, true);
+    assert.equal(requests.length, 1);
+    manager.reportSpeedSample(0, true);
+    manager.reportSpeedSample(99, true);
+    requests[0].resolve({});
+    await new Promise(setImmediate);
+    assert.equal(requests.length, 2);
+    assert.equal(requests[1].body.bytesPerSecond, 0);
+    requests[1].resolve({});
+    await new Promise(setImmediate);
+    assert.equal(requests.length, 2);
+});
+
+test('optional telemetry deadlines release a stalled request and bound event fanout', async () => {
+    const { context, manager } = loadManager();
+    let active = 0;
+    let peak = 0;
+    let total = 0;
+    context.setTimeout = (callback, delay) => setTimeout(callback, delay === 5000 ? 5 : delay);
+    context.fetch = (_url, options) => new Promise((_resolve, reject) => {
+        total++;
+        peak = Math.max(peak, ++active);
+        options.signal.addEventListener('abort', () => { active--; reject(new Error('deadline')); });
+    });
+    await Promise.all(Array.from({ length: 20 }, () => manager.logClientEvent('INFO', 'sample', 'Synthetic')));
+    assert.equal(peak, 1);
+    assert.equal(total, 4);
+    assert.equal(active, 0);
+    assert.equal(context.window.TransferTelemetry.events.get(manager).count, 0);
+});
+
+test('sending a whole file does not acknowledge it until a valid receiver response', async () => {
+    const { context, workers } = loadWorkers();
+    let xhr;
+    context.FormData = class { append() {} };
+    context.XMLHttpRequest = class {
+        constructor() { xhr = this; this.upload = {}; }
+        open() {} setRequestHeader() {} send() {} getResponseHeader() { return ''; }
+    };
+    const acknowledgements = [];
+    let text;
+    context.window.ProgressTracker.setFileProgress = (_file, _percent, value) => { text = value; };
+    const manager = { updateFileTransferProgress() { return {uploadDelta: 0, completedDelta: 0}; }, onSending: (_percent, waiting) => { if (waiting) text = 'Waiting for receiver…'; }, recordFileAcknowledgement: (_file, bytes) => acknowledgements.push(bytes) };
+    const meta = { size: 10, file: { name: 'synthetic.bin' } };
+    const pending = workers.uploadWholeFile(meta, manager);
+    xhr.upload.onprogress({ lengthComputable: true, loaded: 10, total: 10 });
+    assert.equal(text, 'Waiting for receiver…');
+    assert.deepEqual(acknowledgements, []);
+    xhr.status = 200; xhr.responseText = '{"success":true}'; xhr.onload();
+    await pending;
+    assert.deepEqual(acknowledgements, [10]);
+    const rejected = workers.uploadWholeFile(meta, manager);
+    xhr.status = 200; xhr.responseText = '{"success":false}'; xhr.onload();
+    await assert.rejects(rejected, /invalid response/);
+    assert.deepEqual(acknowledgements, [10]);
 });
 
 test('chunk retries are counted through the retry callback', async () => {
@@ -1162,8 +1401,7 @@ test('chunk retries are counted through the retry callback', async () => {
         { size: 4 },
         1000,
         2,
-        () => { retries++; },
-        () => {}
+        { onRetry: () => { retries++; }, onProgress: () => {} }
     );
 
     assert.equal(attempts, 2);
@@ -1189,7 +1427,7 @@ test('chunk upload does not retry terminal client errors', async () => {
     };
 
     await assert.rejects(workers.uploadChunkXHR(
-        '/upload_chunk', {}, { size: 4 }, 1000, 2, () => {}, () => {}),
+        '/upload_chunk', {}, { size: 4 }, 1000, 2, {}),
     /conflict/);
     assert.equal(attempts, 1);
 });

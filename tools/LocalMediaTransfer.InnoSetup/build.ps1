@@ -325,6 +325,9 @@ if ($LASTEXITCODE -ne 0) {
 $OutputExe = Join-Path $OutputDir "LocalMediaTransfer-Setup-$Version-x64.exe"
 Assert-File -Path $OutputExe -Description "Installer output"
 $SizeMB = [math]::Round(((Get-Item -LiteralPath $OutputExe).Length / 1MB), 2)
+& (Join-Path $ScriptDir 'Verify-BrowserPackage.ps1') -RepoRoot $RepoRoot `
+    -StageRoot $AppStage -Installer $OutputExe `
+    -OutputPath (Join-Path $OutputDir 'BROWSER_BUILD_MANIFEST.json')
 
 if ($ReleaseArtifacts) {
     $PortableZip = Join-Path $OutputDir "LocalMediaTransfer-$Version-windows-x64-portable.zip"

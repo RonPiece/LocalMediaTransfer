@@ -20,6 +20,23 @@ benchmark database.
 
 ## Build
 
+### Browser concurrency and finalization attribution
+
+`scripts/verify.ps1 -Target web-profile -ServerExecutable <Release server>` owns
+the actual-browser comparison through the canonical harness. See
+[browser measurement procedure](../tests/browser/README.md). It uses isolated
+disk-backed synthetic files, fixed chunks, warm-ups, rotating repetitions and
+post-timing content verification. Same-PC warm SSD results are not HDD or remote
+network predictions; an iperf baseline is still required to attribute network runs.
+
+Only opt-in benchmark operation adds detailed numeric `Server-Timing` phases:
+`flush`, `hash`, `lockwait`, `verification`, `publication`, and `index`. Normal
+operation passes no finalization timing record and performs no detailed clock
+sampling. These phases attribute finalization work; they do not measure source
+reads or time before the HTTP handler. Publication is excluded from the nested
+verification duration. Cached finalization replies do not repeat attribution.
+No new application routes or diagnostic database are enabled in normal operation.
+
 Use Release builds for throughput measurements:
 
 ```powershell

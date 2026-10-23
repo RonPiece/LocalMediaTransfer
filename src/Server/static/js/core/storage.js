@@ -2,7 +2,7 @@
  * Storage Manager - Cache cleanup and memory management
  */
 
-window.UploadCacheManager = class {
+const lmtCache = class {
     constructor() {
         this.uploadedFiles = new Set();
         this.tempObjects = new Set();
@@ -45,12 +45,9 @@ window.UploadCacheManager = class {
             
             this.clearFileInputs();
             this.revokeAllBlobUrls();
-            this.clearDOMReferences();
-            await this.clearBrowserCaches();
-            
             this.uploadedFiles.clear();
             this.tempObjects.clear();
-            
+            await this.clearBrowserCaches();
             
         } catch (error) {
         }
@@ -60,8 +57,8 @@ window.UploadCacheManager = class {
         const fileInputs = document.querySelectorAll('input[type="file"]');
         fileInputs.forEach(input => {
             try {
-                input.value = '';
-                input.files = null;
+                /** @type {HTMLInputElement} */ (input).value = '';
+                /** @type {HTMLInputElement} */ (input).files = null;
             } catch (e) {}
         });
     }
@@ -79,21 +76,6 @@ window.UploadCacheManager = class {
                     URL.revokeObjectURL(file.tempUrl);
                 } catch (e) {}
             }
-        });
-    }
-    
-    clearDOMReferences() {
-        const completedItems = document.querySelectorAll('.file-item.success, .file-item.error');
-        completedItems.forEach(item => {
-            try {
-                item.removeAttribute('data-file-data');
-                item.removeAttribute('data-file-ref');
-                
-                const progressBars = item.querySelectorAll('.progress-bar-modern');
-                progressBars.forEach(bar => {
-                    bar.style.background = 'var(--primary-green)';
-                });
-            } catch (e) {}
         });
     }
     
@@ -126,6 +108,9 @@ window.UploadCacheManager = class {
         }
     }
 };
+
+
+window.UploadCacheManager = lmtCache;
 
 // Global instance
 window.uploadCacheManager = new window.UploadCacheManager();

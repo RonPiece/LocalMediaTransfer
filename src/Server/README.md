@@ -80,6 +80,41 @@ project vcpkg checkout when Visual Studio initializes the compiler environment.
 
 ## Verification
 
+### Testing the latest browser code
+
+The installed Windows app serves `server/static` beside its own executable.
+Saving repository JavaScript does not update the installed copy. A browser
+refresh reloads that installed copy; Expo/Metro does not serve this uploader.
+
+For a fresh normal Windows application, build from the repository root:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File `
+  .\tools\LocalMediaTransfer.InnoSetup\build.ps1 -KeepStaging
+```
+
+Exit the running Windows app normally, install the generated setup executable
+from `tools/LocalMediaTransfer.InnoSetup/output`, reopen the app, and generate a
+fresh browser link. Refresh the page after updating the installed assets. No
+commit or push is required for this local build. Installation remains a manual
+acceptance step; building the installer does not replace the running receiver.
+
+For isolated developer checks, build Release and explicitly select it:
+
+```powershell
+.\src\Server\build.bat Release
+.\scripts\verify.ps1 -Target web-tests `
+  -ServerExecutable .\src\Server\out\build\x64-release\bin\LocalMediaTransferServer.exe
+.\scripts\verify.ps1 -Target web-profile `
+  -ServerExecutable .\src\Server\out\build\x64-release\bin\LocalMediaTransferServer.exe
+```
+
+These commands own temporary receivers and synthetic data. Their startup gate
+compares served HTML, scripts and styles against source, rejecting stale assets.
+Do not infer latest-code performance from a tab still served by an older app.
+
+### Test commands
+
 Server integration harness:
 
 ```powershell

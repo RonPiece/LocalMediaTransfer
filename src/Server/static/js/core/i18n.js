@@ -3,10 +3,12 @@
  * Detects Hebrew/Russian/English and falls back to English for everything else.
  */
 
-window.I18n = {
+const lmtI18n = {
     lang: 'en',
     dir: 'ltr',
     strings: {},
+    loadRevision: 0,
+    REQUEST_TIMEOUT_MS: 10000,
 
     supported: new Set(['en', 'he', 'ru']),
     languageMeta: {
@@ -16,8 +18,10 @@ window.I18n = {
     },
 
     detectLanguage() {
+        let saved = '';
+        try { saved = localStorage.getItem('lmt.language') || ''; } catch {}
         const candidates = [
-            localStorage.getItem('lmt.language'),
+            saved,
             ...(navigator.languages || []),
             navigator.language
         ].filter(Boolean);
@@ -38,34 +42,50 @@ window.I18n = {
     },
 
     async load(lang) {
-        this.lang = this.supported.has(lang) ? lang : 'en';
-        this.dir = this.lang === 'he' ? 'rtl' : 'ltr';
+        const revision = ++this.loadRevision;
+        let resolvedLanguage = this.supported.has(lang) ? lang : 'en';
+        let strings = {};
 
         try {
-            const response = await fetch(`/static/i18n/${this.lang}.json?v=${window.LMT_FRONTEND_VERSION || '1'}`);
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            this.strings = await response.json();
+            strings = await this.fetchStrings(resolvedLanguage);
         } catch (error) {
             console.warn('Local Media Transfer could not load the preferred language.');
-            this.lang = 'en';
-            this.dir = 'ltr';
-            const response = await fetch(`/static/i18n/en.json?v=${window.LMT_FRONTEND_VERSION || '1'}`);
-            this.strings = response.ok ? await response.json() : {};
+            if (resolvedLanguage !== 'en') {
+                try { strings = await this.fetchStrings('en'); } catch {}
+            }
+            resolvedLanguage = 'en';
         }
 
+        // A slow earlier selection must not replace the user's latest language.
+        if (revision !== this.loadRevision) return;
+        this.lang = resolvedLanguage;
+        this.dir = this.lang === 'he' ? 'rtl' : 'ltr';
+        this.strings = strings;
         document.documentElement.lang = this.lang;
         document.documentElement.dir = this.dir;
         document.body?.setAttribute('dir', this.dir);
         document.title = this.t('app.title');
+        const mobile = window.Utils?.isMobileLike?.();
+        document.getElementById('uploadHeading')?.setAttribute('data-i18n', mobile ? 'upload.mobileHeading' : 'upload.heading');
+        document.getElementById('uploadSub')?.setAttribute('data-i18n', mobile ? 'upload.mobileSub' : 'upload.sub');
         this.apply(document);
         this.updateLanguageSwitcher();
+        window.ProgressTracker?.refreshLanguage?.();
         window.IOSTips?.refresh?.();
+    },
+
+    async fetchStrings(lang) {
+        const response = await window.lmtFetch(
+            `/static/i18n/${lang}.json?v=${window.LMT_FRONTEND_VERSION || '1'}`,
+            {}, this.REQUEST_TIMEOUT_MS);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
     },
 
     async setLanguage(lang) {
         const normalized = String(lang || '').toLowerCase().split('-')[0];
         if (!this.supported.has(normalized)) return;
-        localStorage.setItem('lmt.language', normalized);
+        try { localStorage.setItem('lmt.language', normalized); } catch {}
         await this.load(normalized);
     },
 
@@ -88,6 +108,8 @@ window.I18n = {
                 this.t(element.getAttribute('data-i18n-aria-label')));
         });
 
+        root.querySelectorAll('[data-i18n-placeholder]').forEach(element => { element.setAttribute('placeholder', this.t(element.getAttribute('data-i18n-placeholder'))); });
+
         root.querySelectorAll('[data-i18n-title]').forEach(element => {
             element.setAttribute(
                 'title',
@@ -96,7 +118,7 @@ window.I18n = {
     },
 
     bindLanguageSwitcher() {
-        document.querySelectorAll('[data-lang]').forEach(button => {
+        /** @type {NodeListOf<HTMLButtonElement>} */ (document.querySelectorAll('button[data-lang]')).forEach(button => {
             if (button.dataset.boundLanguage === 'true') return;
             button.dataset.boundLanguage = 'true';
             button.addEventListener('click', () => {
@@ -110,6 +132,18 @@ window.I18n = {
         const switcher = getElement('languageSwitcher');
         if (menuButton && switcher && menuButton.dataset.boundLanguageMenu !== 'true') {
             menuButton.dataset.boundLanguageMenu = 'true';
+            const close = () => {
+                switcher.classList.remove('open');
+                menuButton.setAttribute('aria-expanded', 'false');
+            };
+            document.addEventListener('keydown', event => {
+                if (event.key === 'Escape' && switcher.classList.contains('open')) {
+                    close(); menuButton.focus();
+                }
+            });
+            document.addEventListener('click', event => {
+                if (!switcher.contains(/** @type {Node} */ (event.target))) close();
+            });
             menuButton.addEventListener('click', () => {
                 const isOpen = switcher.classList.toggle('open');
                 menuButton.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
@@ -121,7 +155,7 @@ window.I18n = {
         const meta = this.languageMeta[this.lang] || this.languageMeta.en;
         const getElement = (id) =>
             typeof document.getElementById === 'function' ? document.getElementById(id) : null;
-        const currentFlag = getElement('languageCurrentFlag');
+        const currentFlag = /** @type {HTMLImageElement} */ (getElement('languageCurrentFlag'));
         const currentCode = getElement('languageCurrentCode');
         const menuButton = getElement('languageMenuButton');
         const switcher = getElement('languageSwitcher');
@@ -139,10 +173,12 @@ window.I18n = {
             menuButton.setAttribute('aria-expanded', 'false');
         }
 
-        document.querySelectorAll('[data-lang]').forEach(button => {
+        /** @type {NodeListOf<HTMLButtonElement>} */ (document.querySelectorAll('button[data-lang]')).forEach(button => {
             const active = button.dataset.lang === this.lang;
             button.classList.toggle('active', active);
             button.setAttribute('aria-pressed', active ? 'true' : 'false');
         });
     }
 };
+
+window.I18n = lmtI18n;

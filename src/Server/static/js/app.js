@@ -6,60 +6,30 @@
 (async function initApp() {
     'use strict';
 
-    const assetVersion = '20260923.1';
+    const assetVersion = '20261020.3';
     window.LMT_FRONTEND_VERSION = assetVersion;
 
-    // Module loading configuration
-    const modules = [
-        // Core utilities (no dependencies)
-        'core/utils.js',
-        'core/transfer-limits.js',
-        'core/i18n.js',
-        'core/security.js',
-        'core/storage.js',
-        
-        // UI components
-        'ui/icons.js',
-        'ui/modals.js',
-        'ui/progress.js',
-        
-        // Upload functionality (depends on core + ui)
-        'upload/preflight.js',
-        'upload/manager.js',
-        'upload/workers.js',
-        
-        // Platform-specific features
-        'ui/ios-tips.js'
-    ];
-
-    // Base path for modules
-    const basePath = '/static/js/';
-    
     try {
-        // Load all modules sequentially to respect dependencies
-        for (const module of modules) {
-            await loadScript(`${basePath}${module}?v=${assetVersion}`);
+        for (const name of ['TransferSession', 'Utils', 'TransferLimits', 'I18n', 'SecurityManager', 'UploadCacheManager', 'BrowserThroughputTracker',
+            'TransferAccounting', 'TransferContracts', 'BrowserSelection', 'BrowserMediaPreviews', 'BrowserFileList', 'TransferView', 'TransferController', 'LocalIcons', 'Modals', 'ProgressTracker', 'DuplicatePreflight', 'UploadManager', 'UploadWorkers', 'IOSTips']) {
+            if (!window[name]) throw new Error('Required module unavailable');
         }
-        
-        // Initialize application after all modules are loaded
         await initializeApplication();
-        
-    } catch (error) {
+    } catch {
+        if (window.TransferSession) {
+            window.TransferSession.update('failed');
+            window.TransferSession.showStartup('startup.failed', true);
+        } else {
+            // The lifecycle module itself may have failed to load. The native
+            // Retry form works without JavaScript and preserves the locked UI.
+            const message = document.getElementById('startupMessage');
+            if (message) message.textContent = 'The page could not load. Retry to refresh it.';
+            document.getElementById('startupRetry')?.addEventListener('click', event => {
+                event.preventDefault();
+                window.location.reload();
+            });
+        }
         console.error('Local Media Transfer could not initialize.');
-        showFallbackError();
-    }
-
-    /**
-     * Dynamically load a JavaScript module
-     */
-    function loadScript(src) {
-        return new Promise((resolve, reject) => {
-            const script = document.createElement('script');
-            script.src = src;
-            script.onload = resolve;
-            script.onerror = () => reject(new Error(`Failed to load ${src}`));
-            document.head.appendChild(script);
-        });
     }
 
     /**
@@ -78,10 +48,12 @@
             await window.I18n.init();
         }
 
-        if (window.SecurityManager) {
-            await window.SecurityManager.init();
-        }
+        await window.SecurityManager.init();
         
+        window.MediaPreviews = new window.BrowserMediaPreviews();
+        window.FileListView = new window.BrowserFileList();
+        window.FileListView.init();
+
         if (window.UploadManager) {
             window.UploadManager.init();
         }
@@ -98,27 +70,13 @@
             window.IOSTips.init();
         }
 
+        window.TransferSession.initialized = true;
+        window.TransferSession.update(window.SecurityManager.isValid ? 'ready' : 'blocked');
+        if (window.SecurityManager.isValid) window.TransferSession.showStartup('');
+
         // Global error handling
         window.addEventListener('error', handleGlobalError);
         window.addEventListener('unhandledrejection', handleUnhandledRejection);
-    }
-
-    /**
-     * Show fallback error message if module loading fails
-     */
-    function showFallbackError() {
-        const errorDiv = document.createElement('div');
-        errorDiv.style.cssText = `
-            position: fixed; top: 20px; left: 20px; right: 20px;
-            background: #fee; border: 1px solid #fcc; color: #c33;
-            padding: 1rem; border-radius: 8px; z-index: 9999;
-            font-family: system-ui, sans-serif;
-        `;
-        errorDiv.innerHTML = `
-            <strong>⚠️ Loading Error</strong><br>
-            Some application components failed to load. Please refresh the page or contact support.
-        `;
-        document.body.appendChild(errorDiv);
     }
 
     /**

@@ -10,7 +10,8 @@
         'close',
         'add-more',
         'reset-start',
-        'reset-upload'
+        'reset-upload',
+        'retry-failed'
     ]);
 
     function t(key, fallback, values = {}) {
@@ -36,17 +37,11 @@
         return list;
     }
 
-    function appendSummaryRow(list, label, value) {
-        const row = document.createElement('div');
-        appendText(row, 'dt', label);
-        appendText(row, 'dd', value);
-        list.appendChild(row);
-    }
-
     function runAction(action) {
         if (action === 'add-more') window.addMoreFiles?.();
         if (action === 'reset-start') window.resetAndStart?.();
         if (action === 'reset-upload') window.resetForNewUpload?.();
+        if (action === 'retry-failed') void window.UploadManager.uploadFiles();
     }
 
     function getFocusableElements(dialog) {
@@ -56,17 +51,18 @@
     }
 
     window.Modals = {
+        /** @param {DialogOptions} options */
         showDialog({
             id,
             title,
             titleKey = '',
             bodyBuilder,
             tone = 'success',
-            actions = [{ label: t('modal.done', 'Done'), action: 'close', primary: true }]
+            actions = [{ label: t('modal.done', 'Done'), action: 'close', primary: true, labelKey: '' }]
         }) {
             if (!id || document.getElementById(id)) return;
 
-            const previouslyFocused = document.activeElement;
+            const previouslyFocused = /** @type {HTMLElement} */ (document.activeElement);
 
             const overlay = document.createElement('div');
             overlay.id = id;
@@ -125,7 +121,7 @@
             dialog.appendChild(footer);
             overlay.appendChild(dialog);
 
-            const backgroundElements = Array.from(document.body.children)
+            const backgroundElements = Array.from(/** @type {HTMLCollectionOf<HTMLElement>} */ (document.body.children))
                 .filter(element => element !== overlay);
             const backgroundState = backgroundElements.map(element => ({
                 element,
@@ -199,7 +195,7 @@
                 element.setAttribute('aria-hidden', 'true');
             }
             document.addEventListener('keydown', onKeyDown);
-            overlay.querySelector('.lmt-modal-button, .lmt-modal-close')?.focus();
+            /** @type {HTMLElement} */ (overlay.querySelector('.lmt-modal-button, .lmt-modal-close'))?.focus();
         },
 
         showTokenModal({
@@ -274,48 +270,6 @@
                 actions: [
                     { label: t('modal.addMore', 'Add More Files'), action: 'add-more' },
                     { label: t('modal.resetStart', 'Reset and Start Over'), action: 'reset-start', primary: true }
-                ]
-            });
-        },
-
-        showUploadCompleteModal(processedCount, skippedCount = 0, totalDurationMs = null) {
-            const uploadedCount = Math.max(0, processedCount - skippedCount);
-            const durationSeconds = Number.isFinite(totalDurationMs)
-                ? Math.max(0, totalDurationMs / 1000)
-                : null;
-
-            this.showDialog({
-                id: 'uploadCompleteModal',
-                title: t('modal.completeTitle', 'Transfer Complete'),
-                bodyBuilder(body) {
-                    appendText(body, 'div', '✓', 'lmt-complete-mark')
-                        .setAttribute('aria-hidden', 'true');
-                    appendText(
-                        body,
-                        'p',
-                        t(
-                            'modal.completeFiles',
-                            `${processedCount} file${processedCount === 1 ? '' : 's'} processed successfully.`,
-                            {
-                                count: processedCount,
-                                plural: processedCount === 1 ? '' : 's'
-                            }));
-
-                    const list = document.createElement('dl');
-                    list.className = 'lmt-summary-list';
-                    appendSummaryRow(list, t('modal.uploaded', 'Uploaded'), String(uploadedCount));
-                    appendSummaryRow(list, t('modal.alreadyExisted', 'Already existed'), String(skippedCount));
-                    if (durationSeconds !== null) {
-                        appendSummaryRow(
-                            list,
-                            t('modal.totalTime', 'Total time'),
-                            window.Utils?.formatTime?.(durationSeconds) || `${Math.round(durationSeconds)}s`);
-                    }
-                    body.appendChild(list);
-                },
-                actions: [
-                    { label: t('modal.uploadMore', 'Upload More'), action: 'reset-upload' },
-                    { label: t('modal.done', 'Done'), action: 'close', primary: true }
                 ]
             });
         }

@@ -118,6 +118,35 @@ Visible file sizes use decimal MB and GB as well.
   and counts plus time spent blocked on the bounded upload queue. UI bridge
   progress may be coalesced, but these diagnostic counters are not sampled.
 
+## Browser acknowledged-media rates
+
+The browser follows the mobile acknowledgement model as of frontend 20261020.1.
+`BrowserThroughputTracker` owns current, average and peak rates, using decimal
+units, a monotonic clock, a five-second rolling window and running window totals.
+Only a successful, validated receiver response acknowledges bytes: one whole-file
+response or each sequential chunk response. Duplicate progress callbacks and
+failed retry attempts cannot acknowledge the same logical bytes twice. A
+preflight-skipped file acknowledges zero upload bytes; an exact duplicate found
+after its body was uploaded still acknowledges those accepted media bytes.
+
+File-send percentages remain independent. Once a body has been sent, the row
+shows `Waiting for receiver…` until a response establishes success or failure.
+Before the first acknowledgement the live acknowledged rate is zero. During
+slow chunks the latest rate has a freshness lease of two configured chunk
+intervals, clamped to 5–30 seconds; expiry shows exact zero. The final snapshot
+keeps average/peak and fixes current to zero, releasing retained samples.
+
+One 500ms publisher reads the snapshot for presentation. File/chunk callbacks
+do not resmooth or render the aggregate rate. Optional metrics are coalesced to
+one request per second, one in-flight request and a latest pending value, with
+terminal zero ordered after an admitted sample. Optional requests have a
+five-second body-consumption deadline. Event logging is serialized with a bound
+of four admitted events; excess optional events are dropped. Neither channel
+can delay upload completion. History average and peak consume the immutable
+completion rates. The legacy `networkBytesUploaded` field still counts unique
+sent media for existing progress diagnostics; it is not the acknowledged-rate
+tracker and does not include multipart encoding overhead.
+
 ## React and TypeScript structure
 
 - Upload callbacks are passed as a typed `UploadObserver` object. Avoid adding

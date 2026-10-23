@@ -8,6 +8,11 @@ class MockElement {
     constructor(tagName = 'div') {
         this.tagName = tagName.toUpperCase();
         this.className = '';
+        this.classList = { toggle: (token, enabled) => {
+            const tokens = new Set(this.className.split(/\s+/).filter(Boolean));
+            if (enabled) tokens.add(token); else tokens.delete(token);
+            this.className = [...tokens].join(' ');
+        } };
         this.id = '';
         this.textContent = '';
         this.innerHTML = '';
@@ -165,12 +170,13 @@ test('setFileProgress uses cached UI when meta object is provided', () => {
         throw new Error('setFileProgress should not query document when meta.ui exists');
     };
 
+    tracker.rows.set(meta.id, meta.ui);
     tracker.setFileProgress(meta, 40, '40%');
 
     assert.equal(meta.ui.progressBar.style.transform, 'scaleX(0.4)');
     assert.equal(meta.ui.progressText.textContent, '40%');
-    assert.equal(meta.ui.progressBar.attributes['aria-valuenow'], '40');
-    assert.equal(meta.ui.progressBar.attributes['aria-valuetext'], '40%');
+    assert.equal(tracker.rows.get(meta.id).progressBar.attributes['aria-valuenow'], '40');
+    assert.equal(tracker.rows.get(meta.id).progressBar.attributes['aria-valuetext'], '40%');
 });
 
 test('renderFileItem uses local icons and auto filename direction', () => {
@@ -194,9 +200,9 @@ test('renderFileItem uses local icons and auto filename direction', () => {
     assert.equal(icon.dataset.icon, 'file');
     assert.equal(name.attributes.dir, 'auto');
     assert.equal(name.textContent, 'מערכתשעות.pdf');
-    assert.equal(meta.ui.icon, icon);
-    assert.equal(meta.ui.progressBar.attributes.role, 'progressbar');
-    assert.equal(meta.ui.progressBar.attributes['aria-label'].startsWith('Upload progress for '), true);
+    assert.equal(tracker.rows.get(meta.id).icon, icon);
+    assert.equal(tracker.rows.get(meta.id).progressBar.attributes.role, 'progressbar');
+    assert.equal(tracker.rows.get(meta.id).progressBar.attributes['aria-label'].startsWith('Upload progress for '), true);
 });
 
 test('markFileQueued resets visual state for retries', () => {
@@ -206,8 +212,8 @@ test('markFileQueued resets visual state for retries', () => {
     const progressBar = new MockElement();
     const icon = new MockElement();
 
-    icon.className = 'file-icon file-icon-error';
-    icon.dataset.icon = 'failed';
+    icon.className = 'media-preview';
+    icon.dataset.icon = 'photo';
 
     const meta = {
         id: 'q1',
@@ -219,37 +225,13 @@ test('markFileQueued resets visual state for retries', () => {
     assert.equal(container.className, 'file-item uploading small');
     assert.equal(progressText.textContent, 'Queued');
     assert.equal(progressBar.style.transform, 'scaleX(0)');
-    assert.equal(icon.className, 'file-icon');
-    assert.equal(icon.dataset.icon, 'file');
+    assert.equal(icon.className, 'media-preview');
+    assert.equal(icon.dataset.icon, 'photo');
 });
 
-test('createGroupContainer does not throw when progress container is unavailable', () => {
-    const { tracker, document } = loadProgressTracker();
-    tracker.elements = undefined;
-    document.getElementById = () => null;
-
-    const container = tracker.createGroupContainer(0, 10, 0);
-    assert.ok(container);
-    assert.equal(container.className, 'file-group-inner');
-});
-
-test('createGroupContainer uses a CSS chevron instead of visible icon text', () => {
-    const { tracker, idMap } = loadProgressTracker();
-    const progress = new MockElement();
-    idMap.set('progress', progress);
-    tracker.elements = undefined;
-
-    const container = tracker.createGroupContainer(0, 10, 0);
-    const details = progress.children[0];
-    const summary = details.children[0];
-    const title = summary.children[0];
-    const chevron = summary.children[1];
-
-    assert.ok(container);
-    assert.equal(title.className, 'file-group-title');
-    assert.equal(title.attributes.dir, 'auto');
-    assert.equal(chevron.className, 'file-group-chevron');
-    assert.equal(chevron.textContent, '');
-    assert.equal(chevron.attributes['aria-hidden'], 'true');
-    assert.equal(chevron.dataset.icon, 'chevron');
+test('reset releases all mounted-row references', () => {
+    const { tracker } = loadProgressTracker();
+    tracker.rows.set('synthetic', {});
+    tracker.reset();
+    assert.equal(tracker.rows.size, 0);
 });

@@ -12,6 +12,9 @@ param(
         "soak-tests",
         "storage-tests",
         "frontend-tests",
+        "web-checks",
+        "web-tests",
+        "web-profile",
         "ios-tests",
         "csharp-tests",
         "gui-smoke",
@@ -122,6 +125,35 @@ function Invoke-Target {
             Invoke-Checked "Frontend unit tests" {
                 powershell -NoProfile -ExecutionPolicy Bypass -File `
                     (Join-Path $repoRoot "tests\test_frontend.ps1")
+            }
+        }
+        { $_ -in @("web-checks", "web-tests", "web-profile") } {
+            $browserDirectory = Join-Path $repoRoot "tests\browser"
+            Push-Location $browserDirectory
+            try {
+                $scriptName = switch ($Name) { "web-checks" { "check" }; "web-tests" { "test" }; "web-profile" { "profile" } }
+                Invoke-Checked "Browser $scriptName" { npm run $scriptName }
+            }
+            finally { Pop-Location }
+            if ($Name -in @("web-tests", "web-profile")) {
+                $captureBrowserProfile = $Name -eq 'web-profile'
+                Invoke-Checked "Real receiver browser integration" {
+                    $arguments = @("run", "--project", (Join-Path $repoRoot "tests\LocalMediaTransfer.TestHarness"), "-c", "Release", "--", "--browser-tests")
+                    if ($ServerExecutable) { $arguments += @("--server-exe", $ServerExecutable) }
+                    $previousBrowserProfile = $env:LMT_BROWSER_PROFILE
+                    try {
+                        if ($captureBrowserProfile) { $env:LMT_BROWSER_PROFILE = '1' }
+                        & dotnet @arguments
+                    }
+                    finally { $env:LMT_BROWSER_PROFILE = $previousBrowserProfile }
+                }
+                if ($captureBrowserProfile) {
+                    Invoke-Checked "Controlled actual-browser concurrency measurements" {
+                        $benchmarkArguments = @("run", "--project", (Join-Path $repoRoot "tests\LocalMediaTransfer.TestHarness"), "-c", "Release", "--", "--browser-benchmark")
+                        if ($ServerExecutable) { $benchmarkArguments += @("--server-exe", $ServerExecutable) }
+                        & dotnet @benchmarkArguments
+                    }
+                }
             }
         }
         "ios-tests" {
