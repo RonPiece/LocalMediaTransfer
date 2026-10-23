@@ -75,12 +75,12 @@ $rules = @(
     },
     @{
         Path = "src/LocalMediaTransfer.Mobile/package-lock.json"
-        Pattern = '\A(\{\r?\n  "name": "localmediatransfer\.ios",\r?\n  "version": ")\d+\.\d+\.\d+("\,)'
+        Pattern = '\A(\{\r?\n  "name": "localmediatransfer\.(?:mobile|ios)",\r?\n  "version": ")\d+\.\d+\.\d+("\,)'
         Replacement = '${1}{VERSION}${2}'
     },
     @{
         Path = "src/LocalMediaTransfer.Mobile/package-lock.json"
-        Pattern = '("packages": \{\r?\n    "": \{\r?\n      "name": "localmediatransfer\.ios",\r?\n      "version": ")\d+\.\d+\.\d+("\,)'
+        Pattern = '("packages": \{\r?\n    "": \{\r?\n      "name": "localmediatransfer\.(?:mobile|ios)",\r?\n      "version": ")\d+\.\d+\.\d+("\,)'
         Replacement = '${1}{VERSION}${2}'
     },
     @{
