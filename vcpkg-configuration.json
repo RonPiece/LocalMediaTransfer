@@ -4,9 +4,11 @@
     {
       "kind": "git",
       "repository": "https://github.com/microsoft/vcpkg",
-      "baseline": "7e43e0768a5af180a9cf75d87d692dce1b9da34f",
+      "baseline": "9eec002df1cd109f8f104cd966a763daf9751489",
       "reference": "7e43e0768a5af180a9cf75d87d692dce1b9da34f",
-      "packages": ["openssl"]
+      "packages": [
+        "openssl"
+      ]
     }
   ]
 }
